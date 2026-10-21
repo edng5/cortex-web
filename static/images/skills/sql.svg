@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" font-family="Inter, system-ui, sans-serif">
+  <!-- Generic SQL badge (SQL has no official logo). -->
+  <g fill="none" stroke="#0e7490" stroke-width="7">
+    <ellipse cx="64" cy="26" rx="40" ry="13"/>
+    <path d="M24 26 V86 C24 103 104 103 104 86 V26"/>
+    <path d="M24 46 C24 63 104 63 104 46 M24 66 C24 83 104 83 104 66"/>
+  </g>
+  <text x="64" y="124" fill="#0e7490" font-size="26" font-weight="800" text-anchor="middle" letter-spacing="2">SQL</text>
+</svg>

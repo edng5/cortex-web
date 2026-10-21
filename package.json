@@ -1,0 +1,42 @@
+{
+	"name": "cortex-web",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"start": "node build",
+		"ingest": "tsx scripts/ingest.ts",
+		"new-node": "tsx scripts/new-node.ts",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"gen-keys": "tsx scripts/gen-keys.ts",
+		"audit": "tsx --env-file=.env scripts/audit.ts",
+		"email:test": "tsx --env-file=.env scripts/email-test.ts"
+	},
+	"dependencies": {
+		"@anthropic-ai/sdk": "^0.132.1",
+		"@huggingface/transformers": "^4.3.1",
+		"arctic": "^3.7.0",
+		"better-sqlite3": "^11.10.0",
+		"d3-force": "^3.0.0",
+		"gray-matter": "^4.0.3",
+		"marked": "^18.1.0",
+		"nodemailer": "^10.0.16"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-node": "^5.5.7",
+		"@sveltejs/kit": "^2.70.3",
+		"@sveltejs/vite-plugin-svelte": "^5.1.1",
+		"@types/better-sqlite3": "^9.6.0",
+		"@types/d3-force": "^3.0.10",
+		"@types/node": "^20.19.43",
+		"@types/nodemailer": "^8.0.2",
+		"svelte": "^5.57.2",
+		"svelte-check": "^4.7.6",
+		"tsx": "^4.23.15",
+		"typescript": "^5.9.3",
+		"vite": "^6.4.4"
+	}
+}

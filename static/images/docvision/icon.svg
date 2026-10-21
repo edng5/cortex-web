@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="70%">
+      <stop offset="0" stop-color="#1b1640"/>
+      <stop offset="1" stop-color="#070914"/>
+    </radialGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2547"/>
+      <stop offset="1" stop-color="#121733"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="0.85" stop-color="#22d3ee" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="pageClip"><path d="M126 70 H316 L386 140 V442 H126 Z"/></clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- back pages of the bundle -->
+  <path d="M150 52 H336 L404 120 V418" fill="none" stroke="#7c3aed" stroke-opacity="0.35" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M138 61 H326 L395 130 V430" fill="none" stroke="#a78bfa" stroke-opacity="0.45" stroke-width="5" stroke-linejoin="round"/>
+
+  <!-- the page -->
+  <path d="M126 70 H316 L386 140 V442 H126 Z" fill="url(#page)" stroke="#a78bfa" stroke-width="6" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M316 70 V140 H386" fill="none" stroke="#a78bfa" stroke-width="6" stroke-linejoin="round"/>
+
+  <g clip-path="url(#pageClip)">
+    <!-- text lines (OCR words) -->
+    <g fill="#64748b">
+      <rect x="156" y="104" width="96" height="14" rx="4"/>
+      <rect x="156" y="128" width="64" height="10" rx="4"/>
+      <rect x="156" y="178" width="58" height="10" rx="4"/>
+      <rect x="222" y="178" width="92" height="10" rx="4"/>
+      <rect x="156" y="250" width="70" height="10" rx="4"/>
+      <rect x="236" y="250" width="54" height="10" rx="4"/>
+      <rect x="300" y="250" width="52" height="10" rx="4"/>
+      <rect x="156" y="274" width="70" height="10" rx="4"/>
+      <rect x="236" y="274" width="54" height="10" rx="4"/>
+      <rect x="300" y="274" width="52" height="10" rx="4"/>
+      <rect x="156" y="298" width="70" height="10" rx="4"/>
+      <rect x="236" y="298" width="54" height="10" rx="4"/>
+      <rect x="300" y="298" width="52" height="10" rx="4"/>
+      <rect x="156" y="398" width="110" height="10" rx="4"/>
+    </g>
+    <!-- extracted fields (bounding boxes) -->
+    <g fill="none" stroke-width="4" filter="url(#glow)">
+      <rect x="148" y="96" width="112" height="30" rx="6" stroke="#22d3ee"/>
+      <rect x="214" y="170" width="108" height="26" rx="6" stroke="#f472b6"/>
+      <rect x="292" y="242" width="68" height="74" rx="6" stroke="#34d399"/>
+      <rect x="190" y="352" width="84" height="30" rx="6" stroke="#fbbf24"/>
+    </g>
+    <rect x="200" y="362" width="64" height="10" rx="4" fill="#fbbf24" fill-opacity="0.8"/>
+    <!-- scan beam -->
+    <rect x="126" y="150" width="260" height="70" fill="url(#beam)"/>
+    <line x1="126" y1="220" x2="386" y2="220" stroke="#22d3ee" stroke-width="3" filter="url(#glow)"/>
+  </g>
+
+  <!-- vision lens -->
+  <g filter="url(#glow)">
+    <circle cx="384" cy="376" r="62" fill="#0b1024" fill-opacity="0.92" stroke="#22d3ee" stroke-width="7"/>
+    <path d="M340 376 Q384 340 428 376 Q384 412 340 376 Z" fill="none" stroke="#e0f2fe" stroke-width="5" stroke-linejoin="round"/>
+    <circle cx="384" cy="376" r="15" fill="#a78bfa"/>
+    <circle cx="389" cy="371" r="5" fill="#f5f3ff"/>
+  </g>
+</svg>
