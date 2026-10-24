@@ -44,11 +44,15 @@
 				cheerpjCreateDisplay: (w: number, h: number, parent?: HTMLElement) => HTMLElement;
 				cheerpjRunJar: (jar: string, ...args: string[]) => Promise<number>;
 			};
-			await w.cheerpjInit({ version: 8, status: 'splash' });
+			// ?fps logs frames per second to the console (for tuning); dev only: ?jar=name loads
+			// /games/topgun/topgun-name.jar instead (to compare builds).
+			const params = new URLSearchParams(location.search);
+			const jarName = import.meta.env.DEV && params.get('jar');
+			await w.cheerpjInit({ version: 8, status: 'splash', javaProperties: params.has('fps') ? ['tg.fps=1'] : [] });
 			w.cheerpjCreateDisplay(-1, -1, screen);
 			status = 'running';
 			// Resolves when the game exits ("Quit" in its menu, which also saves progress).
-			await w.cheerpjRunJar('/app/games/topgun/topgun.jar');
+			await w.cheerpjRunJar(jarName ? `/app/games/topgun/topgun-${jarName}.jar` : '/app/games/topgun/topgun.jar');
 			status = 'ready';
 			message = 'Thanks for playing! Your progress was saved in this browser.';
 		} catch (err) {
