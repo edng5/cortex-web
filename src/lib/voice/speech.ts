@@ -86,6 +86,14 @@ export class Recognizer {
 	private rec: SpeechRecognitionLike | null = null;
 	private wanted = false; // should be listening
 	private paused = false;
+	/** Everything heard as "final" in this listening session and not yet sent. */
+	private pending = '';
+	/** Results (by index) of this session already sent as a question, and how many are final now. */
+	private sentUpTo = 0;
+	private finalCount = 0;
+	private sendTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Quiet time after the last words before the question is sent (a pause ends the question). */
+	private static readonly END_OF_QUESTION_MS = 1100;
 
 	constructor(
 		private handlers: {
@@ -103,28 +111,42 @@ export class Recognizer {
 		if (this.rec) return;
 
 		const rec = new Ctor();
-		rec.continuous = true;
+		this.sentUpTo = this.finalCount = 0; // result indices restart with each session
+		// Phones: continuous mode marks each word "final" as soon as it's heard (and can repeat
+		// them), so the question would be just its first word. Single-utterance mode returns the
+		// whole sentence when the speaker stops; listening restarts after each one (onend).
+		rec.continuous = !isMobileDevice();
 		rec.interimResults = true;
 		rec.lang = navigator.language || 'en-US';
 		rec.onresult = (e) => {
+			// Rebuild this session's text from all results (not just the new ones), then send it
+			// only after a short pause, so a question is never cut off mid-sentence.
+			let final = '';
 			let interim = '';
-			for (let i = e.resultIndex; i < e.results.length; i++) {
+			this.finalCount = this.sentUpTo;
+			for (let i = this.sentUpTo; i < e.results.length; i++) {
 				const r = e.results[i];
 				const text = r[0].transcript.trim();
 				if (r.isFinal) {
-					if (text) this.handlers.onFinal(text);
-				} else interim += text + ' ';
+					this.finalCount = i + 1;
+					if (text) final += text + ' ';
+				} else if (text) interim += text + ' ';
 			}
-			this.handlers.onInterim(interim.trim());
+			this.pending = final.trim();
+			this.handlers.onInterim((final + interim).trim());
+			clearTimeout(this.sendTimer);
+			if (this.pending) this.sendTimer = setTimeout(() => this.send(), Recognizer.END_OF_QUESTION_MS);
 		};
 		rec.onerror = (e) => {
 			if (e.error === 'no-speech' || e.error === 'aborted') return;
 			if (e.error === 'not-allowed') this.wanted = false;
 			this.handlers.onError(`Speech recognition error: ${e.error}`);
 		};
-		// Chrome ends recognition after silence; restart while we still want it.
+		// Recognition ends after silence (always, on phones); send what was heard, then restart
+		// while we still want to listen.
 		rec.onend = () => {
 			this.rec = null;
+			this.send();
 			if (this.wanted && !this.paused) setTimeout(() => this.wanted && !this.paused && this.start(), 250);
 		};
 		this.rec = rec;
@@ -135,8 +157,19 @@ export class Recognizer {
 		}
 	}
 
+	/** Hand the collected words to Cortex as one question. */
+	private send(): void {
+		clearTimeout(this.sendTimer);
+		const text = this.pending.trim();
+		this.pending = '';
+		this.sentUpTo = this.finalCount; // don't send these words again in this session
+		if (text && this.wanted && !this.paused) this.handlers.onFinal(text);
+	}
+
 	/** Temporarily stop listening (e.g. while Cortex talks, so it doesn't hear itself). */
 	pause(): void {
+		clearTimeout(this.sendTimer);
+		this.pending = '';
 		this.paused = true;
 		this.rec?.abort();
 		this.rec = null;
@@ -147,6 +180,8 @@ export class Recognizer {
 	}
 
 	stop(): void {
+		clearTimeout(this.sendTimer);
+		this.pending = '';
 		this.wanted = false;
 		this.rec?.abort();
 		this.rec = null;
@@ -164,15 +199,22 @@ export class Speaker {
 	onStart: () => void = () => {};
 	onIdle: () => void = () => {};
 
+	/** True when the chosen voice is a known male voice; otherwise the pitch is lowered. */
+	private male = false;
+
 	constructor() {
 		if (typeof speechSynthesis === 'undefined') return;
 		const pick = () => {
 			const voices = speechSynthesis.getVoices();
-			this.voice =
+			const en = voices.filter((v) => v.lang.toLowerCase().startsWith('en'));
+			const male =
 				site.preferredVoices.map((n) => voices.find((v) => v.name === n)).find(Boolean) ??
-				voices.find((v) => v.lang.startsWith('en') && /natural|neural|google/i.test(v.name)) ??
-				voices.find((v) => v.lang.startsWith('en')) ??
-				null;
+				en.find((v) => isMaleVoice(v) && /natural|neural|online/i.test(v.name)) ??
+				en.find((v) => isMaleVoice(v));
+			this.male = !!male;
+			// No known male voice on this device: any English voice that isn't a known female
+			// one, spoken lower (see say()).
+			this.voice = male ?? en.find((v) => !isFemaleVoice(v)) ?? en[0] ?? null;
 		};
 		pick();
 		speechSynthesis.addEventListener?.('voiceschanged', pick);
@@ -231,7 +273,7 @@ export class Speaker {
 		const u = new SpeechSynthesisUtterance(clean);
 		if (this.voice) u.voice = this.voice;
 		u.rate = site.speechRate;
-		u.pitch = site.speechPitch;
+		u.pitch = this.male ? site.speechPitch : Math.min(site.speechPitch, 0.7);
 		u.onstart = () => this.onStart();
 		const done = () => {
 			this.queue = Math.max(0, this.queue - 1);
@@ -242,4 +284,20 @@ export class Speaker {
 		this.queue++;
 		speechSynthesis.speak(u);
 	}
+}
+
+// ─── Voice gender ────────────────────────────────────────────────────────────
+// Browsers don't report a voice's gender, so recognise common voices by name.
+// Windows/Edge, Chrome, Apple (macOS/iOS) and Android (Google TTS voice codes).
+const MALE_VOICE =
+	/\b(male|guy|andrew|brian|christopher|eric|roger|steffan|ryan|thomas|william|liam|david|mark|george|james|richard|sean|daniel|alex|aaron|arthur|fred|tom|oliver|reed|rishi|gordon|lee|evan|nathan|ralph|albert|bruce|junior|aditya|prabhat)\b|-x-(iom|iol|tpd|rjs|gbd|aud)-/i;
+const FEMALE_VOICE =
+	/\b(female|woman|samantha|karen|victoria|zira|aria|jenny|sonia|libby|natasha|moira|tessa|fiona|susan|hazel|catherine|emma|ava|allison|serena|kate|nicky|joanna|salli|kimberly|ivy|clara|michelle|ana|heera|neerja|google us english)\b/i;
+
+function isMaleVoice(v: SpeechSynthesisVoice): boolean {
+	return MALE_VOICE.test(v.name) && !/female/i.test(v.name);
+}
+
+function isFemaleVoice(v: SpeechSynthesisVoice): boolean {
+	return FEMALE_VOICE.test(v.name);
 }
