@@ -92,7 +92,7 @@
 	class="stage"
 	class:media-open={floatMedia}
 	data-mode={cortex.mode}
-	style="--inset: {insetRight}px; --inset-left: {floatMedia ? mediaWidth + 40 : 0}px; --media-w: {mediaWidth}px"
+	style="--inset: {insetRight}px; --inset-left: {floatMedia ? mediaWidth + 84 : 0}px; --media-w: {mediaWidth}px"
 >
 	<NeuralGraph
 		{graph}

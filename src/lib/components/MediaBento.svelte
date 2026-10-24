@@ -298,7 +298,7 @@
 							<img class="cut" src={t.item.src} alt={t.item.caption ?? title} draggable="false" />
 						</a>
 					{:else}
-						<MediaItem item={t.item} {title} stage maxHeight="{t.h - 2 * FRAME}px" showCaption={false} />
+						<MediaItem item={t.item} {title} stage clickToLoad maxHeight="{t.h - 2 * FRAME}px" showCaption={false} />
 					{/if}
 					{#if t.item.caption}<span class="cap">{t.item.caption}</span>{/if}
 				</div>
@@ -338,8 +338,20 @@
 		animation: deal 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 		animation-delay: var(--deal);
 	}
+	/* Videos stay upright and still: a YouTube player inside a tilted, drifting, blurred card can
+	   render blank in Chrome, and a moving player is hard to click. */
 	.tile.video {
 		cursor: default;
+		rotate: 0deg;
+		animation: none;
+	}
+	.tile.video .wander {
+		animation: none;
+		backdrop-filter: none;
+		background: rgba(10, 14, 26, 0.96);
+	}
+	.tile.video.dragging {
+		rotate: 0deg;
 	}
 	.tile.dragging {
 		cursor: grabbing;

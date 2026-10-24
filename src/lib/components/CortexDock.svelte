@@ -119,11 +119,21 @@
 <style>
 	.dock {
 		position: absolute;
-		/* --inset-left / --inset = media column / info panel widths (set on .stage) */
-		left: calc(var(--inset-left, 0px) + (100% - var(--inset-left, 0px) - var(--inset, 0px)) / 2);
+		/* --inset-left / --inset = media column / info panel widths (set on .stage).
+		   Centred in the space between them, but never narrower than 340px: when that space is
+		   too small, it sits just left of the panel (over the bottom of the media column). */
+		--dock-w: clamp(
+			min(340px, calc(100vw - 32px)),
+			calc(100vw - 32px - var(--inset-left, 0px) - var(--inset, 0px)),
+			680px
+		);
+		left: min(
+			calc(var(--inset-left, 0px) + (100% - var(--inset-left, 0px) - var(--inset, 0px)) / 2),
+			calc(100% - var(--inset, 0px) - 16px - var(--dock-w) / 2)
+		);
 		bottom: 24px;
 		transform: translateX(-50%);
-		width: min(680px, calc(100vw - 32px - var(--inset-left, 0px) - var(--inset, 0px)));
+		width: var(--dock-w);
 		transition: left 0.3s, width 0.3s;
 		z-index: 20;
 		display: flex;

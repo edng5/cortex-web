@@ -19,8 +19,19 @@
 		title,
 		maxHeight = '420px',
 		stage = false,
-		showCaption = true
-	}: { item: MediaItem; title: string; maxHeight?: string; stage?: boolean; showCaption?: boolean } = $props();
+		showCaption = true,
+		clickToLoad = false
+	}: {
+		item: MediaItem;
+		title: string;
+		maxHeight?: string;
+		stage?: boolean;
+		showCaption?: boolean;
+		/** Embeds: show the thumbnail and a play button; load (and start) the player on click. */
+		clickToLoad?: boolean;
+	} = $props();
+	let loaded = $state(false);
+	const autoplayUrl = (url: string) => url + (url.includes('?') ? '&' : '?') + 'autoplay=1';
 </script>
 
 <figure class="media" class:stage class:video={item.kind !== 'image'} style="--max-h: {maxHeight}">
@@ -36,10 +47,17 @@
 			{#if stage}<img class="backdrop" src={item.src} alt="" aria-hidden="true" />{/if}
 			<img class="main" src={item.src} alt={item.caption ?? title} loading="lazy" />
 		</a>
+	{:else if item.kind === 'embed' && clickToLoad && !loaded}
+		<div class="frame">
+			<button class="poster" onclick={() => (loaded = true)} aria-label="Play {item.caption ?? `${title} video`}">
+				{#if item.thumb}<img src={item.thumb} alt="" loading="lazy" draggable="false" />{/if}
+				<span class="play" aria-hidden="true"></span>
+			</button>
+		</div>
 	{:else if item.kind === 'embed'}
 		<div class="frame">
 			<iframe
-				src={item.embedUrl}
+				src={clickToLoad ? autoplayUrl(item.embedUrl) : item.embedUrl}
 				title={item.caption ?? `${title} video`}
 				loading="lazy"
 				allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
@@ -123,6 +141,49 @@
 		height: 100%;
 		border: 0;
 		background: #000;
+	}
+	/* Click-to-load poster: the video's thumbnail with a YouTube-style play button. */
+	.poster {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		border: 0;
+		background: #000;
+		cursor: pointer;
+	}
+	.poster img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.play {
+		position: relative;
+		width: 68px;
+		height: 48px;
+		border-radius: 14px;
+		background: rgba(220, 38, 38, 0.92);
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+		transition:
+			transform 0.15s,
+			background 0.15s;
+	}
+	.play::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		translate: -35% -50%;
+		border-style: solid;
+		border-width: 10px 0 10px 17px;
+		border-color: transparent transparent transparent #fff;
+	}
+	.poster:hover .play {
+		transform: scale(1.08);
+		background: #dc2626;
 	}
 	figcaption {
 		padding: 8px 12px;
