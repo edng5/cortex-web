@@ -18,6 +18,8 @@ class Session {
 	limitMessage = $state('');
 	experienceOpen = $state(false);
 	projectsOpen = $state(false);
+	/** Playable game pop-up (Top Gun). */
+	gameOpen = $state(false);
 
 	init(data: { user: ClientUser | null; quota: QuotaInfo | null; auth: { ready: boolean; google: boolean } }) {
 		this.user = data.user;

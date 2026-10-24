@@ -12,7 +12,6 @@ captions:
   /images/about/inqubate.jpg: "With the inQUbate team"
   /images/about/coding.jpg: "Demoing SpeakEase AI (inQUbate)"
 links:
-  - { label: "Resume", url: "/resume.pdf", kind: other }
   - { label: "LinkedIn", url: "https://linkedin.com/in/edng5", kind: linkedin }
   - { label: "GitHub", url: "https://github.com/edng5", kind: github }
   - { label: "YouTube", url: "https://www.youtube.com/@edng5", kind: video }

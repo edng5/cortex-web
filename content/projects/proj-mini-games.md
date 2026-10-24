@@ -23,17 +23,19 @@ related: [int-video-games, edu-john-cabot]
 
 Edward made these games in high school, while at John Cabot Catholic Secondary School.
 
+## Top Gun
+![Top Gun logo](/images/mini-games/top-gun.jpg)
+
+A flight-combat simulation game where the player completes missions against waves of fighter jets
+to win the war. Players progress through three missions of varying difficulty to finish the game. You can play it right in your browser on a computer: the original Java game runs on a Java runtime inside the page (W, A, S and D to fly, Space for guns, Shift for missiles).
+
+<!-- play: topgun -->
+
 ## I Spy
 ![I Spy logo](/images/mini-games/i-spy.jpg)
 
 The classic children's game I Spy, where the user chooses an object of a specific colour and the
 computer has to guess what that object is.
-
-## Top Gun
-![Top Gun logo](/images/mini-games/top-gun.jpg)
-
-A flight-combat simulation game where the player completes missions against waves of fighter jets
-to win the war. Players progress through three missions of varying difficulty to finish the game.
 
 ## Space Invaders
 ![Space Invaders logo](/images/mini-games/space-invaders.jpg)

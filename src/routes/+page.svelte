@@ -13,6 +13,7 @@
 	import ProjectsModal from '$lib/components/ProjectsModal.svelte';
 	import PlaylistModal from '$lib/components/PlaylistModal.svelte';
 	import GalleryModal from '$lib/components/GalleryModal.svelte';
+	import GamePopup from '$lib/components/GamePopup.svelte';
 	import { session } from '$lib/session.svelte';
 	import { nodeMedia } from '$lib/media';
 	import { cortex } from '$lib/cortex.svelte';
@@ -59,6 +60,11 @@
 	const prevNode = $derived(neighbour(-1));
 	const nextNode = $derived(neighbour(1));
 	let enterFrom = $state<1 | -1>(1);
+	// The game pop-up mounts on first open and then stays (the Java runtime starts once per page).
+	let gameMounted = $state(false);
+	$effect(() => {
+		if (session.gameOpen) gameMounted = true;
+	});
 	function step(dir: 1 | -1) {
 		const to = dir === 1 ? nextNode : prevNode;
 		if (!to) return;
@@ -198,6 +204,10 @@
 		<span aria-hidden="true">›</span>
 		<span class="tip">{nextNode.title}</span>
 	</button>
+{/if}
+
+{#if gameMounted}
+	<GamePopup open={session.gameOpen} onclose={() => (session.gameOpen = false)} />
 {/if}
 
 {#if playlistNode}

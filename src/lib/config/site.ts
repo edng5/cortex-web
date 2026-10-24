@@ -26,8 +26,7 @@ export const site = {
 		links: [
 			{ label: 'GitHub', url: 'https://github.com/edng5' },
 			{ label: 'LinkedIn', url: 'https://linkedin.com/in/edng5' },
-			{ label: 'YouTube', url: 'https://www.youtube.com/@edng5' },
-			{ label: 'Resume', url: '/resume.pdf' }
+			{ label: 'YouTube', url: 'https://www.youtube.com/@edng5' }
 		]
 	},
 

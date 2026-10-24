@@ -4,6 +4,7 @@
 	import { marked } from 'marked';
 	import { fly } from 'svelte/transition';
 	import { swipeDismiss } from '$lib/actions/swipe-dismiss';
+	import { session } from '$lib/session.svelte';
 	import { typeStyle } from '$lib/config/site';
 	import { carouselMedia, nodeMedia } from '$lib/media';
 	import MediaItem from './MediaItem.svelte';
@@ -29,14 +30,22 @@
 
 	// Body markdown is your own trusted content from /content.
 	const html = $derived(marked.parse(node.body, { async: false }) as string);
-	// Split the body at `<!-- carousel: name [round] -->` markers → html / carousel parts.
-	type BodyPart = { html: string } | { carousel: ReturnType<typeof carouselMedia>; round: boolean };
+	// Split the body at `<!-- carousel: name [round] -->` markers → html / carousel parts, and
+	// at `<!-- play: game -->` markers → a "Play" button for an in-browser game (desktop only).
+	type BodyPart =
+		| { html: string }
+		| { carousel: ReturnType<typeof carouselMedia>; round: boolean }
+		| { play: string };
 	const bodyParts = $derived.by(() => {
 		const bits = html.split(/<!--\s*carousel:\s*([\w-]+)(?:\s+(round))?\s*-->/);
 		const parts: BodyPart[] = [];
 		// split() with 2 capture groups yields [html, name, style, html, name, style, …]
 		for (let i = 0; i < bits.length; i += 3) {
-			parts.push({ html: bits[i] });
+			const sub = bits[i].split(/<!--\s*play:\s*([\w-]+)\s*-->/);
+			for (let j = 0; j < sub.length; j += 2) {
+				parts.push({ html: sub[j] });
+				if (j + 1 < sub.length) parts.push({ play: sub[j + 1] });
+			}
 			if (i + 1 < bits.length) parts.push({ carousel: carouselMedia(node, bits[i + 1]), round: bits[i + 2] === 'round' });
 		}
 		return parts;
@@ -172,6 +181,11 @@
 			{#each bodyParts as part, i (i)}
 				{#if 'html' in part}
 					{@html part.html}
+				{:else if 'play' in part}
+					<button class="play-game" onclick={() => (session.gameOpen = true)} aria-label="Play {part.play === 'topgun' ? 'Top Gun' : part.play}">
+						<span class="play-icon" aria-hidden="true"></span>
+						Play
+					</button>
 				{:else if part.carousel.length}
 					<div class="inline-carousel">
 						<MediaCarousel
@@ -358,6 +372,75 @@
 	.icon-btn img.logo {
 		object-fit: contain;
 		padding: 10px;
+	}
+	/* "Play" button for an in-browser game (desktop only: the game needs a keyboard). */
+	.play-game {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		margin: 6px 0 18px;
+		padding: 7px 22px 7px 7px;
+		border-radius: 99px;
+		border: 1px solid color-mix(in srgb, var(--accent) 70%, #fff 10%);
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--accent) 85%, #0ea5e9),
+			color-mix(in srgb, var(--accent) 55%, #0b1020)
+		);
+		color: #fff;
+		font: inherit;
+		font-size: 0.95rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		cursor: pointer;
+		box-shadow:
+			0 10px 24px -10px color-mix(in srgb, var(--accent) 80%, transparent),
+			inset 0 1px 0 rgba(255, 255, 255, 0.25);
+		transition:
+			transform 0.15s ease,
+			box-shadow 0.2s ease,
+			filter 0.2s ease;
+	}
+	.play-game:hover {
+		transform: translateY(-1px);
+		filter: brightness(1.08);
+		box-shadow:
+			0 14px 30px -10px color-mix(in srgb, var(--accent) 95%, transparent),
+			inset 0 1px 0 rgba(255, 255, 255, 0.3);
+	}
+	.play-game:active {
+		transform: translateY(0);
+	}
+	.play-game:focus-visible {
+		outline: 2px solid #fff;
+		outline-offset: 3px;
+	}
+	/* Round white disc with a triangle, like a media player's play button. */
+	.play-icon {
+		position: relative;
+		width: 30px;
+		height: 30px;
+		flex: none;
+		border-radius: 50%;
+		background: #fff;
+		box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+	}
+	.play-icon::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		translate: -35% -50%;
+		border-style: solid;
+		border-width: 7px 0 7px 11px;
+		border-color: transparent transparent transparent var(--accent);
+	}
+	@media (max-width: 720px) {
+		.play-game {
+			display: none;
+		}
 	}
 	.inline-carousel {
 		margin: 14px 0 18px;
