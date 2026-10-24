@@ -6,14 +6,18 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 export const AUDIT_RETENTION_DAYS = 90;
-const DB_FILE = path.resolve(process.cwd(), 'data', 'app.db');
+
+/** DATABASE_PATH puts the database on its own persistent disk in production (e.g. /var/data/app.db). */
+const dbFile = () =>
+	process.env.DATABASE_PATH ? path.resolve(process.env.DATABASE_PATH) : path.resolve(process.cwd(), 'data', 'app.db');
 
 let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
 	if (db) return db;
-	fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
-	db = new Database(DB_FILE);
+	const file = dbFile(); // read when first opened, after .env has been loaded
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	db = new Database(file);
 	db.pragma('journal_mode = WAL');
 	db.pragma('foreign_keys = ON');
 	db.exec(`

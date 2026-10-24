@@ -4,7 +4,11 @@
 import path from 'node:path';
 import { createMutex } from './concurrency';
 
-export const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'; // 384-dim, ~23 MB, fast on CPU
+export const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'; // 384-dim, fast on CPU
+// 8-bit weights and small batches keep memory low enough for a 512 MB server
+// (full precision with batches of 32 peaked at ~740 MB during `npm run ingest`).
+const DTYPE = 'q8';
+const BATCH = 4;
 
 type Extractor = (
 	texts: string[],
@@ -18,7 +22,7 @@ async function getExtractor(): Promise<Extractor> {
 		extractorPromise = (async () => {
 			const { pipeline, env } = await import('@huggingface/transformers');
 			env.cacheDir = path.resolve(process.cwd(), '.cache', 'transformers');
-			return (await pipeline('feature-extraction', EMBEDDING_MODEL)) as unknown as Extractor;
+			return (await pipeline('feature-extraction', EMBEDDING_MODEL, { dtype: DTYPE })) as unknown as Extractor;
 		})();
 		extractorPromise.catch(() => (extractorPromise = null));
 	}
@@ -37,7 +41,6 @@ export async function embed(texts: string[]): Promise<number[][]> {
 async function embedNow(texts: string[]): Promise<number[][]> {
 	const extractor = await getExtractor();
 	const out: number[][] = [];
-	const BATCH = 32;
 	for (let i = 0; i < texts.length; i += BATCH) {
 		const res = await extractor(texts.slice(i, i + BATCH), { pooling: 'mean', normalize: true });
 		out.push(...res.tolist());
