@@ -48,7 +48,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<Modal title={node.title} width="1100px" {onclose}>
+<Modal title={node.title} width="1100px" {onclose} swipeClose>
 	<div class="gallery" style="--accent: {typeStyle[node.type].color}">
 		{#if node.summary}<p class="summary">{node.summary}</p>{/if}
 

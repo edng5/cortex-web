@@ -82,8 +82,13 @@
 	let width = 0;
 	let height = 0;
 	let dpr = 1;
-	let view = { x: 0, y: 0, k: 1 };
+	let view = { x: 0, y: 0, k: 1 }; // what's drawn: the fitted view with the visitor's zoom/pan on top
+	let fit = { x: 0, y: 0, k: 1 }; // auto-fit that keeps the whole graph in view
+	let user = { x: 0, y: 0, k: 1 }; // visitor's pinch/wheel zoom and drag-to-pan (screen space)
+	let resetting = false; // easing `user` back to no zoom/pan (double-tap empty space)
 	let snapView = true; // jump (not ease) to the fitted view on first paint / resize
+	const MIN_ZOOM = 0.6;
+	const MAX_ZOOM = 4;
 	// Title pill beside the hovered node (fades in/out).
 	const pillAlpha = new Map<string, number>();
 
@@ -284,34 +289,148 @@
 		return best;
 	}
 
-	let drag: { node: SimNode; startX: number; startY: number; moved: boolean } | null = null;
+	// Pointers: drag a neuron to move it; drag empty space to pan; pinch (or the mouse wheel)
+	// to zoom; double-tap empty space to reset. On touch, holding a neuron shows its title
+	// until the finger lifts (and doesn't open it).
+	const LONG_PRESS_MS = 380;
+	const pointers = new Map<number, { x: number; y: number }>();
+	let drag: { node: SimNode; startX: number; startY: number; moved: boolean; long: boolean } | null = null;
+	let pressTimer: ReturnType<typeof setTimeout> | undefined;
+	let pan: { startX: number; startY: number; lastX: number; lastY: number; moved: boolean } | null = null;
+	let pinch: { dist: number; midX: number; midY: number } | null = null;
+	let panning = $state(false);
+	let lastTapAt = 0;
+
+	/** Zoom the visitor's view by `s` around a screen point (keeps that point under the finger). */
+	function zoomAt(clientX: number, clientY: number, s: number) {
+		const rect = canvas.getBoundingClientRect();
+		const px = clientX - rect.left;
+		const py = clientY - rect.top;
+		const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, user.k * s));
+		const f = k / user.k;
+		user.x = px - f * (px - user.x);
+		user.y = py - f * (py - user.y);
+		user.k = k;
+		resetting = false;
+	}
+
+	function twoPointers() {
+		const [a, b] = [...pointers.values()];
+		return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2 };
+	}
+
+	function releaseNode() {
+		clearTimeout(pressTimer);
+		if (!drag) return;
+		drag.node.fx = drag.node.fy = null;
+		if (drag.long) hoveredId = null;
+		drag = null;
+	}
 
 	function onPointerDown(e: PointerEvent) {
+		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		try {
+			canvas.setPointerCapture(e.pointerId);
+		} catch {
+			/* pointer already gone (e.g. lifted mid-gesture); keep tracking without capture */
+		}
+
+		// Second finger: switch to pinch-zoom (drops any neuron drag or pan in progress).
+		if (pointers.size === 2) {
+			releaseNode();
+			pan = null;
+			panning = false;
+			pinch = twoPointers();
+			return;
+		}
+		if (pointers.size > 2) return;
+
 		const n = nodeAt(e.clientX, e.clientY);
-		if (!n) return;
-		canvas.setPointerCapture(e.pointerId);
-		drag = { node: n, startX: e.clientX, startY: e.clientY, moved: false };
-		n.fx = n.x;
-		n.fy = n.y;
+		if (n) {
+			drag = { node: n, startX: e.clientX, startY: e.clientY, moved: false, long: false };
+			n.fx = n.x;
+			n.fy = n.y;
+			if (e.pointerType !== 'mouse') {
+				pressTimer = setTimeout(() => {
+					if (drag && !drag.moved) {
+						drag.long = true;
+						hoveredId = drag.node.id;
+					}
+				}, LONG_PRESS_MS);
+			}
+		} else {
+			pan = { startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, moved: false };
+		}
 	}
 
 	function onPointerMove(e: PointerEvent) {
+		if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+		if (pinch && pointers.size >= 2) {
+			const now = twoPointers();
+			zoomAt(now.midX, now.midY, now.dist / pinch.dist);
+			user.x += now.midX - pinch.midX; // two-finger drag pans too
+			user.y += now.midY - pinch.midY;
+			pinch = now;
+			return;
+		}
 		if (drag) {
-			if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 4) drag.moved = true;
+			if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6) {
+				drag.moved = true;
+				if (!drag.long) clearTimeout(pressTimer);
+			}
 			const p = toWorld(e.clientX, e.clientY);
 			drag.node.fx = p.x;
 			drag.node.fy = p.y;
 			return;
 		}
-		hoveredId = nodeAt(e.clientX, e.clientY)?.id ?? null;
+		if (pan) {
+			if (!pan.moved && Math.hypot(e.clientX - pan.startX, e.clientY - pan.startY) > 4) {
+				pan.moved = true;
+				panning = true;
+				resetting = false;
+			}
+			if (pan.moved) {
+				user.x += e.clientX - pan.lastX;
+				user.y += e.clientY - pan.lastY;
+			}
+			pan.lastX = e.clientX;
+			pan.lastY = e.clientY;
+			return;
+		}
+		if (e.pointerType === 'mouse') hoveredId = nodeAt(e.clientX, e.clientY)?.id ?? null;
 	}
 
-	function onPointerUp() {
-		if (!drag) return;
-		const { node, moved } = drag;
-		node.fx = node.fy = null;
-		drag = null;
-		if (!moved) onselect?.(node.id);
+	function onPointerUp(e: PointerEvent, cancelled = false) {
+		pointers.delete(e.pointerId);
+
+		if (pinch) {
+			if (pointers.size < 2) {
+				pinch = null;
+				// One finger still down: keep panning with it (no tap).
+				const rest = [...pointers.values()][0];
+				pan = rest ? { startX: rest.x, startY: rest.y, lastX: rest.x, lastY: rest.y, moved: true } : null;
+				panning = !!rest;
+			}
+			return;
+		}
+		if (drag) {
+			const { node, moved, long } = drag;
+			releaseNode();
+			if (!moved && !long && !cancelled) onselect?.(node.id);
+			return;
+		}
+		if (pan) {
+			const tapped = !pan.moved && !cancelled;
+			pan = null;
+			panning = false;
+			if (tapped) {
+				const now = performance.now();
+				if (now - lastTapAt < 320) resetting = true; // double-tap: back to the whole graph
+				lastTapAt = now;
+			}
+		}
 	}
 
 	// ── Render loop ───────────────────────────────────────────────────────────
@@ -329,6 +448,24 @@
 			snapView = true;
 		});
 		ro.observe(canvas);
+
+		// Mouse wheel / trackpad pinch zooms around the cursor.
+		const onWheel = (e: WheelEvent) => {
+			e.preventDefault();
+			zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+		};
+		canvas.addEventListener('wheel', onWheel, { passive: false });
+		// Dev-only: inspect the view from the console (window.__graphView()).
+		if (import.meta.env.DEV) (window as any).__graphView = () => ({ view: { ...view }, fit: { ...fit }, user: { ...user } });
+
+		// Phones fire a delayed "click" after a tap, hit-tested where the finger was. A tap on a
+		// neuron opens a panel or gallery right there, so that click would land on it (e.g. open
+		// the first photo of the Photography gallery). Taps are handled by the pointer events
+		// above, so cancel the touch's follow-up click.
+		const onTouchEnd = (e: TouchEvent) => {
+			if (e.cancelable) e.preventDefault();
+		};
+		canvas.addEventListener('touchend', onTouchEnd, { passive: false });
 
 		let energy = 1;
 		let clock = 0; // energy-scaled time, so speed changes never cause jumps
@@ -370,20 +507,56 @@
 				minY = Math.min(minY, n.y! - n.r); maxY = Math.max(maxY, n.y! + n.r);
 			}
 			const availW = Math.max(200, width - insetLeft - insetRight);
-			const pad = 70;
-			const padTop = 120; // clear the logo + rotating titles in the top-left
-			const padBottom = 150; // keep neurons clear of the ask bar / captions
+			// Phones: tighter margins, and the graph may overflow the sides a little (drag to pan)
+			// so neurons aren't tiny on a narrow portrait screen.
+			const phone = width < 720;
+			const pad = phone ? 10 : 70;
+			const padTop = phone ? 96 : 120; // clear the logo + rotating titles in the top-left
+			const padBottom = phone ? 130 : 150; // keep neurons clear of the ask bar / captions
+			const overflowX = phone ? 1.4 : 1;
 			const k = nodes.length
-				? Math.min(1.6, (availW - pad * 2) / (maxX - minX || 1), (height - padTop - padBottom) / (maxY - minY || 1))
+				? Math.min(
+						1.6,
+						((availW - pad * 2) / (maxX - minX || 1)) * overflowX,
+						(height - padTop - padBottom) / (maxY - minY || 1)
+					)
 				: 1;
 			const tk = Math.max(0.3, k);
 			const tx = insetLeft + availW / 2 - ((minX + maxX) / 2) * tk;
 			const ty = padTop + (height - padTop - padBottom) / 2 - ((minY + maxY) / 2) * tk;
 			const ease = snapView ? 1 : 0.04;
 			snapView = false;
-			view.k += (tk - view.k) * ease;
-			view.x += (tx - view.x) * ease;
-			view.y += (ty - view.y) * ease;
+			fit.k += (tk - fit.k) * ease;
+			fit.x += (tx - fit.x) * ease;
+			fit.y += (ty - fit.y) * ease;
+
+			if (resetting) {
+				user.k += (1 - user.k) * 0.18;
+				user.x += (0 - user.x) * 0.18;
+				user.y += (0 - user.y) * 0.18;
+				if (Math.abs(user.k - 1) < 0.002 && Math.abs(user.x) < 0.5 && Math.abs(user.y) < 0.5) {
+					user = { x: 0, y: 0, k: 1 };
+					resetting = false;
+				}
+			}
+			view.k = fit.k * user.k;
+			view.x = fit.x * user.k + user.x;
+			view.y = fit.y * user.k + user.y;
+
+			// Never let the graph be panned completely off screen.
+			if (nodes.length) {
+				const keep = 60;
+				const sx0 = view.x + minX * view.k;
+				const sx1 = view.x + maxX * view.k;
+				const sy0 = view.y + minY * view.k;
+				const sy1 = view.y + maxY * view.k;
+				const dx = sx1 < keep ? keep - sx1 : sx0 > width - keep ? width - keep - sx0 : 0;
+				const dy = sy1 < keep ? keep - sy1 : sy0 > height - keep ? height - keep - sy0 : 0;
+				user.x += dx;
+				user.y += dy;
+				view.x += dx;
+				view.y += dy;
+			}
 
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			ctx.clearRect(0, 0, width, height);
@@ -536,6 +709,9 @@
 		return () => {
 			cancelAnimationFrame(raf);
 			ro.disconnect();
+			canvas.removeEventListener('wheel', onWheel);
+			canvas.removeEventListener('touchend', onTouchEnd);
+			clearTimeout(pressTimer);
 			sim?.stop();
 		};
 	});
@@ -651,11 +827,15 @@
 	bind:this={canvas}
 	class="graph"
 	class:pointer={!!hoveredId}
-	aria-label="Network of Edward's experience, projects, publications, skills, interests and quotes. Use the list below the graph for keyboard access."
+	class:panning
+	aria-label="Network of Edward's experience, projects, publications, skills, interests and quotes. Drag to pan, pinch or scroll to zoom, double-tap to reset. Use the list below the graph for keyboard access."
 	onpointerdown={onPointerDown}
 	onpointermove={onPointerMove}
-	onpointerup={onPointerUp}
-	onpointerleave={() => (hoveredId = null)}
+	onpointerup={(e) => onPointerUp(e)}
+	onpointercancel={(e) => onPointerUp(e, true)}
+	onpointerleave={(e) => {
+		if (e.pointerType === 'mouse' && !drag) hoveredId = null;
+	}}
 ></canvas>
 
 {#if hovered}
@@ -671,9 +851,16 @@
 		display: block;
 		touch-action: none;
 		outline: none;
+		/* Holding a neuron shows its title, not the phone's copy/save menu. */
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 	.pointer {
 		cursor: pointer;
+	}
+	.panning {
+		cursor: grabbing;
 	}
 	.sr-only {
 		position: absolute;

@@ -5,14 +5,25 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
+	import { swipeDismiss } from '$lib/actions/swipe-dismiss';
 
 	let {
 		title,
 		onclose,
 		width = '640px',
 		bare = false,
+		swipeClose = false,
 		children
-	}: { title: string; onclose: () => void; width?: string; bare?: boolean; children: Snippet } = $props();
+	}: {
+		title: string;
+		onclose: () => void;
+		width?: string;
+		bare?: boolean;
+		/** Phones: swipe the card down to close it (for node views, not pop-ups with draggable content). */
+		swipeClose?: boolean;
+		children: Snippet;
+	} = $props();
+	let swiped = $state(false);
 
 	let card: HTMLElement;
 	$effect(() => {
@@ -40,7 +51,14 @@
 		aria-label={title}
 		tabindex="-1"
 		style="--w: {width}"
-		transition:fly={{ y: 16, duration: 220 }}
+		transition:fly={{ y: 16, duration: swiped ? 0 : 220 }}
+		use:swipeDismiss={{
+			enabled: swipeClose,
+			ondismiss: () => {
+				swiped = true;
+				onclose();
+			}
+		}}
 	>
 		{#if !bare}
 			<header>

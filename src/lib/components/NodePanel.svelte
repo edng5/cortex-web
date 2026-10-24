@@ -3,6 +3,7 @@
 <script lang="ts">
 	import { marked } from 'marked';
 	import { fly } from 'svelte/transition';
+	import { swipeDismiss } from '$lib/actions/swipe-dismiss';
 	import { typeStyle } from '$lib/config/site';
 	import { carouselMedia, nodeMedia } from '$lib/media';
 	import MediaItem from './MediaItem.svelte';
@@ -57,6 +58,8 @@
 	const isQuote = $derived(node.type === 'quote');
 
 	let panel: HTMLElement;
+	// Swiped away on a phone: it has already slid off, so skip the sideways exit animation.
+	let swiped = $state(false);
 	$effect(() => {
 		void node.id;
 		panel?.scrollTo({ top: 0 });
@@ -72,8 +75,15 @@
 	tabindex="-1"
 	aria-labelledby="panel-title"
 	style="--accent: {style.color}"
-	transition:fly={{ x: 40, duration: 260 }}
+	transition:fly={{ x: swiped ? 0 : 40, duration: swiped ? 0 : 260 }}
+	use:swipeDismiss={{
+		ondismiss: () => {
+			swiped = true;
+			onclose();
+		}
+	}}
 >
+	<span class="grabber" aria-hidden="true"></span>
 	<header>
 		<span class="badge">{style.label.replace(/s$/, '')}</span>
 		<button class="close" onclick={onclose} aria-label="Close">✕</button>
@@ -216,6 +226,10 @@
 		z-index: 30;
 		outline: none;
 	}
+	/* Phones: a bottom sheet; the grabber hints that it can be swiped down to close. */
+	.grabber {
+		display: none;
+	}
 	@media (max-width: 720px) {
 		.panel {
 			top: auto;
@@ -224,6 +238,15 @@
 			bottom: 8px;
 			width: auto;
 			max-height: 72svh;
+			padding-top: 16px;
+		}
+		.grabber {
+			display: block;
+			width: 40px;
+			height: 4px;
+			margin: -6px auto 8px;
+			border-radius: 99px;
+			background: rgba(148, 163, 184, 0.45);
 		}
 	}
 	header {
