@@ -1,6 +1,7 @@
 <!--
   All projects as floating cards (like the pictures on the left): they drift, can be
   dragged around, and a click opens the project just like clicking its neuron.
+  Phones get a swipeable wheel instead: one big card at a time, neighbours peeking in.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -8,17 +9,14 @@
 	import { session } from '$lib/session.svelte';
 	import { typeStyle } from '$lib/config/site';
 	import { nodeMedia } from '$lib/media';
+	import { rankBySize } from '$lib/graph-rank';
 	import type { GraphEdge, OntologyNode } from '$lib/types';
 
 	let { nodes, edges, onopen }: { nodes: OntologyNode[]; edges: GraphEdge[]; onopen: (id: string) => void } =
 		$props();
 
 	// Biggest neuron first: same size formula as the graph (importance weight + connections).
-	const size = (n: OntologyNode) => {
-		const degree = edges.filter((e) => e.source === n.id || e.target === n.id).length;
-		return n.weight * 3 + Math.sqrt(degree) * 1.5;
-	};
-	const projects = $derived(nodes.filter((n) => n.type === 'project').sort((a, b) => size(b) - size(a)));
+	const projects = $derived(rankBySize(nodes.filter((n) => n.type === 'project'), edges));
 	const accent = typeStyle.project.color;
 
 	function thumb(n: OntologyNode): string | null {
@@ -82,6 +80,22 @@
 		dragging = null;
 	}
 
+	// ── Phone wheel ──────────────────────────────────────────────────────────
+	const phone = $derived(W <= 720);
+	let wheel = $state<HTMLElement>();
+	let current = $state(0);
+	function onWheelScroll() {
+		if (!wheel) return;
+		const card = wheel.querySelector<HTMLElement>('.slide');
+		if (!card) return;
+		const step = card.offsetWidth + 14; // card width + gap
+		current = Math.max(0, Math.min(projects.length - 1, Math.round(wheel.scrollLeft / step)));
+	}
+	function goTo(i: number) {
+		const card = wheel?.querySelectorAll<HTMLElement>('.slide')[i];
+		card?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+	}
+
 	onMount(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
@@ -109,10 +123,32 @@
 >
 	<header>
 		<h2>Projects</h2>
-		<p>Drag them around · click one to open it</p>
+		<p>{phone ? 'Swipe through · tap one to open it' : 'Drag them around · click one to open it'}</p>
 		<button class="close" onclick={() => (session.projectsOpen = false)} aria-label="Close">✕</button>
 	</header>
 
+	{#if phone}
+		<div class="wheel" bind:this={wheel} onscroll={onWheelScroll} aria-label="Projects">
+			{#each projects as p, i (p.id)}
+				{@const t = thumb(p)}
+				<button class="slide" class:active={i === current} onclick={() => onopen(p.id)} aria-label="Open {p.title}">
+					<span class="thumb">
+						{#if t}<img src={t} alt="" draggable="false" />{:else}<span class="ph">{p.title[0]}</span>{/if}
+					</span>
+					<strong>{p.title}</strong>
+					{#if p.subtitle}<span class="sub">{p.subtitle}</span>{/if}
+				</button>
+			{/each}
+		</div>
+		<div class="wheel-nav">
+			<button class="arrow" onclick={() => goTo(current - 1)} disabled={current === 0} aria-label="Previous project">‹</button>
+			<span class="count">{current + 1} / {projects.length}</span>
+			<button class="arrow" onclick={() => goTo(current + 1)} disabled={current === projects.length - 1} aria-label="Next project">›</button>
+		</div>
+		<div class="dots" aria-hidden="true">
+			{#each projects as p, i (p.id)}<span class:on={i === current}></span>{/each}
+		</div>
+	{:else}
 	{#each layout as { p, x, y, tilt }, i (p.id)}
 		{@const o = offsets[p.id] ?? { dx: 0, dy: 0, z: 0 }}
 		{@const t = thumb(p)}
@@ -137,6 +173,7 @@
 			</span>
 		</button>
 	{/each}
+	{/if}
 </div>
 
 <style>
@@ -248,6 +285,111 @@
 		color: var(--muted);
 		font-size: 0.8rem;
 		padding: 0 2px;
+	}
+	/* ── Phone wheel ── (vertically centred: card ≈ thumb + 150px, then arrows and dots) */
+	.desk {
+		--wheel-top: max(92px, calc((100svh - min(52vw, 260px) - 230px) / 2));
+	}
+	.wheel {
+		position: absolute;
+		top: var(--wheel-top);
+		left: 0;
+		right: 0;
+		display: flex;
+		gap: 14px;
+		overflow-x: auto;
+		scroll-snap-type: x mandatory;
+		padding: 18px 12vw 22px; /* first and last cards can centre too */
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+	}
+	.wheel::-webkit-scrollbar {
+		display: none;
+	}
+	.slide {
+		flex: 0 0 76vw;
+		scroll-snap-align: center;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px 12px 16px;
+		border-radius: 16px;
+		border: 1px solid color-mix(in srgb, var(--accent) 55%, rgba(148, 163, 184, 0.2));
+		background: rgba(10, 14, 26, 0.92);
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		box-shadow:
+			0 18px 36px -14px rgba(0, 0, 0, 0.9),
+			0 0 34px -12px color-mix(in srgb, var(--accent) 60%, transparent);
+		opacity: 0.55;
+		scale: 0.92;
+		transition:
+			opacity 0.25s ease,
+			scale 0.25s ease;
+		cursor: pointer;
+	}
+	.slide.active {
+		opacity: 1;
+		scale: 1;
+	}
+	.slide .thumb {
+		height: min(52vw, 260px);
+	}
+	.slide strong {
+		font-size: 1.1rem;
+	}
+	.wheel-nav {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(var(--wheel-top) + min(52vw, 260px) + 150px);
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		gap: 18px;
+	}
+	.arrow {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		border: 1px solid color-mix(in srgb, var(--accent) 45%, rgba(148, 163, 184, 0.2));
+		background: rgba(10, 14, 26, 0.8);
+		color: #fff;
+		font-size: 22px;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.arrow:disabled {
+		opacity: 0.3;
+		cursor: default;
+	}
+	.count {
+		color: var(--muted);
+		font-size: 0.85rem;
+		min-width: 52px;
+		text-align: center;
+	}
+	.dots {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(var(--wheel-top) + min(52vw, 260px) + 204px);
+		display: flex;
+		justify-content: center;
+		gap: 6px;
+	}
+	.dots span {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: rgba(148, 163, 184, 0.35);
+		transition: background 0.2s, width 0.2s;
+	}
+	.dots span.on {
+		width: 16px;
+		border-radius: 99px;
+		background: var(--accent);
 	}
 	@keyframes deal {
 		from {

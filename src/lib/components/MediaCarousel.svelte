@@ -63,7 +63,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="carousel" class:round role="region" aria-roledescription="carousel" aria-label="{title} media">
+<div class="carousel" class:round data-swipe-ignore role="region" aria-roledescription="carousel" aria-label="{title} media">
 	<div class="stage" onpointerdown={down} onpointerup={up} role="presentation" style="--stage-h: {stageHeight}">
 		{#key current.src}
 			<div class="slide">

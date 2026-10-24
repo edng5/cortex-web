@@ -39,6 +39,8 @@
 		inset: 0;
 		z-index: 100;
 		display: grid;
+		/* minmax(0, 1fr): the track never grows past the screen, so the picture stays centred. */
+		grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 		place-items: center;
 		padding: 32px;
 		background: rgba(3, 5, 10, 0.86);
@@ -55,7 +57,8 @@
 		max-height: 100%;
 	}
 	img {
-		max-width: min(1200px, 92vw);
+		/* % of the padded area, not of the viewport, so the picture can't overflow the side. */
+		max-width: min(1200px, 100%);
 		max-height: calc(100svh - 120px);
 		object-fit: contain;
 		border-radius: 12px;
@@ -63,8 +66,13 @@
 	}
 	/* Vector art has no resolution limit: show it big. */
 	img.vector {
-		width: min(1100px, 92vw);
+		width: min(1100px, 100%);
 		height: auto;
+	}
+	@media (max-width: 720px) {
+		.backdrop {
+			padding: 64px 12px 24px; /* clear the close button; use the full width */
+		}
 	}
 	figcaption {
 		color: var(--muted);

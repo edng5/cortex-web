@@ -48,7 +48,7 @@
 	.float {
 		position: fixed;
 		top: 20px;
-		left: 20px;
+		left: 64px; /* room for the "previous node" button at the screen edge */
 		bottom: 20px;
 		width: var(--media-w, 420px);
 		display: flex;

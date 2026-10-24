@@ -18,6 +18,7 @@
 	import { cortex } from '$lib/cortex.svelte';
 	import { site, typeStyle } from '$lib/config/site';
 	import { NODE_TYPES, type NodeType } from '$lib/types';
+	import { rankBySize } from '$lib/graph-rank';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
@@ -47,7 +48,23 @@
 	const selected = $derived(found && !playlistNode && !galleryNode ? found : null);
 
 	let innerWidth = $state(1200);
-	const insetRight = $derived(selected && innerWidth > 720 ? 470 : 0);
+	const insetRight = $derived(selected && innerWidth > 720 ? 518 : 0);
+
+	// ‹ › between nodes, biggest neuron first (wraps around). Web: buttons at the screen
+	// edges; phones: swipe the info panel sideways.
+	const ranked = $derived(rankBySize(graph.nodes, graph.edges));
+	const rankIndex = $derived(found ? ranked.findIndex((n) => n.id === found.id) : -1);
+	const neighbour = (dir: 1 | -1) =>
+		rankIndex < 0 || ranked.length < 2 ? null : ranked[(rankIndex + dir + ranked.length) % ranked.length];
+	const prevNode = $derived(neighbour(-1));
+	const nextNode = $derived(neighbour(1));
+	let enterFrom = $state<1 | -1>(1);
+	function step(dir: 1 | -1) {
+		const to = dir === 1 ? nextNode : prevNode;
+		if (!to) return;
+		enterFrom = dir;
+		cortex.select(to.id);
+	}
 
 	// Media floats on the left only when there is room for it beside the panel and graph;
 	// on narrower screens it lives inside the info panel instead.
@@ -165,9 +182,22 @@
 			{graph}
 			onclose={() => cortex.reset()}
 			onselect={(id) => cortex.select(id)}
+			onstep={step}
+			{enterFrom}
 			inlineMedia={!floatMedia}
 		/>
 	{/key}
+{/if}
+
+{#if found && innerWidth > 720 && prevNode && nextNode}
+	<button class="node-step prev" onclick={() => step(-1)} aria-label="Previous node: {prevNode.title}">
+		<span aria-hidden="true">‹</span>
+		<span class="tip">{prevNode.title}</span>
+	</button>
+	<button class="node-step next" onclick={() => step(1)} aria-label="Next node: {nextNode.title}">
+		<span aria-hidden="true">›</span>
+		<span class="tip">{nextNode.title}</span>
+	</button>
 {/if}
 
 {#if playlistNode}
@@ -353,5 +383,62 @@
 		background: #0b1020;
 		padding: 12px;
 		border-radius: 8px;
+	}
+	/* ‹ › next / previous node (web): fixed at the screen edges, above panels and pop-ups. */
+	.node-step {
+		position: fixed;
+		top: 50%;
+		translate: 0 -50%;
+		z-index: 70;
+		width: 40px;
+		height: 64px;
+		display: grid;
+		place-items: center;
+		border-radius: 12px;
+		border: 1px solid rgba(148, 163, 184, 0.25);
+		background: rgba(10, 14, 26, 0.72);
+		backdrop-filter: blur(10px);
+		color: #e2e8f0;
+		font-size: 30px;
+		line-height: 1;
+		cursor: pointer;
+		transition:
+			background 0.2s,
+			border-color 0.2s;
+	}
+	.node-step:hover {
+		background: rgba(30, 41, 59, 0.9);
+		border-color: rgba(167, 139, 250, 0.6);
+	}
+	.node-step.prev {
+		left: 12px;
+	}
+	.node-step.next {
+		right: 12px;
+	}
+	/* The neighbour's name, shown on hover. */
+	.node-step .tip {
+		position: absolute;
+		top: 50%;
+		translate: 0 -50%;
+		white-space: nowrap;
+		padding: 5px 10px;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		background: rgba(10, 14, 26, 0.92);
+		border: 1px solid rgba(148, 163, 184, 0.25);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.15s;
+	}
+	.node-step.prev .tip {
+		left: calc(100% + 8px);
+	}
+	.node-step.next .tip {
+		right: calc(100% + 8px);
+	}
+	.node-step:hover .tip,
+	.node-step:focus-visible .tip {
+		opacity: 1;
 	}
 </style>

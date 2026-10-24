@@ -17,10 +17,14 @@
 		graph: GraphData;
 		onclose: () => void;
 		onselect: (id: string) => void;
+		/** Phones: swipe the panel sideways to step to the next (1) / previous (-1) node by size. */
+		onstep?: (dir: 1 | -1) => void;
+		/** Which side the panel slides in from: 1 = right (next), -1 = left (previous). */
+		enterFrom?: 1 | -1;
 		/** Show images/videos inside the panel (mobile). On desktop they float on the left instead. */
 		inlineMedia?: boolean;
 	}
-	let { node, graph, onclose, onselect, inlineMedia = true }: Props = $props();
+	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true }: Props = $props();
 	const media = $derived(nodeMedia(node, true));
 
 	// Body markdown is your own trusted content from /content.
@@ -75,12 +79,18 @@
 	tabindex="-1"
 	aria-labelledby="panel-title"
 	style="--accent: {style.color}"
-	transition:fly={{ x: swiped ? 0 : 40, duration: swiped ? 0 : 260 }}
+	transition:fly={{ x: swiped ? 0 : 40 * enterFrom, duration: swiped ? 0 : 260 }}
 	use:swipeDismiss={{
 		ondismiss: () => {
 			swiped = true;
 			onclose();
-		}
+		},
+		onswipex: onstep
+			? (dir) => {
+					swiped = true;
+					onstep(dir);
+				}
+			: undefined
 	}}
 >
 	<span class="grabber" aria-hidden="true"></span>
@@ -125,7 +135,7 @@
 	{#if node.summary}<p class="summary">{node.summary}</p>{/if}
 
 	{#if inlineMedia && media.length}
-		<div class="gallery">
+		<div class="gallery" data-swipe-ignore>
 			{#if media.length === 1}
 				<MediaItem item={media[0]} title={node.title} maxHeight="320px" />
 			{:else}
@@ -212,7 +222,7 @@
 	.panel {
 		position: fixed;
 		top: 16px;
-		right: 16px;
+		right: 64px; /* room for the "next node" button at the screen edge */
 		bottom: 16px;
 		width: min(440px, calc(100vw - 32px));
 		overflow-y: auto;
