@@ -25,7 +25,7 @@ related: [int-video-games, edu-john-cabot]
 ![Top Gun logo](/images/mini-games/top-gun.jpg)
 
 A flight-combat simulation game where the player completes missions against waves of fighter jets
-to win the war. Players progress through three missions of varying difficulty to finish the game. You can play it right in your browser on a computer: the original Java game runs on a Java runtime inside the page (W, A, S and D to fly, Space for guns, Shift for missiles).
+to win the war. Players progress through three missions of varying difficulty to finish the game. You can play it right in your browser on a computer: the original Java game was ported to TypeScript to run on the page (W, A, S and D to fly, Space for guns, Shift for missiles). Signed-in players' best scores go on a global high-score board.
 
 <!-- play: topgun -->
 

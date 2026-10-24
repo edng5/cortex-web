@@ -1,8 +1,8 @@
 <!--
-  Pop-up for the playable Top Gun. Once opened it stays mounted (just hidden when closed),
-  because the in-browser Java runtime can only start once per page load: reopening shows the
-  same game, still where you left it. Closing (Esc, ✕ or a click outside) asks first, so a
-  stray key press doesn't end a mission.
+  Pop-up for the playable Top Gun. Once opened it stays mounted (just hidden and paused when
+  closed), so reopening shows the same game, still where you left it. Closing (Esc, ✕ or a
+  click outside) asks first, so a stray key press doesn't end a mission; the game pauses while
+  asking. Choosing Quit in the game's own menu saves and closes straight away.
 -->
 <script lang="ts">
 	import TopGunGame from './TopGunGame.svelte';
@@ -48,13 +48,13 @@
 >
 	<div class="card">
 		<button class="close" onclick={askClose} aria-label="Close the game">✕</button>
-		<TopGunGame autostart />
+		<TopGunGame autostart active={open && !confirming} onquit={close} />
 
 		{#if confirming}
 			<div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="leave-title">
 				<div class="box">
 					<h2 id="leave-title">Leave the game?</h2>
-					<p>It keeps your place: reopen it any time before you leave the site.</p>
+					<p>It keeps your place: reopen it any time before you leave the site. Upgrades and high scores are saved.</p>
 					<div class="actions">
 						<button class="keep" bind:this={keepBtn} onclick={keepPlaying}>Keep playing</button>
 						<button class="leave" onclick={close}>Close game</button>

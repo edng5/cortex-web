@@ -1,65 +1,149 @@
 <!--
-  Top Gun, Edward's high-school Java game, playing in the browser. CheerpJ runs the original
-  Java Swing code (packaged as /games/topgun/topgun.jar) on a JVM compiled to WebAssembly,
-  entirely in the visitor's browser. Desktop only: the game needs a keyboard.
-  The Java runtime can start only once per page load, so callers keep this mounted.
+  Top Gun, Edward's high-school Java game, ported to TypeScript and drawn on a <canvas>
+  ($lib/games/topgun). Desktop only: it's played with the keyboard.
+  `active` = false pauses the game (e.g. pop-up hidden, or the "Leave the game?" prompt).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { GAME_H, GAME_W, TICK_MS, TopGun, loadAssets } from '$lib/games/topgun/TopGun';
+	import { session } from '$lib/session.svelte';
 
-	let { autostart = false }: { autostart?: boolean } = $props();
+	let {
+		autostart = false,
+		active = true,
+		onquit
+	}: { autostart?: boolean; active?: boolean; onquit?: () => void } = $props();
 
-	const CHEERPJ = 'https://cjrtnc.leaningtech.com/4.3/loader.js';
-	const GAME_W = 600;
-	const GAME_H = 555 + 26; // the game window plus its title bar
-
-	let screen = $state<HTMLElement>();
-	let status = $state<'checking' | 'phone' | 'ready' | 'loading' | 'running' | 'error'>('checking');
-	let message = $state('');
+	let canvas = $state<HTMLCanvasElement>();
+	let status = $state<'checking' | 'phone' | 'loading' | 'ready' | 'running' | 'error'>('checking');
+	let game: TopGun | null = null;
+	const held = new Set<string>();
 
 	onMount(() => {
 		const phone = matchMedia('(max-width: 720px), (pointer: coarse)').matches;
-		status = phone ? 'phone' : 'ready';
-		if (!phone && autostart) start();
+		if (phone) {
+			status = 'phone';
+			return;
+		}
+		status = 'loading';
+		let raf = 0;
+		let disposed = false;
+		loadAssets()
+			.then((assets) => {
+				if (disposed) return;
+				game = new TopGun(assets);
+				game.onQuit = () => onquit?.();
+				game.onMissionEnd = submitScore;
+				game.loggedIn = !!session.user;
+				loadBoard();
+				status = autostart ? 'running' : 'ready';
+				const ctx = setupCanvas();
+				let last = performance.now();
+				let acc = 0;
+				const frame = (now: number) => {
+					raf = requestAnimationFrame(frame);
+					const dt = Math.min(250, now - last);
+					last = now;
+					if (!game || !ctx || status !== 'running' || !active) return;
+					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
+					acc += dt;
+					let steps = 0;
+					while (acc >= TICK_MS && steps < 8) {
+						game.tick();
+						acc -= TICK_MS;
+						steps++;
+					}
+					if (steps === 8) acc = 0; // fell far behind (tab was busy): don't fast-forward
+					game.paint(ctx, now);
+				};
+				raf = requestAnimationFrame(frame);
+				if (autostart) queueMicrotask(() => canvas?.focus());
+			})
+			.catch((err) => {
+				console.error('[topgun]', err);
+				status = 'error';
+			});
+		return () => {
+			disposed = true;
+			cancelAnimationFrame(raf);
+			game?.save();
+		};
 	});
 
-	function loadScript(src: string): Promise<void> {
-		return new Promise((resolve, reject) => {
-			if (document.querySelector(`script[src="${src}"]`)) return resolve();
-			const s = document.createElement('script');
-			s.src = src;
-			s.onload = () => resolve();
-			s.onerror = () => reject(new Error('Could not load the Java runtime.'));
-			document.head.appendChild(s);
-		});
+	// Draw one frame right away (so the menu shows before the first tick), sharp on HiDPI screens.
+	function setupCanvas(): CanvasRenderingContext2D | null {
+		if (!canvas) return null;
+		const dpr = Math.min(window.devicePixelRatio || 1, 2);
+		canvas.width = GAME_W * dpr;
+		canvas.height = GAME_H * dpr;
+		const ctx = canvas.getContext('2d');
+		ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+		if (ctx && game) game.paint(ctx, performance.now());
+		return ctx;
 	}
 
-	async function start() {
-		if (!screen || status === 'loading' || status === 'running') return;
-		status = 'loading';
+	// ── Global high scores ──
+	type Board = NonNullable<TopGun['global']>;
+	async function loadBoard() {
 		try {
-			await loadScript(CHEERPJ);
-			const w = window as unknown as {
-				cheerpjInit: (o?: object) => Promise<void>;
-				cheerpjCreateDisplay: (w: number, h: number, parent?: HTMLElement) => HTMLElement;
-				cheerpjRunJar: (jar: string, ...args: string[]) => Promise<number>;
-			};
-			// ?fps logs frames per second to the console (for tuning); dev only: ?jar=name loads
-			// /games/topgun/topgun-name.jar instead (to compare builds).
-			const params = new URLSearchParams(location.search);
-			const jarName = import.meta.env.DEV && params.get('jar');
-			await w.cheerpjInit({ version: 8, status: 'splash', javaProperties: params.has('fps') ? ['tg.fps=1'] : [] });
-			w.cheerpjCreateDisplay(-1, -1, screen);
-			status = 'running';
-			// Resolves when the game exits ("Quit" in its menu, which also saves progress).
-			await w.cheerpjRunJar(jarName ? `/app/games/topgun/topgun-${jarName}.jar` : '/app/games/topgun/topgun.jar');
-			status = 'ready';
-			message = 'Thanks for playing! Your progress was saved in this browser.';
-		} catch (err) {
-			console.error('[topgun]', err);
-			status = 'error';
-			message = 'The game could not start in this browser. Try a recent Chrome, Edge or Firefox on a computer.';
+			const res = await fetch('/api/topgun/scores');
+			if (res.ok && game) game.global = (await res.json()) as Board;
+		} catch {
+			/* offline: the high scores screen falls back to this browser's scores */
 		}
+	}
+	async function submitScore(mission: number, score: number) {
+		if (!session.user || score <= 0) return;
+		try {
+			const res = await fetch('/api/topgun/scores', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mission, score })
+			});
+			if (res.ok && game) game.global = (await res.json()) as Board;
+		} catch {
+			/* offline: the score still counts in this browser */
+		}
+	}
+	$effect(() => {
+		const signedIn = !!session.user;
+		if (game) game.loggedIn = signedIn;
+	});
+
+	// Paused while hidden: save, and let go of held keys so the plane doesn't keep turning.
+	$effect(() => {
+		if (!active) {
+			releaseAll();
+			game?.save();
+		} else if (status === 'running') {
+			queueMicrotask(() => canvas?.focus());
+			loadBoard(); // reopened: refresh the global high scores
+		}
+	});
+
+	function start() {
+		if (status !== 'ready') return;
+		status = 'running';
+		canvas?.focus();
+	}
+
+	function onKeyDown(e: KeyboardEvent) {
+		if (!game || status !== 'running' || !active) return;
+		if (game.keyPressed(e.code)) {
+			e.preventDefault();
+			held.add(e.code);
+		}
+	}
+	function onKeyUp(e: KeyboardEvent) {
+		if (!game || status !== 'running') return;
+		if (game.keyReleased(e.code)) {
+			e.preventDefault();
+			held.delete(e.code);
+		}
+	}
+	function releaseAll() {
+		for (const code of held) game?.keyReleased(code);
+		held.clear();
 	}
 </script>
 
@@ -79,15 +163,23 @@
 	</section>
 {:else}
 	<section class="stage">
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-		<div class="screen" bind:this={screen} style="--w: {GAME_W}px; --h: {GAME_H}px" tabindex="0">
+		<div class="screen" style="--w: {GAME_W}px; --h: {GAME_H}px">
+			<canvas
+				bind:this={canvas}
+				tabindex="0"
+				aria-label="Top Gun"
+				onkeydown={onKeyDown}
+				onkeyup={onKeyUp}
+				onblur={releaseAll}
+			></canvas>
 			{#if status !== 'running'}
 				<div class="cover">
-					{#if status === 'loading'}
-						<p class="loading">Starting the Java runtime… (the first time takes a little while)</p>
+					{#if status === 'loading' || status === 'checking'}
+						<p class="msg">Loading…</p>
+					{:else if status === 'error'}
+						<p class="msg err">The game could not load. Please refresh the page and try again.</p>
 					{:else}
-						<button class="start" onclick={start} disabled={status === 'checking'}>▶ Play Top Gun</button>
-						{#if message}<p class="msg" class:err={status === 'error'}>{message}</p>{/if}
+						<button class="start" onclick={start}>▶ Play Top Gun</button>
 					{/if}
 				</div>
 			{/if}
@@ -122,7 +214,13 @@
 		box-shadow:
 			0 30px 80px -20px rgba(0, 0, 0, 0.9),
 			0 0 50px -12px rgba(56, 189, 248, 0.45);
+	}
+	canvas {
+		display: block;
+		width: 100%;
+		height: 100%;
 		outline: none;
+		image-rendering: pixelated;
 	}
 	.cover {
 		position: absolute;
@@ -149,10 +247,6 @@
 	.start:hover {
 		background: #0284c7;
 	}
-	.start:disabled {
-		opacity: 0.5;
-	}
-	.loading,
 	.msg {
 		margin: 0;
 		max-width: 360px;

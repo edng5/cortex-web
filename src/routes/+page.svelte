@@ -60,7 +60,7 @@
 	const prevNode = $derived(neighbour(-1));
 	const nextNode = $derived(neighbour(1));
 	let enterFrom = $state<1 | -1>(1);
-	// The game pop-up mounts on first open and then stays (the Java runtime starts once per page).
+	// The game pop-up mounts on first open and then stays (hidden and paused), keeping your place.
 	let gameMounted = $state(false);
 	$effect(() => {
 		if (session.gameOpen) gameMounted = true;

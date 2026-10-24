@@ -64,6 +64,15 @@ export function getDb(): Database.Database {
 			ip_enc      TEXT,
 			detail_enc  TEXT                    -- JSON, encrypted (e.g. the prompt text)
 		);
+		CREATE TABLE IF NOT EXISTS game_scores (
+			user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			game        TEXT NOT NULL,          -- e.g. 'topgun'
+			mission     INTEGER NOT NULL,
+			best        INTEGER NOT NULL,       -- the player's best score for this mission
+			updated_at  INTEGER NOT NULL,
+			PRIMARY KEY (user_id, game, mission)
+		);
+		CREATE INDEX IF NOT EXISTS game_scores_board ON game_scores(game, mission, best DESC);
 		CREATE INDEX IF NOT EXISTS audit_ts ON audit_log(ts);
 		CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
 	`);
