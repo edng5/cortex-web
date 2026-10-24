@@ -9,7 +9,7 @@ weight: 2
 icon: /images/logos/john-cabot.png
 images: []
 links: []
-related: [edu-queens, int-basketball, skill-leadership]
+related: [edu-queens, int-basketball, skill-leadership, proj-mini-games]
 ---
 
 ## Diploma
@@ -22,3 +22,4 @@ Ontario Secondary School Diploma (OSSD), 2014–2018. Graduated as an **Ontario 
 ## Activities
 - **Varsity basketball team** (2015 – 2018)
 - **Co-founded the Computer Science Club** (2018)
+- Made the **Mini Games** projects: I Spy, Top Gun and a Space Invaders remake

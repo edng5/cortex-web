@@ -1,10 +1,8 @@
 ---
 title: "Mini Games"
-subtitle: "I Spy · Top Gun · Space Invaders"
-summary: "A collection of playable games with story and player progression: an I Spy guessing game, the Top Gun flight-combat game, and a Space Invaders remake."
-tags: [game-development, python, pygame, games]
-start: 2021-10
-end: 2023-10
+subtitle: "I Spy · Top Gun · Space Invaders · Made in high school"
+summary: "A collection of playable games Edward made in high school at John Cabot Catholic Secondary School, with story and player progression: an I Spy guessing game, the Top Gun flight-combat game, and a Space Invaders remake."
+tags: [game-development, python, pygame, games, high-school]
 weight: 2
 images:
   - /images/mini-games/top-gun.gif
@@ -20,9 +18,10 @@ captions:
 links:
   - { label: "I Spy on GitHub", url: "https://github.com/edng5/ispy", kind: github }
   - { label: "Classic mini-games on GitHub", url: "https://github.com/edng5/classic-minigames", kind: github }
-related: [int-video-games]
+related: [int-video-games, edu-john-cabot]
 ---
 
+Edward made these games in high school, while at John Cabot Catholic Secondary School.
 
 ## I Spy
 ![I Spy logo](/images/mini-games/i-spy.jpg)
