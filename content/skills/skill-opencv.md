@@ -9,5 +9,3 @@ images: []
 links: []
 related: [skill-ml]
 ---
-
-Computer vision library listed among his skills.

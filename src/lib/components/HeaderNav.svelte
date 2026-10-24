@@ -157,12 +157,22 @@
 			gap: 2px;
 		}
 		.link {
-			padding: 6px 9px;
-			font-size: 0.82rem;
+			padding: 6px 8px;
+			font-size: 0.8rem;
 		}
 		.login {
-			padding: 6px 12px;
-			font-size: 0.82rem;
+			padding: 6px 11px;
+			font-size: 0.8rem;
+		}
+	}
+	@media (max-width: 360px) {
+		.link {
+			padding: 5px 6px;
+			font-size: 0.74rem;
+		}
+		.login {
+			padding: 5px 9px;
+			font-size: 0.74rem;
 		}
 	}
 </style>

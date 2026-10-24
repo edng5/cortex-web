@@ -9,5 +9,3 @@ images: []
 links: []
 related: []
 ---
-
-Front-end web fundamentals, listed among his languages.

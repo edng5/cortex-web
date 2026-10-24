@@ -9,5 +9,3 @@ images: []
 links: []
 related: [skill-ml]
 ---
-
-Data analysis and visualization libraries listed on his resume; Data Analytics was part of his Queen's coursework.

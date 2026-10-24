@@ -10,4 +10,4 @@ links: []
 related: []
 ---
 
-Version control, CI with GitHub Actions, and GitHub Copilot. His projects are at github.com/edng5.
+His projects are at github.com/edng5.

@@ -9,5 +9,3 @@ images: []
 links: []
 related: [exp-bmo-lead-dev, exp-bmo-dev]
 ---
-
-Used heavily at BMO: Lambda, S3, SQS, ECS, ECR, EC2, CloudWatch and Textract, plus a migration to a multi-account architecture and SageOps model training.

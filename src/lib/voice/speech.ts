@@ -4,12 +4,21 @@ import { site } from '$lib/config/site';
 
 // ─── Microphone (permission + live audio level) ──────────────────────────────
 
+/** Phones/tablets: only one thing may capture audio at a time, and speech output needs a tap. */
+export function isMobileDevice(): boolean {
+	if (typeof navigator === 'undefined') return false;
+	return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+}
+
 export class MicMeter {
 	private stream: MediaStream | null = null;
 	private ctx: AudioContext | null = null;
 	private analyser: AnalyserNode | null = null;
 	private buf: Uint8Array<ArrayBuffer> | null = null;
 	private smoothed = 0;
+	/** Phones: no live meter (it would hold the mic away from speech recognition); see `pulse()`. */
+	private permissionOnly = false;
+	private pulseLevel = 0;
 
 	/** Prompts for mic permission. Throws if denied / unavailable. */
 	async enable(): Promise<void> {
@@ -17,6 +26,14 @@ export class MicMeter {
 		this.stream = await navigator.mediaDevices.getUserMedia({
 			audio: { echoCancellation: true, noiseSuppression: true }
 		});
+		// Phones allow one audio capture at a time: keep the permission, release the mic so
+		// speech recognition can use it, and animate from recognition events instead.
+		if (isMobileDevice()) {
+			this.stream.getTracks().forEach((t) => t.stop());
+			this.stream = null;
+			this.permissionOnly = true;
+			return;
+		}
 		this.ctx = new AudioContext();
 		const src = this.ctx.createMediaStreamSource(this.stream);
 		this.analyser = this.ctx.createAnalyser();
@@ -32,8 +49,18 @@ export class MicMeter {
 		this.smoothed = 0;
 	}
 
+	/** Phones: words were just heard, so give the graph a short burst of "loudness". */
+	pulse(): void {
+		this.pulseLevel = 0.7;
+	}
+
 	/** 0..1 loudness, smoothed. Call once per animation frame. */
 	level(): number {
+		if (this.permissionOnly) {
+			this.pulseLevel *= 0.94;
+			this.smoothed += (this.pulseLevel - this.smoothed) * 0.2;
+			return this.smoothed;
+		}
 		if (!this.analyser || !this.buf) return (this.smoothed *= 0.9);
 		this.analyser.getByteTimeDomainData(this.buf);
 		let sum = 0;
@@ -154,6 +181,19 @@ export class Speaker {
 	get supported(): boolean {
 		return typeof speechSynthesis !== 'undefined';
 	}
+
+	/**
+	 * Call from a tap/click. Phones (iOS especially) only allow speech that starts in a user
+	 * gesture; speaking a silent utterance there unlocks later, asynchronous replies.
+	 */
+	unlock(): void {
+		if (!this.supported || this.unlocked) return;
+		this.unlocked = true;
+		const u = new SpeechSynthesisUtterance(' ');
+		u.volume = 0;
+		speechSynthesis.speak(u);
+	}
+	private unlocked = false;
 
 	get speaking(): boolean {
 		return this.queue > 0;

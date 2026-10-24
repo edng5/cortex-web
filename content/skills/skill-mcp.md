@@ -9,5 +9,3 @@ images: []
 links: []
 related: [proj-legm-cp]
 ---
-
-Edward built LeGM-CP on the MCP framework, wiring ranking PDFs and live-stats tools into Claude for fantasy basketball drafting.

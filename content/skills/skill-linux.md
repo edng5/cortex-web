@@ -9,5 +9,3 @@ images: []
 links: []
 related: [skill-iis]
 ---
-
-Linux is among the tools and platforms Edward works with.

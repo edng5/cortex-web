@@ -9,5 +9,3 @@ images: []
 links: []
 related: [proj-speakease]
 ---
-
-Built the SpeakEase AI RESTful API in Express, restructuring its data pipelines to cut processing time from 5 minutes to under a minute.

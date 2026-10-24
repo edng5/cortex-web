@@ -9,5 +9,3 @@ images: []
 links: []
 related: [skill-ml]
 ---
-
-Deep learning libraries listed on his resume.

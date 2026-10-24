@@ -9,5 +9,3 @@ images: []
 links: []
 related: [skill-aws]
 ---
-
-Containerization; listed among his tools alongside AWS ECS/ECR deployments.

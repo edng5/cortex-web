@@ -156,6 +156,11 @@
 
 	// ── Legend filter layout ──────────────────────────────────────────────
 	const COL_RIGHT_EDGE = -260; // world x where the filtered block ends (others sit to the right)
+	// Phones: the filtered type becomes a list (names to the right of the neurons) and the view
+	// fits just that list; everything else waits off to the right (drag to see it).
+	const LIST_GAP_X = 300; // room for a name beside each neuron
+	const LIST_NAME_W = 190; // screen px kept free right of the last column for its names
+	let listIds: Set<string> | null = null;
 	const GAP_X = 210;
 	const GAP_Y = 54;
 
@@ -202,9 +207,11 @@
 	/** Pull the filtered type into ordered column(s) on the left; the rest gather on the right. */
 	function applyFilter(type: string | null, order: 'date' | 'size') {
 		if (!sim) return;
+		resetting = true; // a new arrangement starts from the fitted view (no leftover pan/zoom)
 		const link = sim.force('link') as ReturnType<typeof forceLink<SimNode, SimLink>> | undefined;
 
 		if (!type) {
+			listIds = null;
 			if (!homePos) return; // nothing to undo
 			const home = homePos;
 			// Glide everyone back to where they were, then restore the free-floating forces.
@@ -234,25 +241,33 @@
 			return b.r - a.r; // biggest (most important) first
 		});
 
-		// Up to 10 → one column (reads top to bottom); more → a few columns, read column by column.
-		const rows = picked.length <= 10 ? Math.max(1, picked.length) : Math.ceil(Math.sqrt(picked.length * 2.4));
+		const phone = width < 720;
+		// Desktop: up to 10 → one column; more → a few columns, read column by column.
+		// Phones: one column, or two when there are more than 10 (names sit beside the neurons).
+		const rows = phone
+			? picked.length <= 10 ? Math.max(1, picked.length) : Math.ceil(picked.length / 2)
+			: picked.length <= 10 ? Math.max(1, picked.length) : Math.ceil(Math.sqrt(picked.length * 2.4));
 		const cols = Math.ceil(picked.length / rows);
+		const gapX = phone ? LIST_GAP_X : GAP_X;
 		const to = new Map<string, Pt>();
 		const delay = new Map<string, number>();
 		picked.forEach((n, i) => {
 			const c = Math.floor(i / rows);
 			const inCol = Math.min(rows, picked.length - c * rows);
-			to.set(n.id, { x: COL_RIGHT_EDGE - (cols - 1 - c) * GAP_X, y: ((i % rows) - (inCol - 1) / 2) * GAP_Y });
+			to.set(n.id, { x: COL_RIGHT_EDGE - (cols - 1 - c) * gapX, y: ((i % rows) - (inCol - 1) / 2) * GAP_Y });
 			delay.set(n.id, i * STAGGER_MS);
 		});
+		listIds = phone ? new Set(picked.map((n) => n.id)) : null;
 
-		// Everyone else keeps their shape and slides (slightly tightened) to the right.
+		// Everyone else keeps their shape and slides (slightly tightened) to the right
+		// (on phones, further right: past the names, off screen until dragged into view).
 		const rest = nodes.filter((n) => !to.has(n.id));
 		const mx = rest.reduce((s, n) => s + (home.get(n.id)?.x ?? 0), 0) / Math.max(1, rest.length);
 		const my = rest.reduce((s, n) => s + (home.get(n.id)?.y ?? 0), 0) / Math.max(1, rest.length);
+		const restX = phone ? COL_RIGHT_EDGE + LIST_GAP_X + 500 : 300;
 		for (const n of rest) {
 			const h = home.get(n.id) ?? { x: n.x ?? 0, y: n.y ?? 0 };
-			to.set(n.id, { x: 300 + (h.x - mx) * 0.8, y: (h.y - my) * 0.85 });
+			to.set(n.id, { x: restX + (h.x - mx) * 0.8, y: (h.y - my) * 0.85 });
 		}
 
 		link?.strength(0.01); // keep the connections drawn, but let the layout hold
@@ -456,7 +471,12 @@
 		};
 		canvas.addEventListener('wheel', onWheel, { passive: false });
 		// Dev-only: inspect the view from the console (window.__graphView()).
-		if (import.meta.env.DEV) (window as any).__graphView = () => ({ view: { ...view }, fit: { ...fit }, user: { ...user } });
+		if (import.meta.env.DEV) (window as any).__graphView = () => ({
+				view: { ...view },
+				fit: { ...fit },
+				user: { ...user },
+				nodes: nodes.map((n) => ({ id: n.id, type: n.data.type, sx: view.x + n.x! * view.k, sy: view.y + n.y! * view.k, sr: n.r * view.k }))
+			});
 
 		// Phones fire a delayed "click" after a tap, hit-tested where the finger was. A tap on a
 		// neuron opens a panel or gallery right there, so that click would land on it (e.g. open
@@ -503,6 +523,7 @@
 			// Auto-fit: smoothly scale/translate so the whole graph is visible.
 			let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 			for (const n of nodes) {
+				if (listIds && !listIds.has(n.id)) continue; // phone list: fit just the list
 				minX = Math.min(minX, n.x! - n.r); maxX = Math.max(maxX, n.x! + n.r);
 				minY = Math.min(minY, n.y! - n.r); maxY = Math.max(maxY, n.y! + n.r);
 			}
@@ -511,18 +532,24 @@
 			// so neurons aren't tiny on a narrow portrait screen.
 			const phone = width < 720;
 			const pad = phone ? 10 : 70;
-			const padTop = phone ? 96 : 120; // clear the logo + rotating titles in the top-left
+			const padTop = phone ? 136 : 120; // clear the logo + titles (and, on phones, the filter chips)
 			const padBottom = phone ? 130 : 150; // keep neurons clear of the ask bar / captions
-			const overflowX = phone ? 1.4 : 1;
+			const overflowX = phone && !listIds ? 1.4 : 1;
+			// A legend filter lines neurons up on the left with their names above them; the names
+			// are wider than the neurons, so leave room for half a label on that side. The phone
+			// list has its names to the right instead.
+			const padLeft = listIds ? 16 : pad + (filterType && !phone ? 90 : 0);
+			const padRight = listIds ? LIST_NAME_W : pad;
+			const fitW = availW - padLeft - padRight;
 			const k = nodes.length
 				? Math.min(
 						1.6,
-						((availW - pad * 2) / (maxX - minX || 1)) * overflowX,
+						(fitW / (maxX - minX || 1)) * overflowX,
 						(height - padTop - padBottom) / (maxY - minY || 1)
 					)
 				: 1;
 			const tk = Math.max(0.3, k);
-			const tx = insetLeft + availW / 2 - ((minX + maxX) / 2) * tk;
+			const tx = insetLeft + padLeft + fitW / 2 - ((minX + maxX) / 2) * tk;
 			const ty = padTop + (height - padTop - padBottom) / 2 - ((minY + maxY) / 2) * tk;
 			const ease = snapView ? 1 : 0.04;
 			snapView = false;
@@ -543,8 +570,10 @@
 			view.x = fit.x * user.k + user.x;
 			view.y = fit.y * user.k + user.y;
 
-			// Never let the graph be panned completely off screen.
-			if (nodes.length) {
+			// Never let the visitor pan the graph completely off screen (only once they've panned or
+			// zoomed: layout changes such as a filter glide must not leave a stray offset behind).
+			const userMoved = user.k !== 1 || user.x !== 0 || user.y !== 0;
+			if (nodes.length && userMoved && !resetting) {
 				const keep = 60;
 				const sx0 = view.x + minX * view.k;
 				const sx1 = view.x + maxX * view.k;
@@ -683,9 +712,19 @@
 				const fade = 1 - (pillAlpha.get(n.id) ?? 0);
 				if (fade < 0.05) continue;
 				const p = pos(n);
-				const label = truncate(n.data.title, n.lab > 0.5 ? 24 : 34);
 				const base = emphasised ? 0.95 : 0.55 + 0.4 * n.lab; // filtered names read brighter
 				ctx.fillStyle = `rgba(226, 232, 240, ${base * shown * fade})`;
+				if (listIds?.has(n.id)) {
+					// Phone list: the name beside the neuron, fitted to the space up to the next column.
+					ctx.textAlign = 'left';
+					ctx.textBaseline = 'middle';
+					const maxW = Math.min(LIST_NAME_W - 14, (LIST_GAP_X - n.r) * view.k - 22) / view.k;
+					ctx.fillText(fitText(ctx, n.data.title, ctx.font, maxW), p.x + n.r + 8 / view.k, p.y);
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'bottom';
+					continue;
+				}
+				const label = truncate(n.data.title, n.lab > 0.5 ? 24 : 34);
 				ctx.fillText(label, p.x, p.y - n.r - 6 / view.k);
 			}
 

@@ -9,5 +9,3 @@ images: []
 links: []
 related: [skill-sql]
 ---
-
-Databases listed among his frameworks on his resume and website.

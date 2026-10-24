@@ -14,4 +14,4 @@ links: []
 related: []
 ---
 
-Edward has kept a lot of pets over the years. Here are a few of them.
+Here are a few of them.

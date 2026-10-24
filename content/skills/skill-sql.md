@@ -9,5 +9,3 @@ images: []
 links: []
 related: [exp-scale-ai, edu-queens]
 ---
-
-Listed among his languages; used in Scale AI prompt work and studied in his Databases coursework at Queen's.

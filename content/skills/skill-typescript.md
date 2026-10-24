@@ -9,5 +9,3 @@ images: []
 links: []
 related: [proj-speakease]
 ---
-
-Used for SpeakEase AI (React Native, Node, Express), LeGM-CP (Next.js), and this website (SvelteKit).

@@ -9,5 +9,3 @@ images: []
 links: []
 related: [exp-scale-ai]
 ---
-
-Listed among his languages; at Scale AI he wrote Java programming challenges to train and evaluate LLMs.

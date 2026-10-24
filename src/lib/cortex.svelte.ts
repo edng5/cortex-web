@@ -59,6 +59,8 @@ class Cortex {
 		if (this.micEnabled) return this.disableMic();
 		if (this.chatBlocked) return;
 		this.notice = null;
+		// Still inside the tap: unlock speech output for the replies that come later (phones).
+		this.ensureSpeaker().unlock();
 		try {
 			this.mic = new MicMeter();
 			await this.mic.enable(); // ← browser permission prompt
@@ -77,8 +79,12 @@ class Cortex {
 			this.notice = "Your browser can't transcribe speech — try Chrome, Edge or Safari, or type below.";
 		} else {
 			this.recognizer = new Recognizer({
-				onInterim: (t) => (this.interim = t),
+				onInterim: (t) => {
+					this.interim = t;
+					if (t) this.mic?.pulse();
+				},
 				onFinal: (t) => {
+					this.mic?.pulse();
 					this.interim = '';
 					this.ask(t);
 				},
@@ -113,6 +119,8 @@ class Cortex {
 		const question = raw.trim();
 		if (!question || this.chatBlocked) return;
 
+		// A typed question arrives in the send tap: unlock speech output on phones (no-op otherwise).
+		this.ensureSpeaker().unlock();
 		this.abort?.abort();
 		this.speaker?.cancel();
 		this.recognizer?.pause(); // don't transcribe Cortex's own voice

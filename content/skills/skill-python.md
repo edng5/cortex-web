@@ -9,5 +9,3 @@ images: []
 links: []
 related: [exp-scale-ai]
 ---
-
-Edward's main language for machine learning work, used for model training at BMO, LLM prompt engineering at Scale AI, and projects like NEOS and Mind-to-Speech.

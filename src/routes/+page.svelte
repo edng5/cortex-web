@@ -259,6 +259,25 @@
 		font-size: clamp(1rem, 1.5vw, 1.25rem);
 		perspective: 400px;
 	}
+	/* Phones: a smaller logo so it never runs under the Experience / Projects / Log in pill. */
+	@media (max-width: 560px) {
+		.hero {
+			top: 22px;
+			left: 12px;
+		}
+		.hero .logo {
+			height: 22px;
+		}
+		.hero .titles {
+			margin-top: 14px;
+			font-size: 0.95rem;
+		}
+	}
+	@media (max-width: 360px) {
+		.hero .logo {
+			height: 18px;
+		}
+	}
 	.legend {
 		position: absolute;
 		top: 80px;
@@ -351,9 +370,41 @@
 		border: none;
 		padding: 2px 6px;
 	}
+	/* Phones: the legend becomes a swipeable row of chips under the header. */
 	@media (max-width: 720px) {
 		.legend {
+			top: 92px;
+			left: 0;
+			right: 0;
+			flex-direction: row;
+			align-items: center;
+			gap: 8px;
+			padding: 0 12px;
+			overflow-x: auto;
+			scrollbar-width: none;
+			font-size: 0.78rem;
+		}
+		.legend::-webkit-scrollbar {
 			display: none;
+		}
+		.legend ul {
+			flex-direction: row;
+			gap: 6px;
+		}
+		.legend li button {
+			white-space: nowrap;
+			padding: 5px 10px;
+			border-radius: 99px;
+			border-color: rgba(148, 163, 184, 0.22);
+			background: rgba(10, 14, 26, 0.7);
+		}
+		.legend .order {
+			margin: 0;
+			padding: 0;
+			flex: none;
+		}
+		.legend .order button {
+			padding: 4px 10px;
 		}
 	}
 	.empty {
