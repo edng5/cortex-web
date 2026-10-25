@@ -6,6 +6,7 @@
 // "Quit" closes the game instead of exiting the program.
 import { ABase, Bullets, Clouds, EnemiesJ, EnemiesR, Missiles, Ships } from './entities';
 import { Rect, idiv, rnd } from './geometry';
+import { spotAt, type ArcadeGame, type Hotspot } from '../common';
 
 export const GAME_W = 600;
 export const GAME_H = 536; // ends at the bottom of the cockpit dashboard (300 + 236)
@@ -103,7 +104,7 @@ const AGENCY = '"Agency FB", "Bahnschrift SemiCondensed", "Arial Narrow", sans-s
 /** Thrown where the Java code would hit ArrayIndexOutOfBoundsException (it ends that key handler). */
 class JavaIndexError extends Error {}
 
-export class TopGun {
+export class TopGun implements ArcadeGame {
 	// ── Fields (as in TopGun.java) ──
 	game = 0; mission = 1; sequence = 0;
 	select = 0; cx = 200; cy = 170; startDelay2 = 1; delay2 = 0; maxSelect = 4;
@@ -146,7 +147,7 @@ export class TopGun {
 	/** Called when the player picks Quit on the main menu (after saving). */
 	onQuit: () => void = () => {};
 	/** Called once when a mission ends (won, failed or game over) with its final score. */
-	onMissionEnd: (mission: number, score: number) => void = () => {};
+	onScore: (mission: number, score: number) => void = () => {};
 	/** Global high scores (from the server); null = not loaded, so the screen shows local scores. */
 	global: { missions: Record<number, { name: string; score: number }[]>; you?: Record<number, number> } | null = null;
 	/** Whether the player is signed in (their scores count on the global board). */
@@ -266,6 +267,52 @@ export class TopGun {
 			if (!(e instanceof JavaIndexError)) throw e;
 		}
 		return true;
+	}
+
+	// ── Mouse: menu items can be hovered (moves the cursor dot) and clicked (= Enter) ──
+	private spots(): Hotspot[] {
+		const item = (x: number, y: number, w: number, h: number, sel: number, hover = true): Hotspot => ({
+			x, y, w, h,
+			hover: hover ? () => (this.select = sel) : undefined,
+			click: () => {
+				this.select = sel;
+				this.keyPressed('Enter');
+			}
+		});
+		const to = (x: number, y: number, w: number, h: number, sel: () => number): Hotspot => ({ x, y, w, h, click: () => (this.select = sel()) });
+		const back = item(4, 4, 76, 32, 0, false);
+		switch (this.game) {
+			case 0:
+				return [item(8, 150, 250, 50, 0), item(0, 222, 260, 52, 1), item(0, 300, 260, 55, 2), item(0, 383, 260, 52, 3), item(40, 458, 180, 52, 4)];
+			case 5:
+				return [item(4, 4, 76, 32, 0), item(385, 456, 200, 32, 1), item(415, 488, 175, 34, 2)];
+			case 4:
+				return [item(220, 180, 175, 40, 0), item(220, 240, 175, 38, 1), item(220, 298, 180, 40, 2)];
+			case 3:
+				return [item(60, 360, 245, 56, 0), item(330, 360, 245, 56, 1)];
+			case 6:
+				return this.uy == 0
+					? [item(4, 4, 108, 46, 0), item(80, 94, 460, 186, 1), item(80, 324, 460, 186, 2), to(10, 476, 64, 56, () => 3)]
+					: [to(0, 0, 600, 42, () => 2), item(80, 45, 460, 190, 3), item(80, 269, 460, 186, 4), item(466, 474, 112, 46, 5)];
+			case -1:
+				return [
+					back,
+					to(0, 232, 48, 60, () => Math.max(1, this.select - 1)),
+					to(552, 232, 48, 60, () => Math.min(3, Math.max(1, this.select) + 1)),
+					{ x: 222, y: 436, w: 156, h: 60, click: () => { if (this.select < 1) this.select = 1; this.keyPressed('Enter'); } }
+				];
+			case 7:
+				return [back, to(8, 480, 56, 50, () => (this.select == 1 ? 0 : 1))];
+		}
+		return [];
+	}
+	pointerMove(x: number, y: number) {
+		const s = spotAt(this.spots(), x, y);
+		s?.hover?.();
+		return !!s;
+	}
+	pointerDown(x: number, y: number) {
+		spotAt(this.spots(), x, y)?.click();
 	}
 
 	private keyPressedJava(keyCode: Key) {
@@ -506,7 +553,7 @@ export class TopGun {
 	tick() {
 		const prevGame = this.game;
 		this.tickJava();
-		if (prevGame !== 3 && this.game === 3) this.onMissionEnd(this.mission, this.score);
+		if (prevGame !== 3 && this.game === 3) this.onScore(this.mission, this.score);
 		// Save progress every couple of seconds (the original only saved on Quit).
 		if (++this.ticks % 120 === 0) this.save();
 	}
@@ -1328,6 +1375,11 @@ export class TopGun {
 				if (this.miss < 2) this.img('mLvl3', 395, this.u5y, 140, 147);
 			}
 			if (this.select > 2) {
+				// Page 2 has no way back up in the art: a small ▲ (click it, or press W).
+				this.ctx.fillStyle = 'rgba(255,255,255,0.85)';
+				this.ctx.beginPath();
+				this.ctx.moveTo(20, 30); this.ctx.lineTo(40, 30); this.ctx.lineTo(30, 14);
+				this.ctx.fill();
 				if (this.shoot < 1) this.img('sLvl2', 250, this.u6y, 140, 147);
 				if (this.shoot < 2) this.img('sLvl3', 395, this.u7y, 140, 147);
 				if (this.move == 0) this.img('bLvl2', 340, this.u8y, 140, 147);

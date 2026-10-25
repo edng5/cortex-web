@@ -18,13 +18,51 @@ class Session {
 	limitMessage = $state('');
 	experienceOpen = $state(false);
 	projectsOpen = $state(false);
-	/** Playable game pop-up (Top Gun). */
+	/** E.Ngine Games pop-up, and the game showing in it (null = the games menu). */
 	gameOpen = $state(false);
+	gameId = $state<string | null>(null);
+	/** Leaderboard name (undefined = not loaded yet, null = not chosen). */
+	playerName = $state<string | null | undefined>(undefined);
 
 	init(data: { user: ClientUser | null; quota: QuotaInfo | null; auth: { ready: boolean; google: boolean } }) {
 		this.user = data.user;
 		this.quota = data.quota;
 		this.auth = data.auth;
+	}
+
+	/** Open the E.Ngine Games pop-up, on a game or on its menu. */
+	openGames(id: string | null = null) {
+		this.gameId = id;
+		this.gameOpen = true;
+	}
+
+	async loadPlayerName() {
+		if (!this.user) return (this.playerName = null);
+		try {
+			const res = await fetch('/api/games/name');
+			if (res.ok) this.playerName = ((await res.json()) as { name: string | null }).name;
+		} catch {
+			/* offline: ask again later */
+		}
+	}
+
+	/** Choose a leaderboard name (checked on the server). Returns the message to show on failure. */
+	async savePlayerName(name: string): Promise<{ ok: boolean; message?: string }> {
+		try {
+			const res = await fetch('/api/games/name', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (res.ok && data.ok) {
+				this.playerName = data.name;
+				return { ok: true };
+			}
+			return { ok: false, message: data.message ?? 'Could not save that name.' };
+		} catch {
+			return { ok: false, message: 'Could not reach the server.' };
+		}
 	}
 
 	openLimit(message: string) {

@@ -1,18 +1,31 @@
 <!--
-  Pop-up for the playable Top Gun. Once opened it stays mounted (just hidden and paused when
-  closed), so reopening shows the same game, still where you left it. Closing (Esc, ✕ or a
-  click outside) asks first, so a stray key press doesn't end a mission; the game pauses while
-  asking. Choosing Quit in the game's own menu saves and closes straight away.
+  E.Ngine Games pop-up: the games menu, and the game being played. Once opened it stays mounted
+  (just hidden and paused when closed), and so does every game started in it, so going back to
+  the menu or reopening later finds each game where you left it. Closing during a game (Esc, ✕
+  or a click outside) asks first, so a stray key press doesn't end a run; the game pauses while
+  asking. Choosing Quit / Exit in a game's own menu goes back to the games menu.
 -->
 <script lang="ts">
-	import TopGunGame from './TopGunGame.svelte';
+	import ArcadeGame from './ArcadeGame.svelte';
+	import EngineMenu from './EngineMenu.svelte';
+	import { GAMES, gameById } from '$lib/games/registry';
+	import { session } from '$lib/session.svelte';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
 	let confirming = $state(false);
 	let keepBtn = $state<HTMLButtonElement>();
+	/** Games started so far (they stay mounted, paused when not showing). */
+	let started = $state<string[]>([]);
+	const current = $derived(gameById(session.gameId));
+
+	$effect(() => {
+		const id = session.gameId;
+		if (id && !started.includes(id)) started = [...started, id];
+	});
 
 	function askClose() {
+		if (!current) return close();
 		confirming = true;
 		queueMicrotask(() => keepBtn?.focus());
 	}
@@ -22,6 +35,14 @@
 	function close() {
 		confirming = false;
 		onclose();
+	}
+	function toMenu() {
+		confirming = false;
+		session.gameId = null;
+	}
+	function login() {
+		close();
+		session.loginOpen = true;
 	}
 
 	function onKey(e: KeyboardEvent) {
@@ -43,18 +64,28 @@
 	onclick={(e) => e.target === e.currentTarget && askClose()}
 	role="dialog"
 	aria-modal="true"
-	aria-label="Top Gun"
+	aria-label={current ? current.title : 'E.Ngine Games'}
 	aria-hidden={!open}
 >
-	<div class="card">
-		<button class="close" onclick={askClose} aria-label="Close the game">✕</button>
-		<TopGunGame autostart active={open && !confirming} onquit={close} />
+	<div class="card" class:menu={!current}>
+		<button class="close" onclick={askClose} aria-label="Close E.Ngine Games">✕</button>
+		{#if current}
+			<button class="back" onclick={toMenu}>‹ E.Ngine Games</button>
+		{:else}
+			<EngineMenu onpick={(id) => (session.gameId = id)} onlogin={login} />
+		{/if}
+
+		{#each GAMES.filter((g) => started.includes(g.id)) as g (g.id)}
+			<div class="game" hidden={current?.id !== g.id}>
+				<ArcadeGame spec={g} active={open && !confirming && current?.id === g.id} onquit={toMenu} />
+			</div>
+		{/each}
 
 		{#if confirming}
 			<div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="leave-title">
 				<div class="box">
 					<h2 id="leave-title">Leave the game?</h2>
-					<p>It keeps your place: reopen it any time before you leave the site. Upgrades and high scores are saved.</p>
+					<p>It keeps your place: reopen it any time before you leave the site. High scores are saved.</p>
 					<div class="actions">
 						<button class="keep" bind:this={keepBtn} onclick={keepPlaying}>Keep playing</button>
 						<button class="leave" onclick={close}>Close game</button>
@@ -86,16 +117,42 @@
 		padding: 18px 18px 16px;
 		border-radius: 18px;
 		background: rgba(10, 14, 26, 0.9);
-		border: 1px solid rgba(56, 189, 248, 0.3);
+		border: 1px solid rgba(129, 140, 248, 0.35);
 		box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.9);
+		max-height: calc(100vh - 32px);
+		overflow-y: auto;
+		scrollbar-width: thin;
+	}
+	.card.menu {
+		width: min(940px, calc(100vw - 32px));
+		padding: 44px 22px 22px; /* clear of the ✕ */
+	}
+	.back {
+		display: block;
+		margin: -6px 0 10px;
+		padding: 4px 10px;
+		border-radius: 8px;
+		border: 1px solid rgba(148, 163, 184, 0.3);
+		background: transparent;
+		color: #c7d2fe;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.back:hover {
+		border-color: #818cf8;
+		color: #fff;
+	}
+	.game[hidden] {
+		display: none;
 	}
 	.close {
 		position: absolute;
-		top: -14px;
-		right: -14px;
+		top: 8px;
+		right: 8px;
 		z-index: 2;
-		width: 36px;
-		height: 36px;
+		width: 34px;
+		height: 34px;
 		border-radius: 50%;
 		border: 1px solid rgba(255, 255, 255, 0.25);
 		background: rgba(10, 14, 26, 0.95);
@@ -104,7 +161,7 @@
 		cursor: pointer;
 	}
 	.close:hover {
-		border-color: rgba(56, 189, 248, 0.7);
+		border-color: rgba(129, 140, 248, 0.8);
 	}
 	/* "Leave the game?" — over the game itself, so the game stays visible behind it. */
 	.confirm {
@@ -123,7 +180,7 @@
 		padding: 20px 22px;
 		border-radius: 14px;
 		background: rgba(10, 14, 26, 0.96);
-		border: 1px solid rgba(56, 189, 248, 0.35);
+		border: 1px solid rgba(129, 140, 248, 0.4);
 		box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.9);
 		text-align: center;
 	}
@@ -150,11 +207,11 @@
 	}
 	.keep {
 		border: none;
-		background: #0ea5e9;
+		background: #6366f1;
 		color: #fff;
 	}
 	.keep:hover {
-		background: #0284c7;
+		background: #4f46e5;
 	}
 	.leave {
 		border: 1px solid rgba(148, 163, 184, 0.35);

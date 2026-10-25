@@ -4,7 +4,7 @@
 import { getDb } from './db';
 import { encrypt } from './crypto';
 
-export type AuditEvent = 'login' | 'login_link_sent' | 'logout' | 'chat_prompt' | 'chat_blocked' | 'quota_exceeded';
+export type AuditEvent = 'login' | 'login_link_sent' | 'logout' | 'chat_prompt' | 'chat_blocked' | 'quota_exceeded' | 'game_name_rejected';
 
 export function audit(
 	event: AuditEvent,

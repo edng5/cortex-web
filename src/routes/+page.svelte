@@ -14,6 +14,7 @@
 	import PlaylistModal from '$lib/components/PlaylistModal.svelte';
 	import GalleryModal from '$lib/components/GalleryModal.svelte';
 	import GamePopup from '$lib/components/GamePopup.svelte';
+	import EngineMenu from '$lib/components/EngineMenu.svelte';
 	import { session } from '$lib/session.svelte';
 	import { nodeMedia } from '$lib/media';
 	import { cortex } from '$lib/cortex.svelte';
@@ -75,10 +76,15 @@
 	// Media floats on the left only when there is room for it beside the panel and graph;
 	// on narrower screens it lives inside the info panel instead.
 	const media = $derived(selected ? nodeMedia(selected) : []);
-	const floatMedia = $derived(innerWidth > 1024 && media.length > 0);
+	// `mediaLayout: arcade` (Mini Games): the E.Ngine Games menu takes the left side instead of
+	// pictures, and the node's videos go in the info panel.
+	const arcade = $derived(selected?.mediaLayout === 'arcade');
+	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade));
 	const mediaWidth = $derived(Math.round(Math.min(600, Math.max(380, innerWidth * 0.38))));
 	// Media may overlap the graph a little, so only shift the graph by about half its width.
 	const insetLeft = $derived(floatMedia ? Math.round(mediaWidth * 0.5) : 0);
+	// Wide screens: room for the games menu and its monthly leaderboard side by side.
+	const arcadeWidth = $derived(innerWidth >= 1480 ? Math.min(mediaWidth + 290, innerWidth - 518 - 64 - 120) : mediaWidth);
 	const presentTypes = $derived(NODE_TYPES.filter((t) => graph.nodes.some((n) => n.type === t)));
 
 	// Legend filter: click a type to line its neurons up on the left, click again to clear.
@@ -172,7 +178,11 @@
 
 {#if selected}
 	{#key selected.id}
-		{#if floatMedia}
+		{#if floatMedia && arcade}
+			<section class="arcade-dock" style="--media-w: {arcadeWidth}px" aria-label="E.Ngine Games">
+				<EngineMenu onpick={(id) => session.openGames(id)} onlogin={() => (session.loginOpen = true)} />
+			</section>
+		{:else if floatMedia}
 			<div style="--media-w: {mediaWidth}px">
 				<MediaFloat
 					items={media}
@@ -190,7 +200,8 @@
 			onselect={(id) => cortex.select(id)}
 			onstep={step}
 			{enterFrom}
-			inlineMedia={!floatMedia}
+			inlineMedia={!floatMedia || arcade}
+			videosOnly={floatMedia && arcade}
 		/>
 	{/key}
 {/if}
@@ -254,6 +265,26 @@
 	/* Floating media takes over the left side — fade the intro text out of its way. */
 	.media-open .hero {
 		opacity: 0;
+	}
+	/* Mini Games: the E.Ngine Games menu where pictures would float. */
+	.arcade-dock {
+		position: fixed;
+		top: 20px;
+		bottom: 20px;
+		left: 64px; /* room for the "previous node" button at the screen edge */
+		width: var(--media-w, 480px);
+		z-index: 25;
+		display: flex;
+		align-items: safe center;
+		overflow-y: auto;
+		scrollbar-width: none;
+		animation: dock-in 0.25s ease-out;
+	}
+	@keyframes dock-in {
+		from {
+			opacity: 0;
+			transform: translateX(-16px);
+		}
 	}
 	.hero h1 {
 		margin: 0;

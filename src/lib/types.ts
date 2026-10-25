@@ -50,7 +50,7 @@ export interface OntologyNode {
 	 * 'gallery' (clicking the node opens a large centred gallery instead of the panel), or
 	 * 'portrait' (frameless cut-outs placed by `portrait`, e.g. a team photo of PNGs).
 	 */
-	mediaLayout?: 'float' | 'carousel' | 'gallery' | 'portrait';
+	mediaLayout?: 'float' | 'carousel' | 'gallery' | 'portrait' | 'arcade';
 	/** For `mediaLayout: portrait`: where each image (by src) sits. See PortraitSpot. */
 	portrait?: Record<string, PortraitSpot>;
 	/** Named in-text carousels: put `<!-- carousel: name -->` in the body to place one. */

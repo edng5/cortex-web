@@ -24,14 +24,17 @@
 		enterFrom?: 1 | -1;
 		/** Show images/videos inside the panel (mobile). On desktop they float on the left instead. */
 		inlineMedia?: boolean;
+		/** Only the videos inside the panel (the E.Ngine Games menu has the left side). */
+		videosOnly?: boolean;
 	}
-	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true }: Props = $props();
-	const media = $derived(nodeMedia(node, true));
+	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true, videosOnly = false }: Props = $props();
+	const media = $derived(nodeMedia(node, true).filter((m) => !videosOnly || m.kind !== 'image'));
 
 	// Body markdown is your own trusted content from /content.
 	const html = $derived(marked.parse(node.body, { async: false }) as string);
 	// Split the body at `<!-- carousel: name [round] -->` markers → html / carousel parts, and
-	// at `<!-- play: game -->` markers → a "Play" button for an in-browser game (desktop only).
+	// at `<!-- play: engine -->` (or a game id) markers → an "E.Ngine Games" button that opens the
+	// in-browser games (desktop only).
 	type BodyPart =
 		| { html: string }
 		| { carousel: ReturnType<typeof carouselMedia>; round: boolean }
@@ -182,9 +185,9 @@
 				{#if 'html' in part}
 					{@html part.html}
 				{:else if 'play' in part}
-					<button class="play-game" onclick={() => (session.gameOpen = true)} aria-label="Play {part.play === 'topgun' ? 'Top Gun' : part.play}">
+					<button class="play-game" onclick={() => session.openGames(part.play === 'engine' ? null : part.play)}>
 						<span class="play-icon" aria-hidden="true"></span>
-						Play
+						E.Ngine Games
 					</button>
 				{:else if part.carousel.length}
 					<div class="inline-carousel">

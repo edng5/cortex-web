@@ -72,6 +72,25 @@ export function getDb(): Database.Database {
 			updated_at  INTEGER NOT NULL,
 			PRIMARY KEY (user_id, game, mission)
 		);
+		CREATE TABLE IF NOT EXISTS game_monthly (
+			user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			game        TEXT NOT NULL,
+			mission     INTEGER NOT NULL,       -- board (mission, difficulty or mode)
+			month       TEXT NOT NULL,          -- 'YYYY-MM' (UTC)
+			best        INTEGER NOT NULL,       -- the player's best score on this board that month
+			updated_at  INTEGER NOT NULL,
+			PRIMARY KEY (user_id, game, mission, month)
+		);
+		CREATE INDEX IF NOT EXISTS game_monthly_board ON game_monthly(game, month, mission, best DESC);
+		-- Scores from before monthly boards existed count for the month they were set.
+		INSERT OR IGNORE INTO game_monthly (user_id, game, mission, month, best, updated_at)
+			SELECT user_id, game, mission, strftime('%Y-%m', updated_at / 1000, 'unixepoch'), best, updated_at FROM game_scores;
+		CREATE TABLE IF NOT EXISTS player_names (
+			user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			name        TEXT NOT NULL,          -- leaderboard name the player chose (public)
+			name_key    TEXT NOT NULL UNIQUE,   -- normalised, so names are unique ignoring case/spaces
+			updated_at  INTEGER NOT NULL
+		);
 		CREATE TABLE IF NOT EXISTS chat_strikes (
 			key_hash      TEXT PRIMARY KEY,     -- blind index of 'ip:…' or 'user:…'
 			strikes       INTEGER NOT NULL,     -- warnings given since the last ban (expire with time)

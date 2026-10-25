@@ -12,7 +12,7 @@
 	import MediaBento from './MediaBento.svelte';
 	import MediaCarousel from './MediaCarousel.svelte';
 	import type { MediaItem as Media } from '$lib/media';
-	import type { PortraitSpot } from '$lib/types';
+	import type { OntologyNode, PortraitSpot } from '$lib/types';
 
 	let {
 		items,
@@ -24,7 +24,7 @@
 		items: Media[];
 		title: string;
 		accent: string;
-		layout?: 'float' | 'carousel' | 'gallery' | 'portrait';
+		layout?: OntologyNode['mediaLayout'];
 		portrait?: Record<string, PortraitSpot>;
 	} = $props();
 	// Desktop default is floating, draggable pictures; a node opts into the carousel
