@@ -9,7 +9,7 @@ weight: 2
 icon: /images/logos/uoft.png
 images: []
 links: []
-related: [int-basketball, edu-queens, edu-john-cabot, skill-python]
+related: [int-basketball, edu-queens, edu-john-cabot, skill-python, skill-linux, skill-java, skill-architecture]
 ---
 
 ## Program
