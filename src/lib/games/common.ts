@@ -20,6 +20,8 @@ export interface ArcadeGame {
 	pointerDown(x: number, y: number): void;
 	/** Persist progress and local stats (localStorage). */
 	save(): void;
+	/** Touch screens: true while taps/swipes on the screen should steer (TouchSpec.gesture). */
+	gestures?(): boolean;
 	/** Sound effects: the host sets this; the game calls it with a sound's name. */
 	sfx: (name: string) => void;
 	/** The soundtrack for what's on screen ('<game>-menu', '<game>-<difficulty>'…), or null for silence. */

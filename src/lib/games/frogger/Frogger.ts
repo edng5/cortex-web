@@ -480,6 +480,11 @@ export class Frogger implements ArcadeGame {
 		writeSave(SAVE_KEY, { best, games, coins, owned, selected });
 	}
 
+	/** Tap / swipe to hop, on touch screens, while playing (menus are tapped as usual). */
+	gestures() {
+		return this.state === 'play';
+	}
+
 	musicTrack() {
 		if (this.state === 'play' || this.state === 'paused') return 'frogger-play-' + Math.min(3, Math.ceil(this.level / 2));
 		if (this.state === 'over') return null;

@@ -20,6 +20,8 @@
 	/** A touch screen: show the on-screen controls. */
 	let touch = $state(false);
 	let portrait = $state(false);
+	/** The game wants taps/swipes as controls right now (Frogger while playing). */
+	let gestures = $state(false);
 	/** Wide games held upright on a phone: ask to rotate, and wait (paused) until they do. */
 	const rotate = $derived(touch && portrait && !!spec.touch.landscape);
 	const playing = $derived(active && !rotate);
@@ -53,6 +55,8 @@
 					const dt = Math.min(250, now - last);
 					last = now;
 					if (!game || !ctx || !playing) return;
+					const g = !!game.gestures?.();
+					if (g !== gestures) gestures = g;
 					// The soundtrack for this screen (menu, or gameplay by mode / difficulty).
 					gameAudio.music(game.musicTrack());
 					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
@@ -222,7 +226,7 @@
 			<p>Rotate your phone to play {spec.title}</p>
 		</div>
 	{:else if touch && status === 'running' && active}
-		<TouchControls spec={spec.touch} press={touchPress} release={touchRelease} />
+		<TouchControls spec={spec.touch} {gestures} press={touchPress} release={touchRelease} />
 	{/if}
 	<ul class="help" class:hidden={touch} aria-label="Controls">
 		{#each spec.help as h (h.label)}

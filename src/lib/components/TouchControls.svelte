@@ -1,12 +1,52 @@
 <!--
   On-screen controls for the E.Ngine Games on touch screens: a translucent joystick (W/A/S/D),
-  an optional second one (arrow keys, for Fishy's player 2) and the game's buttons. They send
-  the same key presses the keyboard would, so the games don't need to know about touch.
+  an optional second one (arrow keys, for Fishy's player 2) and the game's buttons. Or, for
+  `gesture` games (Frogger), Crossy Road style: tap anywhere to go forward, swipe to go that way.
+  They send the same key presses the keyboard would, so the games don't need to know about touch.
 -->
 <script lang="ts">
 	import type { TouchSpec } from '$lib/games/registry';
 
-	let { spec, press, release }: { spec: TouchSpec; press: (code: string) => void; release: (code: string) => void } = $props();
+	let {
+		spec,
+		gestures = false,
+		press,
+		release
+	}: { spec: TouchSpec; gestures?: boolean; press: (code: string) => void; release: (code: string) => void } = $props();
+
+	/** Tap = forward; swipe = that direction (a key tap: press then release). */
+	function swipeArea(el: HTMLElement) {
+		let start: { id: number; x: number; y: number } | null = null;
+		const tap = (code: string) => {
+			press(code);
+			release(code);
+		};
+		const down = (e: PointerEvent) => {
+			if (start) return;
+			start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+			e.preventDefault();
+		};
+		const up = (e: PointerEvent) => {
+			if (!start || e.pointerId !== start.id) return;
+			const dx = e.clientX - start.x;
+			const dy = e.clientY - start.y;
+			start = null;
+			if (Math.hypot(dx, dy) < 18) return tap(WASD.up);
+			if (Math.abs(dx) > Math.abs(dy)) tap(dx < 0 ? WASD.left : WASD.right);
+			else tap(dy < 0 ? WASD.up : WASD.down);
+		};
+		const cancel = () => (start = null);
+		el.addEventListener('pointerdown', down);
+		el.addEventListener('pointerup', up);
+		el.addEventListener('pointercancel', cancel);
+		return {
+			destroy() {
+				el.removeEventListener('pointerdown', down);
+				el.removeEventListener('pointerup', up);
+				el.removeEventListener('pointercancel', cancel);
+			}
+		};
+	}
 
 	const WASD = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD' };
 	const ARROWS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
@@ -124,11 +164,20 @@
 	}
 </script>
 
-<div class="touch" aria-hidden="true">
-	<div class="pad stick" use:stick={{ keys: WASD, mode: spec.stick, repeat: spec.repeat }}>
-		<div class="knob"></div>
-		{#if spec.stick2}<span class="tag">P1</span>{/if}
+{#if spec.gesture && gestures}
+	<div class="swipe" use:swipeArea>
+		<p class="hint">Tap to hop · Swipe to turn</p>
 	</div>
+{/if}
+<div class="touch" aria-hidden="true">
+	{#if spec.stick}
+		<div class="pad stick" use:stick={{ keys: WASD, mode: spec.stick, repeat: spec.repeat }}>
+			<div class="knob"></div>
+			{#if spec.stick2}<span class="tag">P1</span>{/if}
+		</div>
+	{:else}
+		<span></span>
+	{/if}
 	<div class="right">
 		{#each spec.buttons as b (b.code)}
 			<div class="btn" class:big={b.big} use:button={b.code}>{b.label}</div>
@@ -156,6 +205,38 @@
 		pointer-events: none;
 		user-select: none;
 		-webkit-user-select: none;
+	}
+	/* Tap / swipe anywhere below the top bar (the ✕ and the buttons stay on top). */
+	.swipe {
+		position: fixed;
+		top: 52px;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 3;
+		touch-action: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+	.hint {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: calc(110px + env(safe-area-inset-bottom));
+		margin: 0;
+		text-align: center;
+		font: 600 0.85rem/1 system-ui, sans-serif;
+		color: rgba(255, 255, 255, 0.7);
+		animation: hint-fade 4s ease-in forwards;
+		pointer-events: none;
+	}
+	@keyframes hint-fade {
+		0%,
+		70% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
 	}
 	.pad,
 	.btn {

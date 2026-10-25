@@ -7,7 +7,9 @@ export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong';
 /** On-screen controls for touch screens (TouchControls.svelte). */
 export interface TouchSpec {
 	/** The joystick (W/A/S/D): h = left/right only, 4 = one direction at a time, 8 = any. */
-	stick: 'h' | '4' | '8';
+	stick?: 'h' | '4' | '8';
+	/** Crossy Road style instead of a joystick: tap to go forward (W), swipe to go that way. */
+	gesture?: boolean;
 	/** A second joystick on the right sending the arrow keys (Fishy's player 2). */
 	stick2?: boolean;
 	/** A wide game: on phones, ask for landscape (it's too small held upright). */
@@ -132,7 +134,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'pause' },
 			MOUSE
 		],
-		touch: { stick: '4', repeat: 260, buttons: [{ label: 'Pause', code: 'Enter' }] },
+		touch: { gesture: true, buttons: [{ label: 'Pause', code: 'Enter' }] },
 		boards: { 1: 'High score' },
 		load: async () => {
 			const m = await import('./frogger/Frogger');
