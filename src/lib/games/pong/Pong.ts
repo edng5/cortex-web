@@ -80,9 +80,11 @@ export class Pong implements ArcadeGame {
 	onScore: (board: number, score: number) => void = () => {};
 	/** Sound effects (set by the host). */
 	sfx: (name: string) => void = () => {};
-	/** On a menu screen (the host plays the menu soundtrack there). */
-	inMenu() {
-		return this.game == 0 || this.game == 3;
+	/** Soundtrack: menus; Pong speeds up with each stage; Brick Breaker has its own. */
+	musicTrack() {
+		if (this.game == 0 || this.game == 3) return 'pong-menu';
+		if (this.game == 1) return this.mode == 2 ? 'pong-brick' : 'pong-' + this.difficulty;
+		return null;
 	}
 	global: Board | null = null;
 	loggedIn = false;

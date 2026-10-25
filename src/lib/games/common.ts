@@ -22,8 +22,8 @@ export interface ArcadeGame {
 	save(): void;
 	/** Sound effects: the host sets this; the game calls it with a sound's name. */
 	sfx: (name: string) => void;
-	/** On a menu screen, where the host plays the game's menu soundtrack. */
-	inMenu(): boolean;
+	/** The soundtrack for what's on screen ('<game>-menu', '<game>-<difficulty>'…), or null for silence. */
+	musicTrack(): string | null;
 	/**
 	 * The player left the game (Esc, ✕ or a click outside the pop-up) mid-run: count the run's score
 	 * now, as quitting from the game's own menu would (local high scores and onScore).

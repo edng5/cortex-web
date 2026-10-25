@@ -146,9 +146,11 @@ export class TopGun implements ArcadeGame {
 
 	/** Sound effects (set by the host): guns, missiles, explosions, hits, menus. */
 	sfx: (name: string) => void = () => {};
-	/** On a menu screen (the host plays the menu soundtrack there). */
-	inMenu() {
-		return this.game == 0 || this.game == 5 || this.game == 6 || this.game == 7 || this.game == -1;
+	/** Soundtrack: the anthem on menus, quiet synth rock during a mission (and its pause screen). */
+	musicTrack() {
+		if (this.game == 0 || this.game == 5 || this.game == 6 || this.game == 7 || this.game == -1) return 'topgun-menu';
+		if (this.game == 1 || this.game == 4) return 'topgun-play';
+		return null;
 	}
 	/** Called when the player picks Quit on the main menu (after saving). */
 	onQuit: () => void = () => {};

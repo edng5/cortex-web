@@ -40,8 +40,8 @@
 					const dt = Math.min(250, now - last);
 					last = now;
 					if (!game || !ctx || !active) return;
-					// Menu screens get the game's soundtrack; gameplay has sound effects only.
-					gameAudio.music(game.inMenu() ? spec.id : null);
+					// The soundtrack for this screen (menu, or gameplay by mode / difficulty).
+					gameAudio.music(game.musicTrack());
 					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
 					acc += dt;
 					let steps = 0;

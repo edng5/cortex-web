@@ -1,6 +1,8 @@
-// Sound for E.Ngine Games: menu soundtracks and sound effects, all original and synthesized live
-// with the Web Audio API (no recordings, so nothing to license). One shared engine for every
-// game; the games call `play('name')`, and the host turns the menu music on and off.
+// Sound for E.Ngine Games: soundtracks (menus, and gameplay by mode / difficulty) and sound
+// effects, all original and synthesized live with the Web Audio API (no recordings, so nothing to
+// license). One shared engine for every game: each game names the soundtrack it wants
+// (`musicTrack()`, e.g. 'fishy-2'), the host passes it to `music()`, and games call
+// `play('name')` for sound effects.
 import type { GameId } from './registry';
 
 const STORAGE_KEY = 'engine-games-muted';
@@ -11,39 +13,37 @@ const VOLUME = 0.32;
 type Voice = 'square' | 'triangle' | 'sine' | 'sawtooth' | 'pluck' | 'bell';
 interface Track {
 	bpm: number;
+	/** Soundtrack loudness (menus 1; gameplay quieter, so the sound effects stay clear). */
+	gain?: number;
 	parts: { voice: Voice; level: number; notes: string; detune?: number }[];
 	/** Drums, one character per step: k kick, s snare, h hat, . nothing. */
 	drums?: string;
 }
 
-const TRACKS: Record<GameId, Track> = {
-	// Top Gun: a driving, heroic march in D minor.
-	topgun: {
-		bpm: 132,
+const TRACKS: Record<string, Track> = {
+	// Top Gun: an original, soaring 80s-style anthem in E minor (big pads, slow heroic lead).
+	'topgun-menu': {
+		bpm: 104,
 		parts: [
-			{
-				voice: 'square',
-				level: 0.05,
-				notes:
-					'D4 - - A4 - - D5 - C5 - A4 - G4 - A4 - ' +
-					'F4 - - G4 - - A4 - - - - - . . . . ' +
-					'D4 - - A4 - - D5 - E5 - F5 - E5 - D5 - ' +
-					'C5 - - A4 - - G4 - A4 - - - - - . . '
-			},
 			{
 				voice: 'sawtooth',
 				level: 0.035,
 				notes:
-					'D2 . D2 D3 D2 . D2 D3 Bb1 . Bb1 Bb2 Bb1 . Bb1 Bb2 ' +
-					'F2 . F2 F3 F2 . F2 F3 C2 . C2 C3 A1 . A1 A2 ' +
-					'D2 . D2 D3 D2 . D2 D3 Bb1 . Bb1 Bb2 Bb1 . Bb1 Bb2 ' +
-					'G1 . G1 G2 G1 . G1 G2 A1 . A1 A2 A1 . C2 C#2 '
+					'E4 - - - G4 - A4 - B4 - - - - - A4 B4 C5 - - - B4 - A4 - G4 - - - A4 - - - ' +
+					'B4 - - - D5 - E5 - F#5 - - - E5 - D5 - E5 - - - - - - - . . . . . . . . '
+			},
+			{ voice: 'square', level: 0.018, notes: 'E3 - - - - - - - C3 - - - - - - - D3 - - - - - - - B2 - - - - - - - ' },
+			{ voice: 'square', level: 0.018, notes: 'B3 - - - - - - - G3 - - - - - - - A3 - - - - - - - F#3 - - - - - - - ' },
+			{
+				voice: 'triangle',
+				level: 0.09,
+				notes: 'E2 E2 E2 E2 E2 E2 E2 E2 C2 C2 C2 C2 C2 C2 C2 C2 D2 D2 D2 D2 D2 D2 D2 D2 B1 B1 B1 B1 B1 B1 B1 B1 '
 			}
 		],
-		drums: 'k.s.k.s.k.s.kkss'
+		drums: 'k...s...k.k.s...'
 	},
 	// Fishy: bouncy and bubbly, in F major.
-	fishy: {
+	'fishy-menu': {
 		bpm: 108,
 		parts: [
 			{
@@ -61,7 +61,7 @@ const TRACKS: Record<GameId, Track> = {
 		drums: 'k..hk.h.k..hk.hh'
 	},
 	// Space Invaders: dark, pulsing and alien, in E minor.
-	spaceinvaders: {
+	'spaceinvaders-menu': {
 		bpm: 96,
 		parts: [
 			{ voice: 'square', level: 0.045, notes: 'E2 E2 D2 D2 C2 C2 B1 B1 E2 E2 D2 D2 C2 C2 B1 B1 ' },
@@ -79,7 +79,7 @@ const TRACKS: Record<GameId, Track> = {
 		drums: 'k...h...k...h.h.'
 	},
 	// Pong × Brick Breaker: bright, upbeat synth pop in C major.
-	pong: {
+	'pong-menu': {
 		bpm: 126,
 		parts: [
 			{
@@ -94,7 +94,110 @@ const TRACKS: Record<GameId, Track> = {
 			{ voice: 'triangle', level: 0.09, notes: 'C3 C3 G2 G2 A2 A2 E2 E2 F2 F2 C3 C3 G2 G2 G2 G2 ' }
 		],
 		drums: 'k.h.s.h.k.k.s.hh'
-	}
+	},
+	// ── Gameplay soundtracks (quieter than the menus) ──
+	// Top Gun missions: an original, driving 80s synth-rock track, kept quiet under the action.
+	'topgun-play': {
+		bpm: 144,
+		gain: 0.35,
+		parts: [
+			{ voice: 'sawtooth', level: 0.035, notes: 'A1 A1 A2 A1 A1 A1 A2 A1 F1 F1 F2 F1 G1 G1 G2 G1 ' },
+			{ voice: 'square', level: 0.025, notes: '. . A3 . . . A3 . . . F3 . . . G3 . ' },
+			{ voice: 'square', level: 0.03, notes: 'A4 - - - C5 - D5 - E5 - - - D5 - C5 - D5 - - - C5 - A4 - G4 - - - A4 - - - ' }
+		],
+		drums: 'k.h.s.h.k.k.s.h.'
+	},
+	// Fishy, by difficulty: calm, then tense, then frantic; and a playful duel for 2P local.
+	'fishy-1': {
+		bpm: 96,
+		gain: 0.55,
+		parts: [
+			{ voice: 'pluck', level: 0.07, notes: 'C5 . A4 . F4 . A4 . Bb4 . G4 . E4 . G4 . A4 . F4 . C4 . F4 . G4 - - - . . . . ' },
+			{ voice: 'sine', level: 0.08, notes: 'F2 . . . C3 . . . Bb1 . . . C2 . . . F2 . . . C3 . . . C2 . . . C2 . . . ' }
+		],
+		drums: 'k.....h.k.....h.'
+	},
+	'fishy-2': {
+		bpm: 112,
+		gain: 0.55,
+		parts: [
+			{ voice: 'pluck', level: 0.07, notes: 'D5 F5 A5 F5 D5 . C5 . Bb4 D5 F5 D5 A4 . . . G4 Bb4 D5 Bb4 G4 . F4 . E4 G4 A4 C5 D5 . . . ' },
+			{ voice: 'triangle', level: 0.09, notes: 'D2 . D3 . D2 . D3 . Bb1 . Bb2 . Bb1 . Bb2 . G1 . G2 . G1 . G2 . A1 . A2 . A1 . C#2 . ' }
+		],
+		drums: 'k.h.s.h.k.h.s.hh'
+	},
+	'fishy-3': {
+		bpm: 136,
+		gain: 0.55,
+		parts: [
+			{ voice: 'square', level: 0.035, notes: 'E5 . F5 . E5 . B4 . C5 . B4 . A4 . B4 . E5 . F5 . G5 . F5 . E5 - - - . . . . ' },
+			{ voice: 'sawtooth', level: 0.03, notes: 'E2 E2 E3 E2 F2 F2 F3 F2 E2 E2 E3 E2 D2 D2 D3 C2 ' }
+		],
+		drums: 'k.hsk.hsk.hsk.ss'
+	},
+	'fishy-2p': {
+		bpm: 120,
+		gain: 0.55,
+		parts: [
+			{ voice: 'square', level: 0.035, notes: 'G4 B4 D5 B4 G5 . D5 . E5 D5 B4 G4 A4 . . . C5 E5 G5 E5 C5 . A4 . B4 D5 G5 D5 B4 . . . ' },
+			{ voice: 'triangle', level: 0.09, notes: 'G2 . G2 D3 G2 . G2 D3 C2 . C2 G2 D2 . D2 A2 ' }
+		],
+		drums: 'k.h.s.h.k.k.s.h.'
+	},
+	// Space Invaders, by difficulty: sparse and eerie (Normal), darker (Hard), urgent (No Shields).
+	// Kept light so the invaders' marching beat still comes through.
+	'spaceinvaders-1': {
+		bpm: 100,
+		gain: 0.5,
+		parts: [
+			{ voice: 'sine', level: 0.06, detune: 12, notes: '. . . . B4 - - - . . . . A4 - G4 - . . . . E5 - - - D5 - B4 - - - - - ' },
+			{ voice: 'triangle', level: 0.09, notes: 'E2 . . . E2 . . . C2 . . . D2 . . . ' }
+		],
+		drums: 'k.......k.......'
+	},
+	'spaceinvaders-2': {
+		bpm: 116,
+		gain: 0.5,
+		parts: [
+			{ voice: 'square', level: 0.03, notes: 'E5 - D5 - B4 - G4 - A4 - B4 - G4 - E4 - E5 - D5 - B4 - D5 - E5 - - - F#5 - - - ' },
+			{ voice: 'sawtooth', level: 0.03, notes: 'E2 E2 B1 B1 C2 C2 D2 D2 ' }
+		],
+		drums: 'k...s...k.k.s...'
+	},
+	'spaceinvaders-3': {
+		bpm: 136,
+		gain: 0.5,
+		parts: [
+			{ voice: 'square', level: 0.03, notes: 'E5 G5 B5 G5 E5 G5 B5 G5 F5 A5 C6 A5 F5 A5 C6 A5 E5 G5 B5 G5 D5 F#5 A5 F#5 E5 - - - . . . . ' },
+			{ voice: 'sawtooth', level: 0.03, notes: 'E2 E3 E2 E3 F2 F3 F2 F3 E2 E3 E2 E3 D2 D3 D#2 D#3 ' }
+		],
+		drums: 'k.hsk.hsk.hsk.hs'
+	},
+	// Brick Breaker: bouncy, in A minor.
+	'pong-brick': {
+		bpm: 118,
+		gain: 0.55,
+		parts: [
+			{ voice: 'square', level: 0.035, notes: 'A4 . C5 . E5 . A5 . G5 . E5 . C5 . E5 . F5 . A5 . C6 . A5 . G5 - - - . . . . ' },
+			{ voice: 'triangle', level: 0.09, notes: 'A2 . A2 E3 F2 . F2 C3 G2 . G2 D3 E2 . E2 B2 ' }
+		],
+		drums: 'k.h.k.s.k.h.k.s.'
+	},
+	// Pong: one tune that speeds up with each stage (FASTER!, SHRINKED!, DOUBLE TROUBLE!, FASTERR!!!).
+	...Object.fromEntries(
+		[112, 124, 134, 144, 158].map((bpm, stage): [string, Track] => [
+			`pong-${stage}`,
+			{
+				bpm,
+				gain: 0.55,
+				parts: [
+					{ voice: 'square', level: 0.035, notes: 'C5 . G4 . C5 . E5 . D5 . G4 . B4 . D5 . C5 . G4 . C5 . E5 . F5 . E5 . D5 . B4 . ' },
+					{ voice: 'triangle', level: 0.09, notes: 'C3 . C3 . G2 . G2 . A2 . A2 . F2 . G2 . ' }
+				],
+				drums: 'k.h.s.h.k.h.s.h.'
+			}
+		])
+	)
 };
 
 const NOTE: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -125,11 +228,11 @@ class GameAudio {
 	private out: GainNode | null = null;
 	private musicBus: GainNode | null = null;
 	private noiseBuf: AudioBuffer | null = null;
-	private track: GameId | null = null;
+	private track: string | null = null;
 	private step = 0;
 	private nextStep = 0;
 	private timer: ReturnType<typeof setInterval> | null = null;
-	private parsed = new Map<GameId, ReturnType<typeof parse>[]>();
+	private parsed = new Map<string, ReturnType<typeof parse>[]>();
 
 	constructor() {
 		if (typeof localStorage !== 'undefined') {
@@ -184,8 +287,8 @@ class GameAudio {
 	}
 
 	// ── Menu music ──
-	/** Play this game's menu soundtrack (null = silence). Safe to call every frame. */
-	music(id: GameId | null) {
+	/** Play a soundtrack by name (null = silence). Safe to call every frame. */
+	music(id: string | null) {
 		if (id === this.track) return;
 		const ctx = id ? this.ensure() : this.ctx;
 		if (!ctx || !this.musicBus) return;
@@ -200,18 +303,19 @@ class GameAudio {
 			this.timer = null;
 			return;
 		}
+		if (!TRACKS[id]) return;
 		this.track = id;
 		if (!this.parsed.has(id)) this.parsed.set(id, TRACKS[id].parts.map((p) => parse(p.notes)));
 		this.step = 0;
 		this.nextStep = now + 0.1;
-		this.musicBus.gain.linearRampToValueAtTime(1, now + 0.8);
+		this.musicBus.gain.linearRampToValueAtTime(TRACKS[id].gain ?? 1, now + 0.8);
 		if (!this.timer) this.timer = setInterval(() => this.schedule(), 100);
 		this.schedule();
 	}
 
 	/** Stop the soundtrack if it's this game's (the game was hidden). */
-	stopIf(id: GameId) {
-		if (this.track === id) this.music(null);
+	stopIf(game: GameId) {
+		if (this.track?.startsWith(game + '-')) this.music(null);
 	}
 
 	private schedule() {

@@ -81,9 +81,12 @@ export class Fishy implements ArcadeGame {
 	onScore: (board: number, score: number) => void = () => {};
 	/** Sound effects (set by the host). */
 	sfx: (name: string) => void = () => {};
-	/** On a menu screen (the host plays the menu soundtrack there). */
-	inMenu() {
-		return [0, 3, 4, 5, 6, 9, 12, 13].includes(this.game);
+	/** Soundtrack: menus, one per difficulty in single player, and one for 2P local. */
+	musicTrack() {
+		if ([0, 3, 4, 5, 6, 9, 12, 13].includes(this.game)) return 'fishy-menu';
+		if (this.game == 1) return 'fishy-' + this.difficulty;
+		if (this.game == 2) return 'fishy-2p';
+		return null;
 	}
 	global: Board | null = null;
 	loggedIn = false;

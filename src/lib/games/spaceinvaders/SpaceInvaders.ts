@@ -177,9 +177,11 @@ export class SpaceInvaders implements ArcadeGame {
 	onScore: (board: number, score: number) => void = () => {};
 	/** Sound effects (set by the host). */
 	sfx: (name: string) => void = () => {};
-	/** On a menu screen (the host plays the menu soundtrack there). */
-	inMenu() {
-		return [0, 3, 4, 5, 6, 7].includes(this.game);
+	/** Soundtrack: menus, then one per difficulty while playing (and paused). */
+	musicTrack() {
+		if ([0, 3, 4, 5, 6, 7].includes(this.game)) return 'spaceinvaders-menu';
+		if (this.game == 1 || this.game == 8) return 'spaceinvaders-' + this.difficulty;
+		return null;
 	}
 	private stepSound = 0;
 	private ticks = 0;
