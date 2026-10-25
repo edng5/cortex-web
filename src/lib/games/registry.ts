@@ -56,10 +56,10 @@ export const GAMES: GameSpec[] = [
 	{
 		id: 'fishy',
 		title: 'Fishy',
-		blurb: 'Eat smaller fish to grow, dodge the bigger ones, sharks and hooks. Two players too.',
+		blurb: 'Eat smaller fish to grow, dodge the bigger ones, sharks and hooks. 2P local too.',
 		icon: '/games/icons/fishy.png',
 		preview: '/games/previews/fishy.jpg',
-		tagline: 'Eat or be eaten · 2 players',
+		tagline: 'Eat or be eaten · 2P local',
 		accent: '#22d3ee',
 		w: 900,
 		h: 662,
