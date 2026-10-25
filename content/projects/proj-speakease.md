@@ -7,8 +7,6 @@ end: 2025-01
 tags: [mobile-apps, react-native, llm, speech, language-learning, startup, typescript, nodejs]
 weight: 3
 icon: /images/speakease/icon.png
-videos:
-  - https://www.youtube.com/watch?v=kTqgac8nIwQ
 reels:
   - https://www.youtube.com/shorts/RZvXYffFZUY
   - https://www.youtube.com/shorts/uo1zOJf-fgs
@@ -25,7 +23,6 @@ carousels:
     - /images/speakease/team/samantha.jpg
     - /images/speakease/team/oliver.jpg
 captions:
-  https://www.youtube.com/watch?v=kTqgac8nIwQ: "SpeakEase AI trailer"
   https://www.youtube.com/shorts/RZvXYffFZUY: "Introducing SpeakEase AI"
   https://www.youtube.com/shorts/uo1zOJf-fgs: "New Friends"
   https://www.youtube.com/shorts/NmLFOLGg1Cc: "Meet Easso!"

@@ -1,9 +1,57 @@
 <!--
-  A portrait (9:16) YouTube player for a node's `reels`: plays them one after another and loops,
-  with a button per reel to jump to it. `autoplay` starts it muted (browsers only autoplay muted
-  video); the viewer can unmute in the player.
+  A portrait (9:16) YouTube player for a node's `reels`: plays them one after another, looping
+  from the last back to the first, with a button per reel to jump to it. Uses the YouTube IFrame
+  API so the next reel starts as soon as one ends. `autoplay` starts it with sound (the visitor
+  just clicked to open the node, which lets the browser allow it); if the browser still blocks
+  sound, it plays muted instead and the viewer can unmute in the player.
 -->
+<script lang="ts" module>
+	interface YTPlayer {
+		loadVideoById(id: string): void;
+		cueVideoById(id: string): void;
+		playVideo(): void;
+		mute(): void;
+		unMute(): void;
+		destroy(): void;
+	}
+	type YTNamespace = {
+		Player: new (
+			el: HTMLElement,
+			opts: {
+				host?: string;
+				videoId: string;
+				playerVars?: Record<string, number | string>;
+				events?: { onReady?: () => void; onStateChange?: (e: { data: number }) => void };
+			}
+		) => YTPlayer;
+	};
+	declare global {
+		interface Window {
+			YT?: YTNamespace;
+			onYouTubeIframeAPIReady?: () => void;
+		}
+	}
+
+	let apiPromise: Promise<YTNamespace> | null = null;
+	/** Load YouTube's IFrame API once for the page. */
+	function loadApi(): Promise<YTNamespace> {
+		if (window.YT?.Player) return Promise.resolve(window.YT);
+		apiPromise ??= new Promise((resolve) => {
+			const prev = window.onYouTubeIframeAPIReady;
+			window.onYouTubeIframeAPIReady = () => {
+				prev?.();
+				resolve(window.YT!);
+			};
+			const s = document.createElement('script');
+			s.src = 'https://www.youtube.com/iframe_api';
+			document.head.appendChild(s);
+		});
+		return apiPromise;
+	}
+</script>
+
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { youtubeId } from '$lib/media';
 
 	let {
@@ -15,44 +63,67 @@
 	}: { reels: string[]; captions?: Record<string, string>; title: string; height: string; autoplay?: boolean } = $props();
 
 	const items = $derived(
-		reels.map((url, i) => ({ id: youtubeId(url), label: captions[url] ?? `${title} reel ${i + 1}` })).filter((r) => r.id)
+		reels
+			.map((url, i) => ({ id: youtubeId(url) ?? '', label: captions[url] ?? `${title} reel ${i + 1}` }))
+			.filter((r) => r.id)
 	);
 	let current = $state(0);
-	let started = $state(false);
+	let mount = $state<HTMLDivElement>();
+	let player: YTPlayer | null = null;
 
-	// Start at `current`, then the rest in order, looping (YouTube's playlist + loop parameters).
-	const src = $derived.by(() => {
-		if (!items.length) return '';
-		const order = [...items.slice(current), ...items.slice(0, current)].map((r) => r.id);
-		const play = autoplay || started;
-		const q = new URLSearchParams({
-			playlist: order.join(','),
-			loop: '1',
-			rel: '0',
-			playsinline: '1',
-			...(play ? { autoplay: '1' } : {}),
-			...(play && !started ? { mute: '1' } : {})
+	const ENDED = 0;
+	const PLAYING = 1;
+	const BUFFERING = 3;
+	let lastState = -1;
+
+	onMount(() => {
+		let disposed = false;
+		loadApi().then((YT) => {
+			if (disposed || !mount || !items.length) return;
+			player = new YT.Player(mount, {
+				host: 'https://www.youtube-nocookie.com',
+				videoId: items[0].id,
+				playerVars: { playsinline: 1, rel: 0, autoplay: autoplay ? 1 : 0 },
+				events: {
+					onReady: () => {
+						if (!autoplay) return;
+						player?.playVideo();
+						// Sound blocked by the browser (it won't start): play muted rather than not at all.
+						setTimeout(() => {
+							if (!disposed && lastState !== PLAYING && lastState !== BUFFERING) {
+								player?.mute();
+								player?.playVideo();
+							}
+						}, 1500);
+					},
+					// A reel finished: on to the next, and from the last back to the first.
+					onStateChange: (e) => {
+						lastState = e.data;
+						if (e.data === ENDED) play((current + 1) % items.length);
+					}
+				}
+			});
 		});
-		return `https://www.youtube-nocookie.com/embed/${order[0]}?${q}`;
+		return () => {
+			disposed = true;
+			player?.destroy();
+			player = null;
+		};
 	});
 
-	function pick(i: number) {
+	function play(i: number) {
 		current = i;
-		started = true; // picked by hand: play it with sound
+		player?.loadVideoById(items[i].id);
+	}
+	function pick(i: number) {
+		player?.unMute(); // chosen by hand: play it with sound
+		play(i);
 	}
 </script>
 
 <div class="reels" style="--h: {height}">
 	<div class="frame">
-		{#key src}
-			<iframe
-				{src}
-				title={items[current]?.label ?? `${title} reels`}
-				allow="autoplay; accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-				allowfullscreen
-				referrerpolicy="strict-origin-when-cross-origin"
-			></iframe>
-		{/key}
+		<div class="mount" bind:this={mount} aria-label="{title} reels"></div>
 	</div>
 	{#if items.length > 1}
 		<div class="picks" role="tablist" aria-label="{title} reels">
@@ -80,7 +151,9 @@
 		border: 1px solid rgba(148, 163, 184, 0.25);
 		box-shadow: 0 30px 70px -25px rgba(0, 0, 0, 0.9);
 	}
-	iframe {
+	/* The API swaps this div for the player's <iframe>. */
+	.frame :global(iframe),
+	.mount {
 		display: block;
 		width: 100%;
 		height: 100%;
