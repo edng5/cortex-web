@@ -1,7 +1,7 @@
 ---
 title: "Ping Pong"
 subtitle: "Table tennis"
-summary: "Edward plays ping pong (table tennis), a fast game of reflexes, spin and placement."
+summary: "Edward plays ping pong: quick reflexes, spin and placement, and always some friendly competition."
 tags: [interest, ping-pong, table-tennis, sports, games, competitive]
 weight: 1
 images:
@@ -11,6 +11,3 @@ captions:
 links: []
 related: [int-foosball]
 ---
-
-Ping pong is one of the sports Edward enjoys playing. It is a game of quick reflexes, where rallies
-are won with spin, speed and placement, and it's always good for some friendly competition.

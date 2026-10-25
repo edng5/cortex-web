@@ -1,7 +1,7 @@
 ---
 title: "Pets"
 subtitle: "Many pets over the years"
-summary: "Edward has kept a lot of pets over the years."
+summary: "Edward has kept a lot of pets over the years; here are a few of them."
 tags: [pets, animals]
 weight: 1
 images:
@@ -13,5 +13,3 @@ images:
 links: []
 related: []
 ---
-
-Here are a few of them.

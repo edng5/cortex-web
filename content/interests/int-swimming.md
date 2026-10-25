@@ -1,7 +1,7 @@
 ---
 title: "Swimming"
 subtitle: "Sports · Fitness"
-summary: "Edward enjoys swimming, a full-body workout that is easy on the joints."
+summary: "Edward swims to stay active: a full-body workout that's easy on the joints."
 tags: [interest, swimming, fitness, sports]
 weight: 1
 images:
@@ -11,6 +11,3 @@ captions:
 links: []
 related: [int-running]
 ---
-
-Swimming is one of the ways Edward stays active. It is a full-body workout that builds endurance and
-is easy on the joints, which makes it a good complement to running and basketball.

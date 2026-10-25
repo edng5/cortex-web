@@ -1,7 +1,7 @@
 ---
 title: "Video Editing"
 subtitle: "YouTube: @edng5"
-summary: "Edward's newest hobby: editing videos of gaming sessions with friends and vlogs, posted on his YouTube channel."
+summary: "Edward's newest hobby: editing videos of gaming sessions with friends and vlogs for his YouTube channel (@edng5)."
 tags: [video-editing, youtube, content-creation, gaming]
 weight: 1
 images: []
@@ -11,6 +11,3 @@ links:
   - { label: "YouTube channel", url: "https://www.youtube.com/@edng5", kind: video }
 related: [int-video-games]
 ---
-
-Edward's most recent hobby is video editing. He makes videos of himself playing video games with
-friends, and vlogs of hanging out with them, and posts them on his YouTube channel (@edng5).

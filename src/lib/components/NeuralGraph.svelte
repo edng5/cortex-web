@@ -35,6 +35,8 @@
 		insetLeft?: number;
 		getAudioLevel?: () => number;
 		onselect?: (id: string) => void;
+		/** A tap / click on empty space (not a neuron, not a drag). */
+		onbackground?: () => void;
 		/** Legend filter: neurons of this type line up on the left, everything else on the right. */
 		filterType?: string | null;
 		/** Order of the filtered column: oldest → newest, or biggest neuron first. */
@@ -50,6 +52,7 @@
 		insetLeft = 0,
 		getAudioLevel = () => 0,
 		onselect,
+		onbackground,
 		filterType = null,
 		filterOrder = 'date'
 	}: Props = $props();
@@ -441,6 +444,7 @@
 			pan = null;
 			panning = false;
 			if (tapped) {
+				onbackground?.();
 				const now = performance.now();
 				if (now - lastTapAt < 320) resetting = true; // double-tap: back to the whole graph
 				lastTapAt = now;
@@ -683,8 +687,9 @@
 				ctx.beginPath();
 				ctx.arc(p.x - n.r * 0.25, p.y - n.r * 0.25, n.r * 0.35, 0, Math.PI * 2);
 				ctx.fill();
-				// Work in progress (or `ring: true`, to make a neuron stand out): slowly rotating dashed ring.
-				if (n.data.wip || n.data.ring) {
+				// Work in progress: slowly rotating dashed ring. `ring: true` (to make a neuron stand
+				// out): a solid ring, gently pulsing.
+				if (n.data.wip) {
 					ctx.save();
 					ctx.strokeStyle = hexA(n.color, 0.85);
 					ctx.lineWidth = 1.5 / view.k;
@@ -694,6 +699,12 @@
 					ctx.arc(p.x, p.y, n.r + 5, 0, Math.PI * 2);
 					ctx.stroke();
 					ctx.restore();
+				} else if (n.data.ring) {
+					ctx.strokeStyle = hexA(n.color, 0.6 + 0.3 * Math.sin(t * 2));
+					ctx.lineWidth = 2 / view.k;
+					ctx.beginPath();
+					ctx.arc(p.x, p.y, n.r + 5, 0, Math.PI * 2);
+					ctx.stroke();
 				}
 			}
 

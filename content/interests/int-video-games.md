@@ -12,11 +12,9 @@ links: []
 related: [int-pokemon, int-video-editing, proj-mini-games]
 ---
 
-When he's not coding or on the court, Edward is often playing video games. His favourites are:
-
 - **Pokémon**: his first game was Pokémon Diamond.
-- **Valorant**: Riot's tactical shooter, which he plays with friends.
+- **Valorant**: Riot's tactical shooter, played with friends.
 - **Minecraft**: the sandbox classic.
 
-He also makes videos of his gaming sessions with friends for his YouTube channel, and has built his
-own games, including Top Gun and a Space Invaders remake.
+He also edits videos of his gaming sessions for YouTube, and has made his own games (see
+E.Ngine Games).

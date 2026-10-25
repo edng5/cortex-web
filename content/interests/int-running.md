@@ -1,7 +1,7 @@
 ---
 title: "Running"
 subtitle: "First 10 km: Oasis Zoo Run"
-summary: "Edward enjoys running; he ran his first 10 km race at the Oasis Zoo Run, finishing in 1 hour 15 minutes."
+summary: "Edward runs to stay active; he ran his first 10 km race at the Oasis Zoo Run in 1 hour 15 minutes."
 tags: [interest, running, fitness, sports, outdoors, 10k, race]
 weight: 1
 images:
@@ -11,6 +11,3 @@ captions:
 links: []
 related: [int-basketball, int-swimming]
 ---
-
-Running is one of the ways Edward stays active, alongside basketball. He ran his first 10 km race at
-the **Oasis Zoo Run**, finishing in **1 hour 15 minutes**.

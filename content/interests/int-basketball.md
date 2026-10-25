@@ -11,7 +11,4 @@ links: []
 related: [edu-uoft, proj-legm-cp]
 ---
 
-Aside from programming, Edward loves playing basketball. He has played since he was 10 years old,
-starting in house leagues and working his way up to the University of Toronto's Men's D-League
-team. He also represented BMO in the IBM League, playing at the home of the Toronto Raptors. His
-love of the game even inspired a project: LeGM-CP, an AI fantasy basketball draft assistant.
+His love of the game inspired LeGM-CP, an AI fantasy basketball draft assistant.

@@ -135,6 +135,7 @@
 		{insetLeft}
 		getAudioLevel={() => cortex.audioLevel()}
 		onselect={(id) => cortex.select(id)}
+		onbackground={() => found && cortex.reset()}
 		{filterType}
 		{filterOrder}
 	/>

@@ -2,6 +2,7 @@
 // its numbers are Edward's; the changes:
 //  - Collisions are pixel-perfect: two fish only touch where both sprites have solid pixels, not
 //    wherever their bounding boxes overlap (the Java version compared corner points of boxes).
+//    And a bigger fish only eats you if you run into its mouth (the front), not its body or tail.
 //  - Single player moves with WASD (the original used the arrow keys); in multiplayer, player 1
 //    has WASD and player 2 the arrow keys, as before.
 //  - A moment of safety after losing a life, so you can't be eaten again where you respawn.
@@ -398,13 +399,14 @@ export class Fishy implements ArcadeGame {
 		if (this.safe > 0) this.safe--;
 
 		if (this.hooked == 0) {
-			// Fish: bigger eats smaller, wherever their bodies actually touch.
+			// Fish: you eat smaller fish wherever you touch them; a bigger fish only eats you if you
+			// run into its mouth (the front of it), not its body or tail.
 			for (let a = 0; a < 4; a++) {
 				const me = this.playerSprite();
 				const r = this.sprite('EnemyFishR', this.enemiesxR[a], this.enemiesy1[a], this.enemiesw[a], this.enemiesh[a]);
 				if (pixelsTouch(me, r)) {
 					if (this.fishw < this.enemiesw[a]) {
-						if (this.safe == 0) { this.die(); break; }
+						if (this.safe == 0 && pixelsTouch(me, r, mouth(r, 1))) { this.die(); break; }
 					} else if (this.fishw > this.enemiesw[a]) {
 						this.enemiesxR[a] = -310;
 						this.enemiesy1[a] = rnd(600) + 10;
@@ -415,7 +417,7 @@ export class Fishy implements ArcadeGame {
 				const l = this.sprite('EnemyFishL', this.enemiesxL[a], this.enemiesy2[a], this.enemiesw2[a], this.enemiesh2[a]);
 				if (pixelsTouch(this.playerSprite(), l)) {
 					if (this.fishw < this.enemiesw2[a]) {
-						if (this.safe == 0) { this.die(); break; }
+						if (this.safe == 0 && pixelsTouch(this.playerSprite(), l, mouth(l, -1))) { this.die(); break; }
 					} else if (this.fishw > this.enemiesw2[a]) {
 						this.enemiesxL[a] = 910;
 						this.enemiesy2[a] = rnd(600) + 10;
@@ -432,7 +434,7 @@ export class Fishy implements ArcadeGame {
 				const sl = this.sprite('EnemySharkL', this.sharkxL[a], this.sharky2[a], this.sharkw2[a], this.sharkh2[a]);
 				if (pixelsTouch(this.playerSprite(), sr)) {
 					if (this.fishw < this.sharkw[a]) {
-						if (this.safe == 0) this.die();
+						if (this.safe == 0 && pixelsTouch(this.playerSprite(), sr, mouth(sr, 1))) this.die();
 					} else if (this.fishw > this.sharkw[a]) {
 						this.sharkxR[a] = -310;
 						this.sharky1[a] = rnd(500) + 10;
@@ -440,7 +442,7 @@ export class Fishy implements ArcadeGame {
 					}
 				} else if (pixelsTouch(this.playerSprite(), sl)) {
 					if (this.fishw < this.sharkw2[a]) {
-						if (this.safe == 0) this.die();
+						if (this.safe == 0 && pixelsTouch(this.playerSprite(), sl, mouth(sl, -1))) this.die();
 					} else if (this.fishw > this.sharkw2[a]) {
 						this.sharkxL[a] = 910;
 						this.sharky2[a] = rnd(500) + 10;
@@ -501,13 +503,14 @@ export class Fishy implements ArcadeGame {
 		[this.x2, this.y2, this.x3, this.y3] = [p1.x, p1.y, p2.x, p2.y];
 		const s1 = () => this.sprite(this.direction == 2 ? 'FishyL' : 'FishyR', this.x2, this.y2, this.fishw2, this.fishh2);
 		const s2 = () => this.sprite(this.direction2 == 2 ? 'Fishy2L' : 'Fishy2R', this.x3, this.y3, this.fishw3, this.fishh3);
-		// Each player against the CPU fish: eaten = back to the start, small again.
+		// Each player against the CPU fish: eaten (by a bigger one's mouth) = back to the start, small again.
 		const versus = (me: () => Sprite, size: () => number, reset: () => void, grow: () => void) => {
 			for (let a = 0; a < 4; a++) {
 				const r = this.sprite('EnemyFishR', this.enemiesxR[a], this.enemiesy1[a], this.enemiesw[a], this.enemiesh[a]);
 				if (pixelsTouch(me(), r)) {
-					if (size() < this.enemiesw[a]) return reset();
-					if (size() > this.enemiesw[a]) {
+					if (size() < this.enemiesw[a]) {
+						if (pixelsTouch(me(), r, mouth(r, 1))) return reset();
+					} else if (size() > this.enemiesw[a]) {
 						this.enemiesxR[a] = -310;
 						this.enemiesy1[a] = rnd(600) + 10;
 						grow();
@@ -515,8 +518,9 @@ export class Fishy implements ArcadeGame {
 				}
 				const l = this.sprite('EnemyFishL', this.enemiesxL[a], this.enemiesy2[a], this.enemiesw2[a], this.enemiesh2[a]);
 				if (pixelsTouch(me(), l)) {
-					if (size() < this.enemiesw2[a]) return reset();
-					if (size() > this.enemiesw2[a]) {
+					if (size() < this.enemiesw2[a]) {
+						if (pixelsTouch(me(), l, mouth(l, -1))) return reset();
+					} else if (size() > this.enemiesw2[a]) {
 						this.enemiesxL[a] = 910;
 						this.enemiesy2[a] = rnd(600) + 10;
 						grow();
@@ -657,6 +661,12 @@ export class Fishy implements ArcadeGame {
 		if (this.game == 10) g.img(i.P1Win, 0, 0, 1200, 700);
 		if (this.game == 11) g.img(i.P2Win, 0, 0, 1200, 700);
 	}
+}
+
+/** The front of a fish or shark (its mouth end): the third of it facing the way it swims. */
+function mouth(s: Sprite, dir: 1 | -1): { x: number; y: number; w: number; h: number } {
+	const w = s.w * 0.35;
+	return { x: dir > 0 ? s.x + s.w - w : s.x, y: s.y, w, h: s.h };
 }
 
 /** Fields "Play Again" puts back to their starting values (Fishy.java's reset tables). */

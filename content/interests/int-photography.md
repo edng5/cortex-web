@@ -1,7 +1,7 @@
 ---
 title: "Photography"
 subtitle: "Landscapes, wildlife and city shots"
-summary: "Edward enjoys photography, from city streets to mountain lakes, waterfalls and wildlife, including long-exposure shots."
+summary: "Edward enjoys photography, shooting mostly on his phone."
 tags: [interest, photography, travel, nature, landscapes, wildlife, hiking, outdoors]
 weight: 2
 # Clicking this neuron opens a large centred photo gallery.
@@ -48,6 +48,5 @@ links: []
 related: [int-running]
 ---
 
-Edward enjoys photography, shooting mostly on his phone. His photos range from city streets and
-skylines, like the Calgary Tower, to the Rocky Mountains: turquoise glacial lakes, canyon waterfalls
-captured with long exposures, forests, sunsets and wildlife such as deer, birds and ducks.
+From city skylines like the Calgary Tower to the Rocky Mountains: turquoise glacial lakes,
+long-exposure canyon waterfalls, forests, sunsets and wildlife such as deer, birds and ducks.

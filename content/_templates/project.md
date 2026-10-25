@@ -8,7 +8,7 @@ start: 2025-01
 end: 2025-04
 tags: [svelte, llm, rag]
 weight: 2
-# ring: true                           # rotating dashed ring around the neuron, to make it stand out
+# ring: true                           # solid ring around the neuron, to make it stand out
 icon:                                   # optional square logo/icon, shown next to the title
 images:                                 # extra pictures (shown on the left / in the carousel)
   - /images/project-screenshot-1.png

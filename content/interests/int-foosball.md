@@ -1,7 +1,7 @@
 ---
 title: "Foosball"
 subtitle: "Table football"
-summary: "Edward enjoys a good game of foosball (table football): fast hands, quick wrists and friendly rivalry."
+summary: "Edward loves a game of foosball: fast hands, quick wrist shots and friendly rivalry."
 tags: [interest, foosball, table-football, table-games, games, competitive]
 weight: 1
 images:
@@ -11,6 +11,3 @@ captions:
 links: []
 related: [int-ping-pong]
 ---
-
-Foosball is one of Edward's favourite games to play. Table football is all about fast hands, quick
-wrist shots and reading your opponent, which makes it a great game for some friendly rivalry.

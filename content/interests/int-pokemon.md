@@ -1,7 +1,7 @@
 ---
 title: "Pokémon"
 subtitle: "Lifelong fan · Sinnoh"
-summary: "Edward is a huge Pokémon fan. His first game was Pokémon Diamond, Sinnoh is his favourite region, and his favourites include Torterra, Primal Kyogre, Gengar, Chi-Yu, Aerodactyl and Mega Lucario."
+summary: "Edward is a huge Pokémon fan: Pokémon Diamond was his first game and Sinnoh is his favourite region."
 tags: [pokemon, gaming, trading-cards, sinnoh, pokemon-diamond]
 weight: 1
 # Desktop: frameless cut-outs posed like a team photo (back to front). Flyers hover high and
@@ -36,12 +36,7 @@ links: []
 related: [proj-cortex-discord, int-video-games]
 ---
 
-Edward is a huge fan of Pokémon. His first game was **Pokémon Diamond**, and **Sinnoh** is still his
-favourite region.
+**Favourites:** Torterra, Primal Kyogre, Gengar, Chi-Yu, Aerodactyl and Mega Lucario.
 
-## Favourite Pokémon
-Torterra, Primal Kyogre, Gengar, Chi-Yu, Aerodactyl and Mega Lucario.
-
-## In his projects
-His interest made its way into his work: his Cortex Discord bot can grade Pokémon cards from a photo
-and predict Pokémon card prices using regression and sentiment analysis.
+His Cortex Discord bot can grade Pokémon cards from a photo and predict card prices using
+regression and sentiment analysis.

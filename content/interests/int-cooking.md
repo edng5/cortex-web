@@ -1,7 +1,7 @@
 ---
 title: "Cooking"
 subtitle: "Picked up while away at school"
-summary: "After moving away for university, Edward took up cooking and started experimenting with different recipes."
+summary: "After moving away for university, Edward took up cooking and started experimenting with recipes."
 tags: [cooking, food, recipes]
 weight: 1
 images:
@@ -18,5 +18,4 @@ links: []
 related: []
 ---
 
-After moving away for school, Edward took up cooking and started experimenting with different
-recipes. The photos are some of his favourite dishes he has made.
+Pictured: some of his favourite dishes.

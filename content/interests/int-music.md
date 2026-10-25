@@ -1,7 +1,7 @@
 ---
 title: "K-Pop & Pop Music"
 subtitle: "Twice · aespa · IU · Drake · Bruno Mars"
-summary: "Edward listens to K-Pop and Pop; his favourite artists are Twice, aespa, IU, Drake and Bruno Mars."
+summary: "Edward listens to K-Pop and Pop."
 tags: [music, kpop, pop, twice, aespa, iu, drake, bruno-mars]
 weight: 1
 images:
@@ -20,11 +20,8 @@ links: []
 related: [int-kdramas, int-piano]
 ---
 
-When he's not coding or playing basketball, Edward is often listening to K-Pop or Pop.
-
-## Favourite artists
 - **K-Pop:** Twice, aespa and IU.
 - **Pop:** Drake and Bruno Mars.
 
-Albums shown: Twice's *With YOU-th*, aespa's *Lemonade*, IU's *Lilac*, Drake's *Views* and
-Bruno Mars's *24K Magic*.
+Albums shown: Twice's *With YOU-th*, aespa's *Lemonade*, IU's *Lilac*, Drake's *Views* and Bruno
+Mars's *24K Magic*.
