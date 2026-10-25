@@ -85,8 +85,11 @@
 			/* offline: the high scores screen falls back to this browser's scores */
 		}
 	}
+	/** Best score sent per board this visit, so leaving and coming back doesn't resend it. */
+	const sent: Record<number, number> = {};
 	async function submitScore(board: number, score: number) {
-		if (!session.user || score <= 0) return;
+		if (!session.user || score <= 0 || score <= (sent[board] ?? 0)) return;
+		sent[board] = score;
 		try {
 			const res = await fetch(url, {
 				method: 'POST',
@@ -108,11 +111,12 @@
 		if (game) loadBoard();
 	});
 
-	// Paused while hidden: save, and let go of held keys so nothing keeps moving.
+	// Paused while hidden (Esc, ✕, back to the games menu): let go of held keys so nothing keeps
+	// moving, and count the run so far, as quitting from the game's own menu would.
 	$effect(() => {
 		if (!active) {
 			releaseAll();
-			game?.save();
+			game?.leave();
 		} else if (status === 'running') {
 			queueMicrotask(() => canvas?.focus());
 			loadBoard(); // back again: refresh the global high scores

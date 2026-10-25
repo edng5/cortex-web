@@ -269,6 +269,17 @@ export class TopGun implements ArcadeGame {
 		return true;
 	}
 
+	leave() {
+		// Mid-mission (flying or paused): keep the score, as at the end of a mission.
+		if ((this.game == 1 || this.game == 4) && this.score > 0) {
+			if (this.mission == 1 && this.h1 < this.score) this.h1 = this.score;
+			else if (this.mission == 2 && this.h2 < this.score) this.h2 = this.score;
+			else if (this.mission == 3 && this.h3 < this.score) this.h3 = this.score;
+			this.onScore(this.mission, this.score);
+		}
+		this.save();
+	}
+
 	// ── Mouse: menu items can be hovered (moves the cursor dot) and clicked (= Enter) ──
 	private spots(): Hotspot[] {
 		const item = (x: number, y: number, w: number, h: number, sel: number, hover = true): Hotspot => ({

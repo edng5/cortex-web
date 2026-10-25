@@ -93,6 +93,14 @@ export class Pong implements ArcadeGame {
 		writeSave(SAVE_KEY, { highscore, bhighscore, pgp, pbh, bgp, bbb });
 	}
 
+	leave() {
+		if (this.game == 1) {
+			const score = this.mode == 1 ? this.score : this.bscore;
+			if (score > 0) this.onScore(this.mode, score);
+		}
+		this.save();
+	}
+
 	// ── Mouse (the original menus) ──
 	private spots(): Hotspot[] {
 		const s: Hotspot[] = [];

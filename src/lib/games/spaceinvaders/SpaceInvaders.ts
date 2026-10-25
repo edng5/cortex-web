@@ -247,6 +247,12 @@ export class SpaceInvaders implements ArcadeGame {
 		}
 	}
 
+	leave() {
+		// Playing or paused: count the score, as Main Menu from the pause screen does.
+		if ((this.game == 1 || this.game == 8) && this.score > 0) this.onScore(this.difficulty, this.score);
+		this.save();
+	}
+
 	// ── Mouse: every menu item can be hovered (moves the alien cursor) and clicked ──
 	private spots(): Hotspot[] {
 		const item = (x: number, y: number, w: number, h: number, sel: number): Hotspot => ({

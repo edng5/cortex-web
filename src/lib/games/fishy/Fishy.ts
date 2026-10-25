@@ -111,6 +111,12 @@ export class Fishy implements ArcadeGame {
 		writeSave(SAVE_KEY, { gp, Tsa, sa, Tfa, fa, ehs, mhs, hhs, dbh, p1s, p2s, unlockS, unlockM, character, difficulty });
 	}
 
+	leave() {
+		// Single player mid-game: the high score is already kept live; send it to the board too.
+		if (this.game == 1 && this.score > 0) this.onScore(this.difficulty, this.score);
+		this.save();
+	}
+
 	// ── Mouse: the original menus. Java measured clicks on the window, so add its insets. ──
 	pointerDown(px: number, py: number) {
 		if (this.game == 7 || this.game == 8 || this.game == 10 || this.game == 11) {

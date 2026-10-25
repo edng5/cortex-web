@@ -20,6 +20,11 @@ export interface ArcadeGame {
 	pointerDown(x: number, y: number): void;
 	/** Persist progress and local stats (localStorage). */
 	save(): void;
+	/**
+	 * The player left the pop-up (Esc, ✕ or back to the games menu) mid-run: count the run's score
+	 * now, as quitting from the game's own menu would (local high scores and onScore).
+	 */
+	leave(): void;
 	/** The player picked Quit / Exit on the game's own menu. */
 	onQuit: () => void;
 	/** A run ended with this score, on this board (mission, mode or difficulty). */
