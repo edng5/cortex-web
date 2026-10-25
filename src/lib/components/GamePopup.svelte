@@ -49,7 +49,14 @@
 		if (window.innerWidth > 1024) return close();
 		confirming = false;
 		session.gameId = null;
+		// The tap that quit the game would otherwise land on the menu now under the finger and
+		// open another game: ignore taps on the menu for a moment.
+		menuGuard = true;
+		clearTimeout(guardTimer);
+		guardTimer = setTimeout(() => (menuGuard = false), 500);
 	}
+	let menuGuard = $state(false);
+	let guardTimer: ReturnType<typeof setTimeout> | undefined;
 	function login() {
 		close();
 		session.loginOpen = true;
@@ -102,7 +109,9 @@
 			</svg>
 		</button>
 		{#if !current}
-			<EngineMenu onpick={(id) => (session.gameId = id)} onlogin={login} />
+			<div class="menu-wrap" class:guard={menuGuard}>
+				<EngineMenu onpick={(id) => (session.gameId = id)} onlogin={login} />
+			</div>
 		{/if}
 
 		{#each GAMES.filter((g) => started.includes(g.id)) as g (g.id)}
@@ -300,6 +309,10 @@
 		.backdrop {
 			place-items: center;
 		}
+	}
+	/* Just back from a game: not tappable yet (see leaveGame). */
+	.menu-wrap.guard {
+		pointer-events: none;
 	}
 	@keyframes appear {
 		from {
