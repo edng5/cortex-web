@@ -14,7 +14,7 @@ export const GET: RequestHandler = ({ locals, setHeaders }) => {
 
 export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	const user = locals.user;
-	if (!user) error(401, 'Log in to choose a leaderboard name.');
+	if (!user) error(401, 'Log in to choose a nickname.');
 	if (!rateLimit(`game-name:${user.id}`, 10, 10 * 60_000)) error(429, 'Too many tries. Wait a few minutes and try again.');
 	const body = await request.json().catch(() => null);
 	const check = checkName(body?.name);

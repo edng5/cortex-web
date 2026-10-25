@@ -6,6 +6,8 @@ export interface ClientUser {
 	email: string;
 	name: string | null;
 	isMember: boolean;
+	/** Chosen nickname (also the E.Ngine Games leaderboard name); null = not set. */
+	nickname?: string | null;
 }
 
 class Session {
@@ -21,11 +23,12 @@ class Session {
 	/** E.Ngine Games pop-up, and the game showing in it (null = the games menu). */
 	gameOpen = $state(false);
 	gameId = $state<string | null>(null);
-	/** Leaderboard name (undefined = not loaded yet, null = not chosen). */
+	/** Nickname, also the leaderboard name (undefined = not loaded yet, null = not chosen). */
 	playerName = $state<string | null | undefined>(undefined);
 
 	init(data: { user: ClientUser | null; quota: QuotaInfo | null; auth: { ready: boolean; google: boolean } }) {
 		this.user = data.user;
+		if (data.user && data.user.nickname !== undefined) this.playerName = data.user.nickname;
 		this.quota = data.quota;
 		this.auth = data.auth;
 	}

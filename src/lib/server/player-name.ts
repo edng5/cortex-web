@@ -48,10 +48,10 @@ export const nameKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g
 export type NameCheck = { ok: true; name: string } | { ok: false; message: string };
 
 export function checkName(raw: unknown): NameCheck {
-	if (typeof raw !== 'string') return { ok: false, message: 'Please enter a name.' };
+	if (typeof raw !== 'string') return { ok: false, message: 'Please enter a nickname.' };
 	const name = raw.normalize('NFKC').trim().replace(/\s+/g, ' ');
 	if (name.length < NAME_MIN || name.length > NAME_MAX) {
-		return { ok: false, message: `Names are ${NAME_MIN} to ${NAME_MAX} characters.` };
+		return { ok: false, message: `Nicknames are ${NAME_MIN} to ${NAME_MAX} characters.` };
 	}
 	if (!/^[A-Za-z0-9][A-Za-z0-9 _.-]*$/.test(name)) {
 		return { ok: false, message: 'Use letters, numbers, spaces, and _ . - only (starting with a letter or number).' };
@@ -70,10 +70,10 @@ export function checkName(raw: unknown): NameCheck {
 	const inappropriate =
 		stems.some((t) => flat.includes(t) || (unrepeat(t).length >= 4 && unrepeat(flat).includes(unrepeat(t)))) ||
 		words.some((w) => BANNED_WORDS.includes(w) || BANNED_WORDS.includes(unrepeat(w)));
-	if (inappropriate) return { ok: false, message: "That name isn't allowed. Please pick something friendly." };
+	if (inappropriate) return { ok: false, message: "That nickname isn't allowed. Please pick something friendly." };
 
 	if (RESERVED.includes(squash(name)) || RESERVED.includes(nameKey(name)) || squash(name).startsWith('edwardng') || squash(name).startsWith('admin')) {
-		return { ok: false, message: 'That name is reserved. Please pick another.' };
+		return { ok: false, message: 'That nickname is reserved. Please pick another.' };
 	}
 	return { ok: true, name };
 }
@@ -88,7 +88,7 @@ export function setPlayerName(userId: string, name: string): { ok: true } | { ok
 	const key = nameKey(name);
 	const db = getDb();
 	const taken = db.prepare('SELECT user_id FROM player_names WHERE name_key = ?').get(key) as { user_id: string } | undefined;
-	if (taken && taken.user_id !== userId) return { ok: false, message: 'Someone already has that name. Try another.' };
+	if (taken && taken.user_id !== userId) return { ok: false, message: 'Someone already has that nickname. Try another.' };
 	db.prepare(
 		`INSERT INTO player_names (user_id, name, name_key, updated_at) VALUES (?, ?, ?, ?)
 		 ON CONFLICT(user_id) DO UPDATE SET name = excluded.name, name_key = excluded.name_key, updated_at = excluded.updated_at`

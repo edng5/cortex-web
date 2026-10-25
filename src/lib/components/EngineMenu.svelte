@@ -87,7 +87,7 @@
 			<button class="login" onclick={onlogin}>Log in</button>
 		{:else if askName}
 			<form onsubmit={save}>
-				<label for="player-name">Choose the name shown on the global leaderboards</label>
+				<label for="player-name">Choose your nickname for the global leaderboards</label>
 				<div class="row">
 					<input
 						id="player-name"
@@ -103,10 +103,10 @@
 						<button type="button" class="ghost" onclick={() => (editing = false)}>Cancel</button>
 					{/if}
 				</div>
-				{#if message}<p class="err" role="alert">{message}</p>{:else}<p class="hint">Keep it friendly: offensive names are rejected. Until you choose one, your email shows partly hidden.</p>{/if}
+				{#if message}<p class="err" role="alert">{message}</p>{:else}<p class="hint">Keep it friendly: offensive nicknames are rejected. Until you choose one, your email shows partly hidden. You can change it any time from your account menu.</p>{/if}
 			</form>
 		{:else if session.playerName}
-			<p>Your scores go on the global leaderboards as <strong>{session.playerName}</strong>. <button class="link" onclick={edit}>Change name</button></p>
+			<p>Your scores go on the global leaderboards as <strong>{session.playerName}</strong>. <button class="link" onclick={edit}>Change nickname</button></p>
 		{:else}
 			<p class="hint">Loading your leaderboard name…</p>
 		{/if}
