@@ -20,7 +20,7 @@
     <clipPath id="pageClip"><path d="M126 70 H316 L386 140 V442 H126 Z"/></clipPath>
   </defs>
 
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#bg)"/>
 
   <!-- back pages of the bundle -->
   <path d="M150 52 H336 L404 120 V418" fill="none" stroke="#7c3aed" stroke-opacity="0.35" stroke-width="5" stroke-linejoin="round"/>

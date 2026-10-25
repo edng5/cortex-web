@@ -14,7 +14,7 @@ import { sanitizeHistory, streamCortexAnswer } from '$lib/server/llm';
 import { LlmError } from '$lib/server/llm-error';
 import { rateLimit } from '$lib/server/ratelimit';
 import { loadPersona } from '$lib/server/persona';
-import { blockVisitor, blockedFor, hitsBlockedTerm } from '$lib/server/guard';
+import { WARNINGS_BEFORE_BAN, banLength, blockedFor, guardKeys, hitsBlockedTerm, recordOffence } from '$lib/server/guard';
 import { consumeQuota, quotaStatus, refundQuota } from '$lib/server/quota';
 import { keysConfigured } from '$lib/server/crypto';
 import { audit } from '$lib/server/audit';
@@ -35,10 +35,29 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	const persona = loadPersona();
 	const who = { userId: user?.id ?? null, email: user?.email ?? null, ip };
 
-	const left = blockedFor(ip);
+	// Whitelisted members are never locked out.
+	const keys = guardKeys(ip, user?.id);
+	const left = user?.isMember ? 0 : blockedFor(keys);
 	if (left > 0) {
 		return json({ message: persona.blockedMessage, blocked: true, until: Date.now() + left }, { status: 403 });
 	}
+	/** An explicit/inappropriate question: a warning (the first two times), then a ban. */
+	const offence = (reason: string): AskEvent => {
+		const o = recordOffence(keys, !!user?.isMember);
+		audit('chat_blocked', { ...who, detail: { question, reason, action: o.action } });
+		if (o.action === 'ban') return { type: 'blocked', message: persona.blockedMessage, until: o.until };
+		if (o.action === 'warn') {
+			const last = o.warning >= WARNINGS_BEFORE_BAN;
+			return {
+				type: 'warning',
+				warning: o.warning,
+				message:
+					`That's not something I'll respond to. Please keep it respectful: this is warning ${o.warning} of ${WARNINGS_BEFORE_BAN}. ` +
+					(last ? `One more and chat turns off for ${banLength()}.` : `After ${WARNINGS_BEFORE_BAN} warnings, chat turns off for ${banLength()}.`)
+			};
+		}
+		return { type: 'warning', warning: 0, message: "That's not something I'll respond to." };
+	};
 
 	const limit = Number(env.CORTEX_RATE_LIMIT || 20);
 	if (!rateLimit(ip, limit)) error(429, 'Too many questions — give Cortex a minute to rest.');
@@ -63,12 +82,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 
 	// Instant pre-filter: configured blocked terms never reach the model.
 	if (hitsBlockedTerm(question, persona.blockedTerms)) {
-		const until = blockVisitor(ip);
-		audit('chat_blocked', { ...who, detail: { question, reason: 'blocked_term' } });
-		return sse([
-			{ type: 'quota', quota },
-			{ type: 'blocked', message: persona.blockedMessage, until }
-		]);
+		return sse([{ type: 'quota', quota }, offence('blocked_term')]);
 	}
 
 	// Only what this visitor may see (members-only nodes are hidden from everyone else).
@@ -119,9 +133,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 				});
 
 				if (scope === 'inappropriate') {
-					const until = blockVisitor(ip);
-					audit('chat_blocked', { ...who, detail: { question, reason: 'model' } });
-					send({ type: 'blocked', message: persona.blockedMessage, until });
+					send(offence('model'));
 				} else {
 					audit('chat_prompt', { ...who, detail: { question, scope } });
 					if (scope === 'off_topic') {
@@ -176,8 +188,8 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 };
 
 /** GET /api/ask → is this visitor's chat disabled? (checked on page load) */
-export const GET: RequestHandler = async ({ getClientAddress }) => {
-	const left = blockedFor(getClientAddress());
+export const GET: RequestHandler = async ({ getClientAddress, locals }) => {
+	const left = locals.user?.isMember ? 0 : blockedFor(guardKeys(getClientAddress(), locals.user?.id));
 	return json(
 		left > 0 ? { blocked: true, until: Date.now() + left, message: loadPersona().blockedMessage } : { blocked: false }
 	);

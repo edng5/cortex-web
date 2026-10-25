@@ -23,7 +23,7 @@ refusal: "I'm only wired to talk about Edward and, well, me. Try asking about hi
 
 # Shown (and spoken) when a visitor asks something explicit or inappropriate.
 # Chat is then disabled for that visitor.
-blockedMessage: "That's not something I'll respond to. Chat has been turned off for this session, but you can still explore Edward's work by clicking the neurons."
+blockedMessage: "That's not something I'll respond to. After two warnings, chat has been turned off for 24 hours, but you can still explore Edward's work by clicking the neurons."
 
 # Optional: words/phrases that instantly disable chat without asking the model
 # (whole-word, case-insensitive). The model also catches anything you don't list.

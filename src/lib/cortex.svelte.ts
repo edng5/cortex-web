@@ -169,6 +169,14 @@ class Cortex {
 							session.quota = e.quota;
 							session.openLimit(e.message);
 							break;
+						case 'warning':
+							// Not answered; chat stays on (a third offence turns it off).
+							this.notice = e.message;
+							if (!this.muted) {
+								this.speaker!.push(e.message);
+								this.speaker!.flush();
+							}
+							break;
 						case 'blocked':
 							this.block(e.message, e.until);
 							if (!this.muted) {

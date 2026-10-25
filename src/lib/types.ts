@@ -101,6 +101,8 @@ export type AskEvent =
 	| { type: 'quota_exceeded'; quota: QuotaInfo; message: string }
 	/** The visitor asked something explicit/inappropriate: chat is disabled until `until` (ms epoch). */
 	| { type: 'blocked'; message: string; until: number }
+	/** Explicit/inappropriate question: warning n of 2 (0 = refused, no warning, e.g. members). */
+	| { type: 'warning'; message: string; warning: number }
 	| { type: 'error'; message: string };
 
 export interface ChatTurn {

@@ -72,6 +72,12 @@ export function getDb(): Database.Database {
 			updated_at  INTEGER NOT NULL,
 			PRIMARY KEY (user_id, game, mission)
 		);
+		CREATE TABLE IF NOT EXISTS chat_strikes (
+			key_hash      TEXT PRIMARY KEY,     -- blind index of 'ip:…' or 'user:…'
+			strikes       INTEGER NOT NULL,     -- warnings given since the last ban (expire with time)
+			banned_until  INTEGER NOT NULL,     -- ms epoch; 0 = not banned
+			last_at       INTEGER NOT NULL
+		);
 		CREATE INDEX IF NOT EXISTS game_scores_board ON game_scores(game, mission, best DESC);
 		CREATE INDEX IF NOT EXISTS audit_ts ON audit_log(ts);
 		CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
