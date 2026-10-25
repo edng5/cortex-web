@@ -96,6 +96,7 @@ function parseNode(file: string, folderType: NodeType): OntologyNode {
 		related: asStringArray(data.related),
 		author: data.author ? String(data.author) : undefined,
 		wip: data.wip === true || data.status === 'wip',
+		ring: data.ring === true,
 		membersOnly: data.membersOnly === true,
 		playlist: fromEnv(data.playlist),
 		weight: typeof data.weight === 'number' ? data.weight : 1,

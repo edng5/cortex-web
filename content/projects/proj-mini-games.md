@@ -7,6 +7,7 @@ weight: 2
 icon: /games/engine-icon.png
 cover: /games/engine-tile.png
 mediaLayout: arcade
+ring: true
 images:
   - /images/mini-games/top-gun.gif
   - /images/mini-games/i-spy-detection.png

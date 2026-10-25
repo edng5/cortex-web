@@ -72,6 +72,8 @@ export interface OntologyNode {
 	playlist?: string;
 	/** `wip: true` in frontmatter: shown as "Work in progress" (dashed neuron, banner in the panel). */
 	wip: boolean;
+	/** `ring: true` in frontmatter: the same rotating dashed ring around the neuron, without the banner. */
+	ring?: boolean;
 	/** Bigger number = bigger neuron. Defaults to 1. */
 	weight: number;
 	/** Markdown body — long-form detail, also chunked into the vector DB. */

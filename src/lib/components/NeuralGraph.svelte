@@ -683,8 +683,8 @@
 				ctx.beginPath();
 				ctx.arc(p.x - n.r * 0.25, p.y - n.r * 0.25, n.r * 0.35, 0, Math.PI * 2);
 				ctx.fill();
-				// Work in progress: slowly rotating dashed ring.
-				if (n.data.wip) {
+				// Work in progress (or `ring: true`, to make a neuron stand out): slowly rotating dashed ring.
+				if (n.data.wip || n.data.ring) {
 					ctx.save();
 					ctx.strokeStyle = hexA(n.color, 0.85);
 					ctx.lineWidth = 1.5 / view.k;
