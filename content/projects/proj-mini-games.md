@@ -33,35 +33,32 @@ gameplay. Movement uses W, A, S and D instead of the arrow keys, and the menus a
 Signed-in players choose a leaderboard name and their best scores go on global leaderboards
 for each game.
 
-## Top Gun
-![Top Gun logo](/images/mini-games/top-gun.jpg)
+## ![](/images/mini-games/top-gun.jpg) Top Gun
 
 A flight-combat simulation game where the player completes missions against waves of fighter jets
 to win the war. Players progress through three missions of varying difficulty, earning money for
 upgrades to health, missiles, guns and evasive moves (W, A, S and D to fly, Space for guns, Shift
 for missiles).
 
-## Fishy
+## ![](/games/icons/fishy.png) Fishy
 An underwater survival game: eat smaller fish to grow, and avoid anything bigger. Medium adds
 sharks and Hard adds fishing hooks; eating a shark or beating Hard unlocks new characters. There
 is also a two-player mode where players race to grow and then eat each other. In the browser
 version, collisions are pixel-perfect: fish only touch where their bodies actually meet, not
 where their bounding boxes overlap.
 
-## Space Invaders
-![Space Invaders logo](/images/mini-games/space-invaders.jpg)
+## ![](/images/mini-games/space-invaders.jpg) Space Invaders
 
 A remake of the classic arcade game: the player controls a spaceship at the bottom of the screen,
 shooting down waves of descending alien invaders while dodging their projectiles. It has
 destructible bunkers, a bonus mothership and an unlockable ship, and three difficulties: Normal,
 Hard (with boss fights) and No Shields (Hard without the bunkers).
 
-## Pong × Brick Breaker
+## ![](/games/icons/pong.png) Pong × Brick Breaker
 Two paddle games in one. In Pong, the ball speeds up, the paddle shrinks and a second ball joins
 as the score climbs; in Brick Breaker, the goal is to clear all 50 bricks.
 
-## I Spy
-![I Spy logo](/images/mini-games/i-spy.jpg)
+## ![](/images/mini-games/i-spy.jpg) I Spy
 
 The classic children's game I Spy, where the user chooses an object of a specific colour and the
 computer has to guess what that object is.
