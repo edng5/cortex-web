@@ -1,6 +1,7 @@
 <!--
-  One E.Ngine game (Edward's high-school Java games, ported to TypeScript) on a <canvas>.
-  Desktop only: they're played with the keyboard; menus are clicked.
+  One E.Ngine game (Edward's high-school games, ported to TypeScript) on a <canvas>.
+  Played with the keyboard, menus clicked; on touch screens, with on-screen controls
+  (TouchControls) that send the same key presses, and the game sized to fill the width.
   `active` = false pauses the game (pop-up hidden, another game showing, or "Leave the game?").
 -->
 <script lang="ts">
@@ -9,16 +10,28 @@
 	import type { GameSpec } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
 	import { gameAudio } from '$lib/games/audio.svelte';
+	import TouchControls from './TouchControls.svelte';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let status = $state<'loading' | 'running' | 'error'>('loading');
 	let pointer = $state(false);
+	/** A touch screen: show the on-screen controls. */
+	let touch = $state(false);
+	let portrait = $state(false);
+	/** Wide games held upright on a phone: ask to rotate, and wait (paused) until they do. */
+	const rotate = $derived(touch && portrait && !!spec.touch.landscape);
+	const playing = $derived(active && !rotate);
 	let game: ArcadeGame | null = null;
 	const held = new Set<string>();
 
 	onMount(() => {
+		touch = matchMedia('(pointer: coarse)').matches;
+		const upright = matchMedia('(orientation: portrait)');
+		portrait = upright.matches;
+		const onTurn = () => (portrait = upright.matches);
+		upright.addEventListener('change', onTurn);
 		let raf = 0;
 		let disposed = false;
 		spec
@@ -39,7 +52,7 @@
 					raf = requestAnimationFrame(frame);
 					const dt = Math.min(250, now - last);
 					last = now;
-					if (!game || !ctx || !active) return;
+					if (!game || !ctx || !playing) return;
 					// The soundtrack for this screen (menu, or gameplay by mode / difficulty).
 					gameAudio.music(game.musicTrack());
 					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
@@ -61,6 +74,7 @@
 				status = 'error';
 			});
 		return () => {
+			upright.removeEventListener('change', onTurn);
 			disposed = true;
 			cancelAnimationFrame(raf);
 			gameAudio.stopIf(spec.id);
@@ -143,6 +157,17 @@
 			held.delete(e.code);
 		}
 	}
+	// On-screen controls: the same as pressing and releasing keys.
+	function touchPress(code: string) {
+		if (!game || !active) return;
+		if (game.keyPressed(code)) held.add(code);
+	}
+	function touchRelease(code: string) {
+		if (!game) return;
+		game.keyReleased(code);
+		held.delete(code);
+	}
+
 	function releaseAll() {
 		for (const code of held) game?.keyReleased(code);
 		held.clear();
@@ -188,7 +213,18 @@
 			</div>
 		{/if}
 	</div>
-	<ul class="help" aria-label="Controls">
+	{#if rotate && active}
+		<div class="rotate" role="status">
+			<svg viewBox="0 0 64 64" width="72" height="72" aria-hidden="true">
+				<rect x="20" y="8" width="24" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="3" />
+				<path d="M10 40a24 24 0 0 0 18 16M10 40l-2 8M10 40l7 3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+			</svg>
+			<p>Rotate your phone to play {spec.title}</p>
+		</div>
+	{:else if touch && status === 'running' && active}
+		<TouchControls spec={spec.touch} press={touchPress} release={touchRelease} />
+	{/if}
+	<ul class="help" class:hidden={touch} aria-label="Controls">
 		{#each spec.help as h (h.label)}
 			<li>{#each h.keys as k (k)}<kbd>{k}</kbd>{/each} {h.label}</li>
 		{/each}
@@ -217,6 +253,7 @@
 			0 0 50px -12px color-mix(in srgb, var(--accent) 50%, transparent);
 	}
 	canvas {
+		touch-action: none;
 		display: block;
 		width: 100%;
 		height: 100%;
@@ -240,6 +277,56 @@
 	}
 	.msg.err {
 		color: #fca5a5;
+	}
+	/* Touch screens: as wide as the screen (same proportions), leaving room for the controls
+	   below in portrait; in landscape they sit beside the game. */
+	@media (pointer: coarse) {
+		.stage {
+			--reserve: 250px;
+		}
+		.screen {
+			width: min(100vw, calc((100svh - var(--reserve)) * var(--w) / var(--h)));
+			border-radius: 0;
+			border-left: none;
+			border-right: none;
+		}
+	}
+	@media (pointer: coarse) and (orientation: landscape) {
+		.stage {
+			--reserve: 16px;
+		}
+	}
+	/* "Rotate your phone" for wide games held upright. */
+	.rotate {
+		position: fixed;
+		inset: 0;
+		z-index: 1; /* under the pop-up's ✕, so it's still easy to leave */
+		display: grid;
+		place-content: center;
+		justify-items: center;
+		gap: 14px;
+		padding: 24px;
+		text-align: center;
+		background: rgba(3, 5, 10, 0.94);
+		color: #e2e8f0;
+		font-weight: 600;
+	}
+	.rotate svg {
+		color: #a5b4fc;
+		animation: tilt 1.8s ease-in-out infinite;
+	}
+	@keyframes tilt {
+		0%,
+		30% {
+			transform: rotate(0deg);
+		}
+		60%,
+		100% {
+			transform: rotate(-90deg);
+		}
+	}
+	.help.hidden {
+		display: none;
 	}
 	.help {
 		display: flex;

@@ -4,6 +4,19 @@ import type { ArcadeGame } from './common';
 
 export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong';
 
+/** On-screen controls for touch screens (TouchControls.svelte). */
+export interface TouchSpec {
+	/** The joystick (W/A/S/D): h = left/right only, 4 = one direction at a time, 8 = any. */
+	stick: 'h' | '4' | '8';
+	/** A second joystick on the right sending the arrow keys (Fishy's player 2). */
+	stick2?: boolean;
+	/** A wide game: on phones, ask for landscape (it's too small held upright). */
+	landscape?: boolean;
+	/** Re-press the held direction every this many ms (for one-action-per-press games). */
+	repeat?: number;
+	buttons: { label: string; code: string; big?: boolean }[];
+}
+
 export interface GameSpec {
 	id: GameId;
 	title: string;
@@ -21,6 +34,7 @@ export interface GameSpec {
 	tickMs: number;
 	/** Controls under the game: keys, then what they do. */
 	help: { keys: string[]; label: string }[];
+	touch: TouchSpec;
 	/** What the global boards are called (board number → name). */
 	boards: Record<number, string>;
 	load: () => Promise<ArcadeGame>;
@@ -47,6 +61,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'pause' },
 			MOUSE
 		],
+		touch: { stick: '8', buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Missile', code: 'ShiftLeft' }, { label: 'Fire', code: 'Space', big: true }] },
 		boards: { 1: 'Mission 1', 2: 'Mission 2', 3: 'Mission 3' },
 		load: async () => {
 			const m = await import('./topgun/TopGun');
@@ -70,6 +85,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'play again' },
 			MOUSE
 		],
+		touch: { stick: '8', stick2: true, landscape: true, buttons: [] },
 		boards: { 1: 'Easy', 2: 'Medium', 3: 'Hard' },
 		load: async () => {
 			const m = await import('./fishy/Fishy');
@@ -93,6 +109,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Shift'], label: 'pause' },
 			MOUSE
 		],
+		touch: { stick: 'h', buttons: [{ label: 'Pause', code: 'ShiftLeft' }, { label: 'Fire', code: 'Space', big: true }] },
 		boards: { 1: 'Normal', 2: 'Hard', 3: 'No shields' },
 		load: async () => {
 			const m = await import('./spaceinvaders/SpaceInvaders');
@@ -115,6 +132,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'pause' },
 			MOUSE
 		],
+		touch: { stick: '4', repeat: 260, buttons: [{ label: 'Pause', code: 'Enter' }] },
 		boards: { 1: 'High score' },
 		load: async () => {
 			const m = await import('./frogger/Frogger');
@@ -138,6 +156,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'menu after game over' },
 			MOUSE
 		],
+		touch: { stick: 'h', buttons: [{ label: 'Serve', code: 'Space', big: true }] },
 		boards: { 1: 'Pong', 2: 'Brick Breaker' },
 		load: async () => {
 			const m = await import('./pong/Pong');

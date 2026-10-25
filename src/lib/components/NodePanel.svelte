@@ -37,7 +37,7 @@
 	const html = $derived(marked.parse(node.body, { async: false }) as string);
 	// Split the body at `<!-- carousel: name [round] -->` markers → html / carousel parts, and
 	// at `<!-- play: engine -->` (or a game id) markers → an "E.Ngine Games" button that opens the
-	// in-browser games (desktop only).
+	// in-browser games.
 	type BodyPart =
 		| { html: string }
 		| { carousel: ReturnType<typeof carouselMedia>; round: boolean }
@@ -194,17 +194,15 @@
 				{#if 'html' in part}
 					{@html part.html}
 				{:else if 'play' in part}
-					<!-- Desktop shows the games menu on the left already; mid-size screens get a button
-					     to open it; phones (no keyboard) are pointed to the desktop site. -->
+					<!-- Desktop shows the games menu on the left already; smaller screens (phones
+					     included, with on-screen controls) get a button to open it. -->
 					{#if !videosOnly}
 						<button class="play-game" onclick={() => session.openGames(part.play === 'engine' ? null : part.play)}>
-							<span class="play-icon" aria-hidden="true"></span>
-							E.Ngine Games
+							<img class="engine-icon" src="/games/engine-icon.png" alt="" width="34" height="34" />
+							<span class="engine-text">E.Ngine Games</span>
 						</button>
 					{/if}
-					<p class="play-note">
-						<span aria-hidden="true">🎮</span> The E.Ngine Games are playable on the desktop version of this website.
-					</p>
+
 				{:else if part.carousel.length}
 					<div class="inline-carousel">
 						<MediaCarousel
@@ -395,42 +393,29 @@
 		object-fit: contain;
 		padding: 10px;
 	}
-	/* "Play" button for an in-browser game (desktop only: the game needs a keyboard). */
+	/* E.Ngine Games button, styled like its icon: a dark tile in a cyan → violet → pink gradient
+	   frame, the pixel joystick, and the logo's gradient lettering. */
 	.play-game {
-		position: relative;
 		display: inline-flex;
 		align-items: center;
-		gap: 10px;
+		gap: 12px;
 		margin: 6px 0 18px;
-		padding: 7px 22px 7px 7px;
-		border-radius: 99px;
-		border: 1px solid color-mix(in srgb, var(--accent) 70%, #fff 10%);
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--accent) 85%, #0ea5e9),
-			color-mix(in srgb, var(--accent) 55%, #0b1020)
-		);
-		color: #fff;
+		padding: 6px 18px 6px 6px;
+		border-radius: 6px;
+		border: 3px solid transparent;
+		background:
+			linear-gradient(#0b1022, #0b1022) padding-box,
+			linear-gradient(90deg, #22d3ee, #818cf8 55%, #e879f9) border-box;
 		font: inherit;
-		font-size: 0.95rem;
-		font-weight: 700;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
 		cursor: pointer;
-		box-shadow:
-			0 10px 24px -10px color-mix(in srgb, var(--accent) 80%, transparent),
-			inset 0 1px 0 rgba(255, 255, 255, 0.25);
+		box-shadow: 0 10px 26px -12px rgba(129, 140, 248, 0.9);
 		transition:
 			transform 0.15s ease,
-			box-shadow 0.2s ease,
-			filter 0.2s ease;
+			box-shadow 0.2s ease;
 	}
 	.play-game:hover {
 		transform: translateY(-1px);
-		filter: brightness(1.08);
-		box-shadow:
-			0 14px 30px -10px color-mix(in srgb, var(--accent) 95%, transparent),
-			inset 0 1px 0 rgba(255, 255, 255, 0.3);
+		box-shadow: 0 14px 32px -10px rgba(232, 121, 249, 0.75);
 	}
 	.play-game:active {
 		transform: translateY(0);
@@ -439,44 +424,23 @@
 		outline: 2px solid #fff;
 		outline-offset: 3px;
 	}
-	/* Round white disc with a triangle, like a media player's play button. */
-	.play-icon {
-		position: relative;
-		width: 30px;
-		height: 30px;
+	.engine-icon {
+		width: 34px;
+		height: 34px;
 		flex: none;
-		border-radius: 50%;
-		background: #fff;
-		box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+		border-radius: 3px;
+		image-rendering: pixelated;
 	}
-	.play-icon::after {
-		content: '';
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		translate: -35% -50%;
-		border-style: solid;
-		border-width: 7px 0 7px 11px;
-		border-color: transparent transparent transparent var(--accent);
-	}
-	@media (max-width: 720px) {
-		.play-game {
-			display: none;
-		}
-		.body .play-note {
-			display: flex;
-		}
-	}
-	.play-note {
-		display: none;
-		align-items: center;
-		gap: 8px;
-		margin: 4px 0 12px;
-		padding: 10px 12px;
-		border-radius: 10px;
-		border: 1px solid rgba(129, 140, 248, 0.35);
-		background: rgba(99, 102, 241, 0.12);
-		font-size: 0.88rem;
+	.engine-text {
+		font-family: 'Arial Black', 'Arial Bold', Impact, sans-serif;
+		font-size: 1rem;
+		font-weight: 900;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		background: linear-gradient(90deg, #22d3ee, #818cf8 55%, #e879f9);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
 	}
 	.inline-carousel {
 		margin: 14px 0 18px;

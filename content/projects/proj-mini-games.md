@@ -28,10 +28,12 @@ related: [int-video-games, edu-john-cabot]
 <!-- play: engine -->
 
 ## E.Ngine Games
-Edward's high-school Java and Python games, rebuilt to play in the browser on a computer. Each
-game's code was ported to TypeScript and draws on a canvas, keeping the original art, menus and
-gameplay (Frogger got all-new 3D graphics). Movement uses W, A, S and D instead of the arrow keys,
-and the menus are clicked. Every game has its own original soundtrack and sound effects.
+Edward's high-school Java and Python games, rebuilt to play in the browser. Each game's code was
+ported to TypeScript and draws on a canvas, keeping the original art, menus and gameplay (Frogger
+got all-new 3D graphics). On a computer, movement uses W, A, S and D instead of the arrow keys and
+the menus are clicked; on phones and tablets, a translucent on-screen joystick and buttons take
+over, and the game fills the screen's width. Every game has its own original soundtrack and
+sound effects.
 Signed-in players choose a leaderboard name and their best scores go on global leaderboards
 for each game.
 

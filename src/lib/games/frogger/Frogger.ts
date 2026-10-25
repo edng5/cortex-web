@@ -95,7 +95,7 @@ function frogLike(body: string, dark: string, eye: string, pupil: string, extra:
 	]);
 }
 
-export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolean }[] = [
+export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolean; flop?: boolean }[] = [
 	{ id: 'frog', name: 'Frog', model: frogLike('#4cbb4c', '#2e8b2e', '#ffffff', '#111111') },
 	{
 		id: 'toad',
@@ -238,26 +238,49 @@ export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolea
 		id: 'magikarp',
 		name: 'Magikarp',
 		rare: true,
+		flop: true,
+		// Lying on its side, head to the left: a fish out of water.
 		model: model([
-			bx(0.3, 0.82, 0.05, 0.4, 0.16, 0.3, '#f2c84b'),
-			bx(0.14, 0.5, 0.1, 0.1, 0.18, 0.08, '#f2e7c9'),
-			bx(0.76, 0.5, 0.1, 0.1, 0.18, 0.08, '#f2e7c9'),
-			bx(0.24, 0.2, 0.04, 0.52, 0.64, 0.42, '#f2552c'),
-			bx(0.3, 0.62, 0.04, 0.4, 0.22, 0.12, '#f7e3b5'),
-			bx(0.38, 0.14, 0.1, 0.24, 0.08, 0.14, '#f7e3b5'),
-			bx(0.26, 0.18, 0.28, 0.14, 0.08, 0.12, '#ffffff'),
-			bx(0.6, 0.18, 0.28, 0.14, 0.08, 0.12, '#ffffff'),
-			bx(0.3, 0.17, 0.32, 0.06, 0.04, 0.06, '#111111'),
-			bx(0.64, 0.17, 0.32, 0.06, 0.04, 0.06, '#111111'),
-			bx(0.16, 0.16, 0.18, 0.1, 0.04, 0.02, '#f2c84b'),
-			bx(0.74, 0.16, 0.18, 0.1, 0.04, 0.02, '#f2c84b'),
-			bx(0.34, 0.3, 0.46, 0.08, 0.3, 0.12, '#f2c84b'),
-			bx(0.46, 0.26, 0.46, 0.08, 0.34, 0.16, '#f2c84b'),
-			bx(0.58, 0.3, 0.46, 0.08, 0.3, 0.12, '#f2c84b')
+			bx(0.74, 0.22, 0.02, 0.2, 0.56, 0.16, '#f2c84b'),
+			bx(0.22, 0.16, 0.06, 0.1, 0.16, 0.08, '#f2c84b'),
+			bx(0.36, 0.12, 0.06, 0.1, 0.2, 0.1, '#f2c84b'),
+			bx(0.5, 0.16, 0.06, 0.1, 0.16, 0.08, '#f2c84b'),
+			bx(0.12, 0.3, 0, 0.62, 0.42, 0.24, '#f2552c'),
+			bx(0.12, 0.64, 0, 0.62, 0.1, 0.18, '#f7e3b5'),
+			bx(0.05, 0.4, 0.03, 0.09, 0.16, 0.14, '#f7e3b5'),
+			bx(0.0, 0.38, 0.12, 0.08, 0.03, 0.02, '#f2c84b'),
+			bx(0.18, 0.36, 0.24, 0.13, 0.13, 0.02, '#ffffff'),
+			bx(0.21, 0.39, 0.26, 0.06, 0.06, 0.01, '#111111'),
+			bx(0.38, 0.5, 0.24, 0.14, 0.1, 0.02, '#f2e7c9')
 		])
 	}
 ];
 const characterById = (id: string) => CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
+
+/** Draw a character; Magikarp flops about (bounces, tips side to side, flips over) instead of standing. */
+function drawCharacter(
+	ctx: CanvasRenderingContext2D,
+	ch: (typeof CHARACTERS)[number],
+	px: number,
+	py: number,
+	time: number,
+	s = 1,
+	alpha = 1,
+	flatten = 1
+) {
+	if (!ch.flop) return drawModel(ctx, ch.model, px, py, s, alpha, flatten);
+	const beat = time / 0.35;
+	const k = beat % 1;
+	const cx = px + (T * s) / 2;
+	const cy = py + T * s * 0.6;
+	ctx.save();
+	ctx.translate(cx, cy - Math.sin(k * Math.PI) * 7 * s);
+	ctx.rotate(Math.sin(k * Math.PI * 2) * 0.22);
+	ctx.scale(Math.floor(beat) % 2 ? -1 : 1, 1);
+	ctx.translate(-cx, -cy);
+	drawModel(ctx, ch.model, px, py, s, alpha, flatten);
+	ctx.restore();
+}
 
 /**
  * The gumball odds: every roll gives a character you don't have yet. The hidden one has a fixed
@@ -853,7 +876,7 @@ export class Frogger implements ArcadeGame {
 				ctx.fillStyle = '#2b86cc';
 				ctx.fillRect(x + 2, y + 6, T - 4, T - 4);
 				this.lilyPad(ctx, x + T / 2, y + T / 2 + 2, c);
-				if (this.filled.has(c)) drawModel(ctx, characterById(this.selected).model, x + 4, y + 4, 0.8);
+				if (this.filled.has(c)) drawCharacter(ctx, characterById(this.selected), x + 4, y + 4, this.time, 0.8);
 			} else {
 				for (let k = 0; k < 3; k++) {
 					const rx = x + 6 + k * 12;
@@ -959,15 +982,15 @@ export class Frogger implements ArcadeGame {
 					ctx.ellipse(px + T / 2, py + T / 2, 6 + k * 22 + i * 6, (6 + k * 22 + i * 6) * 0.5, 0, 0, Math.PI * 2);
 					ctx.stroke();
 				}
-				if (k < 0.3) drawModel(ctx, ch.model, px, py + k * 30, 1, 1 - k * 3);
+				if (k < 0.3) drawCharacter(ctx, ch, px, py + k * 30, this.time, 1, 1 - k * 3);
 			} else {
-				drawModel(ctx, ch.model, px, py, 1, 1 - k * 0.6, 0.15);
+				drawCharacter(ctx, ch, px, py, this.time, 1, 1 - k * 0.6, 0.15);
 			}
 			return;
 		}
 		shadow(ctx, px + T / 2, py + T * 0.78, 13 - lift / 3, 5);
 		const hover = ch.id === 'dragonfly' ? Math.sin(this.time * 6) * 3 : 0;
-		drawModel(ctx, ch.model, px, py - lift + hover);
+		drawCharacter(ctx, ch, px, py - lift + hover, this.time);
 	}
 
 	private drawHud(ctx: CanvasRenderingContext2D) {
@@ -1035,7 +1058,7 @@ export class Frogger implements ArcadeGame {
 		const ch = characterById(this.selected);
 		const bob = Math.abs(Math.sin(now / 300)) * 8;
 		shadow(ctx, GAME_W / 2, 238, 22, 6);
-		drawModel(ctx, ch.model, GAME_W / 2 - T * 0.9, 190 - bob, 1.8);
+		drawCharacter(ctx, ch, GAME_W / 2 - T * 0.9, 190 - (ch.flop ? 0 : bob), this.time, 1.8);
 		ctx.textAlign = 'center';
 		ctx.font = `bold 12px ${ARIAL}`;
 		ctx.fillStyle = '#c9f5c0';
@@ -1220,7 +1243,7 @@ export class Frogger implements ArcadeGame {
 				ctx.beginPath();
 				ctx.arc(398 + 40 * k, 250, 18, -Math.PI / 2, Math.PI / 2);
 				ctx.fill();
-				drawModel(ctx, ch.model, 398 - T * 1.2, 210 - (1 - k) * 20, 2.4, k);
+				drawCharacter(ctx, ch, 398 - T * 1.2, 210 - (1 - k) * 20, this.time, 2.4, k);
 				this.title(ctx, 'NEW!', 398, 160, 24, '#ffe14a');
 				ctx.textAlign = 'center';
 				ctx.font = `bold 16px ${ARIAL_BLACK}`;
@@ -1230,7 +1253,7 @@ export class Frogger implements ArcadeGame {
 			}
 		} else {
 			const ch = characterById(this.selected);
-			drawModel(ctx, ch.model, 398 - T * 1.1, 215, 2.2);
+			drawCharacter(ctx, ch, 398 - T * 1.1, 215, this.time, 2.2);
 			ctx.textAlign = 'center';
 			ctx.font = `bold 14px ${ARIAL_BLACK}`;
 			ctx.fillStyle = '#ffffff';
@@ -1250,7 +1273,7 @@ export class Frogger implements ArcadeGame {
 			ctx.fillRect(x, 478, SLOT_W, 56);
 			ctx.fillStyle = 'rgba(0,0,0,0.25)';
 			ctx.fillRect(x + 2, 480, SLOT_W - 4, 52);
-			if (own) drawModel(ctx, c.model, x + 1, 498, 0.9);
+			if (own) drawCharacter(ctx, c, x + 1, 498, this.time, 0.9);
 			else {
 				ctx.font = `bold 22px ${ARIAL_BLACK}`;
 				ctx.fillStyle = hidden ? '#ffd84a' : 'rgba(255,255,255,0.35)';

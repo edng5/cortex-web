@@ -248,6 +248,49 @@
 		border-color: #fca5a5;
 		color: #fca5a5;
 	}
+	/* Touch screens: the game edge to edge at the top, controls below (or beside, in landscape),
+	   and the ✕ / sound buttons large in the top corner. */
+	@media (pointer: coarse) {
+		.backdrop {
+			padding: 0;
+			place-items: start center;
+			background: #03050a;
+		}
+		.card:not(.menu) {
+			width: 100vw;
+			height: 100svh;
+			max-height: none;
+			padding: 52px 0 0;
+			border: none;
+			border-radius: 0;
+			background: #03050a;
+			overflow: hidden;
+		}
+		.card.menu {
+			margin-top: 12px;
+			max-height: calc(100svh - 24px);
+		}
+		.close,
+		.sound {
+			width: 42px;
+			height: 42px;
+			top: 6px;
+		}
+		.close {
+			right: 8px;
+		}
+		.sound {
+			right: 58px;
+		}
+	}
+	@media (pointer: coarse) and (orientation: landscape) {
+		.card:not(.menu) {
+			padding-top: 6px;
+		}
+		.backdrop {
+			place-items: center;
+		}
+	}
 	@keyframes appear {
 		from {
 			opacity: 0;
