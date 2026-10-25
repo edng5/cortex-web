@@ -5,7 +5,7 @@ summary: "Edward loves Marvel: his favourite heroes are Iron Man and Spider-Man,
 tags: [marvel, mcu, movies, iron-man, spider-man, superheroes]
 weight: 1
 images:
-  - /images/games/cartoon.png
+  - /images/marvel/avengers.gif
 links: []
 related: [proj-the-watcher]
 ---
