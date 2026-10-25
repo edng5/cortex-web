@@ -1,7 +1,8 @@
 <!--
   E.Ngine Games pop-up: the game being played (picked from the menu on the E.Ngine Games node).
   Leaving a game (Esc, ✕, a click outside, or Quit / Exit in its own menu) closes the pop-up,
-  back to the node. Esc, ✕ and clicking outside ask first, so a stray key press doesn't end a
+  back to the node; on phones and mid-size screens (no games menu beside the node) it goes back
+  to the games menu first. Esc, ✕ and clicking outside ask first, so a stray key press doesn't end a
   run; the game pauses while asking. The pop-up stays mounted (hidden and paused), and so does
   every game started in it, so each one is where you left it when reopened.
   On mid-size screens the node has no menu beside it, so the pop-up opens on the menu instead.
@@ -39,6 +40,15 @@
 		confirming = false;
 		session.gameId = null;
 		onclose();
+	}
+	/**
+	 * Leaving a game. Where the games menu sits beside the E.Ngine Games node (wide screens),
+	 * back to the node; otherwise (phones, mid-size screens) back to the games menu first.
+	 */
+	function leaveGame() {
+		if (window.innerWidth > 1024) return close();
+		confirming = false;
+		session.gameId = null;
 	}
 	function login() {
 		close();
@@ -97,7 +107,7 @@
 
 		{#each GAMES.filter((g) => started.includes(g.id)) as g (g.id)}
 			<div class="game" hidden={current?.id !== g.id}>
-				<ArcadeGame spec={g} active={open && !confirming && current?.id === g.id} onquit={close} />
+				<ArcadeGame spec={g} active={open && !confirming && current?.id === g.id} onquit={leaveGame} />
 			</div>
 		{/each}
 
@@ -108,7 +118,7 @@
 					<p>It keeps your place: reopen it any time before you leave the site. High scores are saved.</p>
 					<div class="actions">
 						<button class="keep" bind:this={keepBtn} onclick={keepPlaying}>Keep playing</button>
-						<button class="leave" onclick={close}>Close game</button>
+						<button class="leave" onclick={leaveGame}>Close game</button>
 					</div>
 				</div>
 			</div>
