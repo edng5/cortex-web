@@ -20,8 +20,12 @@ export interface ArcadeGame {
 	pointerDown(x: number, y: number): void;
 	/** Persist progress and local stats (localStorage). */
 	save(): void;
+	/** Sound effects: the host sets this; the game calls it with a sound's name. */
+	sfx: (name: string) => void;
+	/** On a menu screen, where the host plays the game's menu soundtrack. */
+	inMenu(): boolean;
 	/**
-	 * The player left the pop-up (Esc, ✕ or back to the games menu) mid-run: count the run's score
+	 * The player left the game (Esc, ✕ or a click outside the pop-up) mid-run: count the run's score
 	 * now, as quitting from the game's own menu would (local high scores and onScore).
 	 */
 	leave(): void;

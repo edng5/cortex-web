@@ -175,6 +175,14 @@ export class SpaceInvaders implements ArcadeGame {
 
 	onQuit = () => {};
 	onScore: (board: number, score: number) => void = () => {};
+	/** Sound effects (set by the host). */
+	sfx: (name: string) => void = () => {};
+	/** On a menu screen (the host plays the menu soundtrack there). */
+	inMenu() {
+		return [0, 3, 4, 5, 6, 7].includes(this.game);
+	}
+	private stepSound = 0;
+	private ticks = 0;
 	global: Board | null = null;
 	loggedIn = false;
 
@@ -291,7 +299,11 @@ export class SpaceInvaders implements ArcadeGame {
 		if (!k) return false;
 		const wasPaused = this.game == 8;
 		const score = this.score;
+		const before = { game: this.game, select: this.select, launch: this.launch };
 		this.keyPressedJava(k);
+		if (this.game == 1 && before.launch == 0 && this.launch == 1) this.sfx('laser');
+		if (this.game != before.game && before.game != 1) this.sfx('confirm');
+		else if (this.select != before.select && this.game != 1) this.sfx('select');
 		// Leaving a run from the pause menu still counts its score.
 		if (wasPaused && this.game == 0 && score > 0) this.onScore(this.difficulty, score);
 		return true;
@@ -419,7 +431,29 @@ export class SpaceInvaders implements ArcadeGame {
 	// ── Game loop (run) ──
 	tick() {
 		const before = this.game;
+		const shot = () => this.aliens.filter((a) => a.shot == 1).length;
+		const launched = () => this.aMissiles.filter((m) => m.launchA == 1).length + this.bMissiles.filter((m) => m.launchA == 1).length;
+		const was = {
+			shot: shot(), launched: launched(), ufo: this.mothership.shot, lives: this.ship.lives, boss: this.boss.health,
+			bossShot: this.boss.shot, turn: this.aTurn, wave: this.wave
+		};
 		this.run();
+		// Sounds, from what this step changed.
+		if (this.game == 1) {
+			if (shot() > was.shot) this.sfx('alienDie');
+			if (this.mothership.shot == 1 && was.ufo == 0) this.sfx('ufoDie');
+			if (this.ship.lives < was.lives) this.sfx('playerDie');
+			if (this.boss.shot == 1 && was.bossShot == 0) this.sfx('bossDie');
+			else if (this.boss.health < was.boss) this.sfx('bossHit');
+			if (launched() > was.launched) this.sfx('alienShot');
+			if (this.wave > was.wave) this.sfx('wave');
+			// The invaders' marching beat, one of four low notes each time they shuffle.
+			if (this.aTurn != was.turn) this.sfx('step' + (this.stepSound++ % 4));
+			// The mothership hums while it crosses the screen.
+			const m = this.mothership;
+			if (m.shot == 0 && m.x > -40 && m.x < 550 && ++this.ticks % 18 == 0) this.sfx('ufo');
+		}
+		if (before != 2 && this.game == 2) this.sfx('lose');
 		if (before != 2 && this.game == 2) {
 			this.onScore(this.difficulty, this.score);
 			this.save();

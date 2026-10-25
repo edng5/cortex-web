@@ -11,6 +11,8 @@
 	import EngineMenu from './EngineMenu.svelte';
 	import { GAMES, gameById } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
+	import { ambient } from '$lib/ambient.svelte';
+	import { gameAudio } from '$lib/games/audio.svelte';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -43,6 +45,11 @@
 		session.loginOpen = true;
 	}
 
+	// The site's background music rests while the games are open (they have their own sound).
+	$effect(() => {
+		ambient.pause('game', open);
+	});
+
 	function onKey(e: KeyboardEvent) {
 		if (!open || e.key !== 'Escape') return;
 		// Handle Esc here only: not in the game, and not the info panel underneath.
@@ -67,6 +74,23 @@
 >
 	<div class="card" class:menu={!current}>
 		<button class="close" onclick={askClose} aria-label="Close E.Ngine Games">✕</button>
+		<button
+			class="sound"
+			class:off={gameAudio.muted}
+			onclick={() => gameAudio.toggle()}
+			aria-pressed={!gameAudio.muted}
+			aria-label={gameAudio.muted ? 'Turn game sound on' : 'Mute game sound'}
+			title={gameAudio.muted ? 'Turn game sound on' : 'Mute game sound'}
+		>
+			<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+				<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" />
+				{#if gameAudio.muted}
+					<path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+				{:else}
+					<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+				{/if}
+			</svg>
+		</button>
 		{#if !current}
 			<EngineMenu onpick={(id) => (session.gameId = id)} onlogin={login} />
 		{/if}
@@ -141,6 +165,28 @@
 		cursor: pointer;
 	}
 	.close:hover {
+		border-color: rgba(129, 140, 248, 0.8);
+	}
+	/* Game sound on/off, beside the ✕. */
+	.sound {
+		position: absolute;
+		top: 8px;
+		right: 50px;
+		z-index: 2;
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 50%;
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		background: rgba(10, 14, 26, 0.95);
+		color: #c7d2fe;
+		cursor: pointer;
+	}
+	.sound.off {
+		color: #64748b;
+	}
+	.sound:hover {
 		border-color: rgba(129, 140, 248, 0.8);
 	}
 	/* "Leave the game?" — over the game itself, so the game stays visible behind it. */

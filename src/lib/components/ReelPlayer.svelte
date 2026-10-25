@@ -53,6 +53,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { youtubeId } from '$lib/media';
+	import { ambient } from '$lib/ambient.svelte';
 
 	let {
 		reels,
@@ -99,6 +100,8 @@
 					// A reel finished: on to the next, and from the last back to the first.
 					onStateChange: (e) => {
 						lastState = e.data;
+						// Background music steps aside while a reel plays.
+						ambient.duck('reel', e.data === PLAYING || e.data === BUFFERING || e.data === ENDED);
 						if (e.data === ENDED) play((current + 1) % items.length);
 					}
 				}
@@ -106,6 +109,7 @@
 		});
 		return () => {
 			disposed = true;
+			ambient.duck('reel', false);
 			player?.destroy();
 			player = null;
 		};

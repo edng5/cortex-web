@@ -144,6 +144,12 @@ export class TopGun implements ArcadeGame {
 	hbx = 200; hby = 80; hbw = 190; hbh = 200; random = 0;
 	hitbox = new Rect(this.hbx, this.hby, this.hbw, this.hbh);
 
+	/** Sound effects (set by the host): guns, missiles, explosions, hits, menus. */
+	sfx: (name: string) => void = () => {};
+	/** On a menu screen (the host plays the menu soundtrack there). */
+	inMenu() {
+		return this.game == 0 || this.game == 5 || this.game == 6 || this.game == 7 || this.game == -1;
+	}
 	/** Called when the player picks Quit on the main menu (after saving). */
 	onQuit: () => void = () => {};
 	/** Called once when a mission ends (won, failed or game over) with its final score. */
@@ -251,11 +257,17 @@ export class TopGun implements ArcadeGame {
 	keyPressed(code: string): boolean {
 		const k = keyOf(code);
 		if (!k) return false;
+		const before = { game: this.game, select: this.select, count: this.count, fired: this.missiles.fired, shoot: this.shoot };
 		try {
 			this.keyPressedJava(k);
 		} catch (e) {
 			if (!(e instanceof JavaIndexError)) throw e;
 		}
+		// Sounds, from what the key changed.
+		if (this.game == 1 && this.count > before.count && before.count < (before.shoot >= 1 ? 3 : this.numBullets)) this.sfx('gun');
+		if (this.game == 1 && before.fired == 0 && this.missiles.fired == 1) this.sfx('missile');
+		if (this.game != before.game && before.game != 1) this.sfx('confirm');
+		else if (this.select != before.select && this.game != 1) this.sfx('select');
 		return true;
 	}
 	keyReleased(code: string): boolean {
@@ -563,7 +575,17 @@ export class TopGun implements ArcadeGame {
 	private ticks = 0;
 	tick() {
 		const prevGame = this.game;
+		const hitFlags = () => this.eJets.filter((j) => j.trigger == 1).length + this.ships.filter((s) => s.trigger == 1).length;
+		const shipHealth = () => this.ships.reduce((sum, s) => sum + s.health, 0);
+		const before = { lives: this.lives, hits: hitFlags(), ships: shipHealth(), base: this.aBase.health };
 		this.tickJava();
+		// Sounds, from what this step changed.
+		if (this.game == 1) {
+			if (hitFlags() > before.hits) this.sfx('boom');
+			else if (shipHealth() < before.ships || this.aBase.health < before.base) this.sfx('baseHit');
+			if (this.lives < before.lives) this.sfx('hit');
+		}
+		if (prevGame !== 3 && this.game === 3) this.sfx(this.success == 2 ? 'win' : 'lose');
 		if (prevGame !== 3 && this.game === 3) this.onScore(this.mission, this.score);
 		// Save progress every couple of seconds (the original only saved on Quit).
 		if (++this.ticks % 120 === 0) this.save();

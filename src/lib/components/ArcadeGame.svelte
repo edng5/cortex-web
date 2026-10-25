@@ -8,6 +8,7 @@
 	import type { ArcadeGame, Board } from '$lib/games/common';
 	import type { GameSpec } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
+	import { gameAudio } from '$lib/games/audio.svelte';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
 
@@ -27,6 +28,7 @@
 				game = g;
 				g.onQuit = () => onquit?.();
 				g.onScore = submitScore;
+				g.sfx = (name) => gameAudio.play(spec.id, name);
 				g.loggedIn = !!session.user;
 				loadBoard();
 				status = 'running';
@@ -38,6 +40,8 @@
 					const dt = Math.min(250, now - last);
 					last = now;
 					if (!game || !ctx || !active) return;
+					// Menu screens get the game's soundtrack; gameplay has sound effects only.
+					gameAudio.music(game.inMenu() ? spec.id : null);
 					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
 					acc += dt;
 					let steps = 0;
@@ -59,6 +63,7 @@
 		return () => {
 			disposed = true;
 			cancelAnimationFrame(raf);
+			gameAudio.stopIf(spec.id);
 			game?.save();
 		};
 	});
@@ -116,6 +121,7 @@
 	$effect(() => {
 		if (!active) {
 			releaseAll();
+			gameAudio.stopIf(spec.id);
 			game?.leave();
 		} else if (status === 'running') {
 			queueMicrotask(() => canvas?.focus());

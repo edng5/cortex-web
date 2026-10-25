@@ -79,6 +79,12 @@ export class Fishy implements ArcadeGame {
 
 	onQuit = () => {};
 	onScore: (board: number, score: number) => void = () => {};
+	/** Sound effects (set by the host). */
+	sfx: (name: string) => void = () => {};
+	/** On a menu screen (the host plays the menu soundtrack there). */
+	inMenu() {
+		return [0, 3, 4, 5, 6, 9, 12, 13].includes(this.game);
+	}
 	global: Board | null = null;
 	loggedIn = false;
 
@@ -123,7 +129,9 @@ export class Fishy implements ArcadeGame {
 			this.keyPressed('Enter'); // "Press Enter to Play Again": a click works too
 			return;
 		}
+		const before = { game: this.game, difficulty: this.difficulty, character: this.character };
 		this.mousePressed(px + 8, py + 31);
+		if (this.game != before.game || this.difficulty != before.difficulty || this.character != before.character) this.sfx('confirm');
 		this.save();
 	}
 	pointerMove(px: number, py: number) {
@@ -258,10 +266,20 @@ export class Fishy implements ArcadeGame {
 	// ── Game loop: run() moves things, then the rules Java kept in paintComponent ──
 	tick() {
 		const before = this.game;
+		const was = { lives: this.lives, w: this.fishw, w2: this.fishw2, w3: this.fishw3, hooked: this.hooked };
 		this.run();
 		this.speed = this.game == 2 ? 1 : this.character;
 		if (this.game == 1) this.singlePlayer();
 		if (this.game == 2) this.multiplayer();
+		// Sounds, from what this step changed.
+		if (this.hooked == 1 && was.hooked == 0) this.sfx('hooked');
+		if (this.lives < was.lives) this.sfx('eaten');
+		if (this.fishw > was.w || this.fishw2 > was.w2 || this.fishw3 > was.w3) this.sfx('eat');
+		if (before == 2 && (this.fishw2 < was.w2 || this.fishw3 < was.w3)) this.sfx('eaten');
+		if (before != this.game) {
+			if (this.game == 8 || this.game == 10 || this.game == 11) this.sfx('win');
+			if (this.game == 7) this.sfx('lose');
+		}
 		if (before == 1 && (this.game == 7 || this.game == 8)) {
 			this.onScore(this.difficulty, this.score);
 			this.save();

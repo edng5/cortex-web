@@ -19,6 +19,7 @@
 	import { session } from '$lib/session.svelte';
 	import { nodeMedia } from '$lib/media';
 	import { cortex } from '$lib/cortex.svelte';
+	import { ambient } from '$lib/ambient.svelte';
 	import { site, typeStyle } from '$lib/config/site';
 	import { NODE_TYPES, type NodeType } from '$lib/types';
 	import { rankBySize } from '$lib/graph-rank';
@@ -41,6 +42,11 @@
 	// Restore a chat lockout (explicit/inappropriate question) before the visitor starts talking.
 	onMount(() => {
 		cortex.init();
+		ambient.init();
+	});
+	// Background music dips while Cortex talks, and while it listens (so the mic hears the question, not the music).
+	$effect(() => {
+		ambient.duck('cortex', cortex.mode === 'speaking' || cortex.mode === 'listening');
 	});
 	const graph = $derived(data.graph);
 	const found = $derived(graph.nodes.find((n) => n.id === cortex.selectedId) ?? null);

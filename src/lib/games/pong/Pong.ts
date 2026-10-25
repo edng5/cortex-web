@@ -78,6 +78,12 @@ export class Pong implements ArcadeGame {
 
 	onQuit = () => {};
 	onScore: (board: number, score: number) => void = () => {};
+	/** Sound effects (set by the host). */
+	sfx: (name: string) => void = () => {};
+	/** On a menu screen (the host plays the menu soundtrack there). */
+	inMenu() {
+		return this.game == 0 || this.game == 3;
+	}
 	global: Board | null = null;
 	loggedIn = false;
 
@@ -119,7 +125,9 @@ export class Pong implements ArcadeGame {
 		return !!spotAt(this.spots(), x, y) && this.game != 2;
 	}
 	pointerDown(x: number, y: number) {
-		spotAt(this.spots(), x, y)?.click();
+		const spot = spotAt(this.spots(), x, y);
+		if (spot && this.game != 2) this.sfx('confirm');
+		spot?.click();
 	}
 
 	private play() {
@@ -145,6 +153,7 @@ export class Pong implements ArcadeGame {
 		const enter = code == 'Enter' || code == 'NumpadEnter';
 		if (!left && !right && !space && !enter) return false;
 		if (this.game == 1) {
+			if (space && this.start == 0) this.sfx('serve');
 			if (left) this.paddle.x_speed = this.difficulty > 2 ? -8 : -5;
 			if (right) this.paddle.x_speed = this.difficulty > 2 ? 8 : 5;
 			if (space) {
@@ -181,8 +190,19 @@ export class Pong implements ArcadeGame {
 	// ── Game loop: run() moves things, then the collision logic that Java kept in paintComponent ──
 	tick() {
 		const before = this.game;
+		const was = { bdx: this.bdx, bdy: this.bdy, b2dx: this.b2dx, b2dy: this.b2dy, counter: this.counter, score: this.score, level: this.difficulty };
 		this.run();
 		if (this.game == 1 || this.game == 2) this.logic();
+		// Sounds, from what this step changed.
+		if (this.game == 1) {
+			if (this.counter > was.counter) this.sfx('brick');
+			else if (this.score > was.score || (this.mode == 2 && was.bdy > 0 && this.bdy < 0 && this.ball.y >= 560)) this.sfx('paddle');
+			else if (this.bdx != was.bdx || this.bdy != was.bdy || this.b2dx != was.b2dx || this.b2dy != was.b2dy) {
+				if (was.bdx || was.bdy || was.b2dx || was.b2dy) this.sfx('wall');
+			}
+			if (this.difficulty > was.level) this.sfx('levelUp');
+		}
+		if (before == 1 && this.game == 2) this.sfx(this.mode == 2 && this.counter == this.numBricks ? 'win' : 'lose');
 		if (before == 1 && this.game == 2) {
 			this.onScore(this.mode, this.mode == 1 ? this.score : this.bscore);
 			this.save();

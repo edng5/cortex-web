@@ -1,6 +1,7 @@
 <!-- Top-right header: Experience · Projects · Log in / account menu. -->
 <script lang="ts">
 	import { session, type ClientUser } from '$lib/session.svelte';
+	import { ambient } from '$lib/ambient.svelte';
 
 	// From the page's server data (not the client store), so it renders correctly on the server too.
 	let { user }: { user: ClientUser | null } = $props();
@@ -40,6 +41,24 @@
 />
 
 <nav class="nav" aria-label="Main">
+	<button
+		class="music"
+		class:off={ambient.muted}
+		onclick={(e) => {
+			e.stopPropagation();
+			ambient.toggle();
+		}}
+		aria-pressed={!ambient.muted}
+		aria-label={ambient.muted ? 'Play background music' : 'Mute background music'}
+		title={ambient.muted ? 'Play background music' : 'Mute background music'}
+	>
+		<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+			<path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+			<circle cx="6.5" cy="18" r="2.6" fill="currentColor" />
+			<circle cx="17.5" cy="16" r="2.6" fill="currentColor" />
+			{#if ambient.muted}<path d="M3 3l18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />{/if}
+		</svg>
+	</button>
 	<button class="link" onclick={() => (session.experienceOpen = true)}>Experience</button>
 	<button class="link" onclick={() => (session.projectsOpen = true)}>Projects</button>
 	{#if user}
@@ -124,6 +143,28 @@
 	.link:hover {
 		background: rgba(56, 189, 248, 0.12);
 		color: #fff;
+	}
+	/* Background music on/off. */
+	.music {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		padding: 0;
+		border-radius: 50%;
+		border: none;
+		background: none;
+		color: #a5b4fc;
+		transition:
+			background 0.2s,
+			color 0.2s;
+	}
+	.music:hover {
+		background: rgba(129, 140, 248, 0.15);
+		color: #fff;
+	}
+	.music.off {
+		color: #64748b;
 	}
 	.login {
 		padding: 7px 16px;
@@ -284,6 +325,14 @@
 		.login {
 			padding: 6px 11px;
 			font-size: 0.8rem;
+		}
+		.music {
+			width: 28px;
+			height: 28px;
+		}
+		.music svg {
+			width: 15px;
+			height: 15px;
 		}
 	}
 	@media (max-width: 360px) {
