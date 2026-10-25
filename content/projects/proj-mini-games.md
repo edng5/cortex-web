@@ -4,6 +4,7 @@ subtitle: "Top Gun · Fishy · Space Invaders · Pong × Brick Breaker · I Spy 
 summary: "A collection of games Edward made in high school. Four of them (Top Gun, Fishy, Space Invaders and Pong × Brick Breaker) are playable right here as E.Ngine Games, ported from Java to TypeScript, with global leaderboards."
 tags: [game-development, java, typescript, python, pygame, games, high-school]
 weight: 2
+icon: /games/engine-card.svg
 mediaLayout: arcade
 images:
   - /images/mini-games/top-gun.gif
