@@ -11,6 +11,7 @@ export const GAMES = {
 	topgun: { boards: [1, 2, 3], max: 1_000_000 },
 	fishy: { boards: [1, 2, 3], max: 50_000 },
 	spaceinvaders: { boards: [1, 2, 3], max: 10_000_000 },
+	frogger: { boards: [1], max: 1_000_000 },
 	pong: { boards: [1, 2], max: 100_000 }
 } as const;
 export type GameId = keyof typeof GAMES;

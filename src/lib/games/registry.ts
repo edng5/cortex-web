@@ -2,7 +2,7 @@
 // only when it's first played.
 import type { ArcadeGame } from './common';
 
-export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'pong';
+export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong';
 
 export interface GameSpec {
 	id: GameId;
@@ -97,6 +97,28 @@ export const GAMES: GameSpec[] = [
 		load: async () => {
 			const m = await import('./spaceinvaders/SpaceInvaders');
 			return new m.SpaceInvaders(await m.loadAssets());
+		}
+	},
+	{
+		id: 'frogger',
+		title: 'Frogger',
+		blurb: 'Hop across the road and river to the lily pads, collect coins and roll the gumball machine for swamp friends.',
+		icon: '/games/icons/frogger.png',
+		preview: '/games/previews/frogger.jpg',
+		tagline: 'Hop, dodge, collect 10 friends',
+		accent: '#4ade80',
+		w: 520,
+		h: 560,
+		tickMs: 16,
+		help: [
+			{ keys: ['W', 'A', 'S', 'D'], label: 'hop' },
+			{ keys: ['Enter'], label: 'pause' },
+			MOUSE
+		],
+		boards: { 1: 'High score' },
+		load: async () => {
+			const m = await import('./frogger/Frogger');
+			return new m.Frogger();
 		}
 	},
 	{

@@ -45,7 +45,7 @@
 <div class="engine">
 <header class="head">
 	<img class="logo" src="/games/engine-logo.svg" alt="E.Ngine Games" width="520" height="170" />
-	<p class="tag">Edward's high-school Java games, rebuilt to play in your browser.</p>
+	<p class="tag">Edward's high-school games, rebuilt to play in your browser.</p>
 </header>
 <div class="cols">
 <div class="menu">

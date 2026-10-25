@@ -95,6 +95,16 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k.h.s.h.k.k.s.hh'
 	},
+	// Frogger: a cheerful, swampy tune in G major.
+	'frogger-menu': {
+		bpm: 110,
+		parts: [
+			{ voice: 'pluck', level: 0.07, notes: 'G4 B4 D5 . B4 . G4 . A4 C5 E5 . C5 . A4 . B4 D5 G5 . D5 . B4 . A4 - - - . . . . ' },
+			{ voice: 'sine', level: 0.08, notes: 'G2 . . G2 D3 . . . A2 . . A2 E3 . . . G2 . . G2 D3 . . . D2 . . D2 A2 . D2 . ' },
+			{ voice: 'bell', level: 0.025, notes: '. . . . . . . . . . . . . . . . . . . . . . . . G6 . D6 . B5 . . . ' }
+		],
+		drums: 'k..hk.h.k..hk.hh'
+	},
 	// ── Gameplay soundtracks (quieter than the menus) ──
 	// Top Gun missions: an original, driving 80s synth-rock track, kept quiet under the action.
 	'topgun-play': {
@@ -195,6 +205,21 @@ const TRACKS: Record<string, Track> = {
 					{ voice: 'triangle', level: 0.09, notes: 'C3 . C3 . G2 . G2 . A2 . A2 . F2 . G2 . ' }
 				],
 				drums: 'k.h.s.h.k.h.s.h.'
+			}
+		])
+	),
+	// Frogger: a bouncy hop-along tune that gets faster every two levels.
+	...Object.fromEntries(
+		[120, 134, 150].map((bpm, i): [string, Track] => [
+			`frogger-play-${i + 1}`,
+			{
+				bpm,
+				gain: 0.55,
+				parts: [
+					{ voice: 'square', level: 0.035, notes: 'C5 . E5 G5 . E5 C5 . D5 . F5 A5 . F5 D5 . E5 . G5 C6 . G5 E5 . D5 . B4 G4 . . . . ' },
+					{ voice: 'triangle', level: 0.09, notes: 'C3 . G2 . C3 . G2 . D3 . A2 . D3 . A2 . E3 . B2 . E3 . B2 . G2 . D3 . G2 . G2 . ' }
+				],
+				drums: 'k.h.s.h.k.k.s.h.'
 			}
 		])
 	)
@@ -518,6 +543,27 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 			a._arp([60, 67, 72, 79, 84], 0.1, 'square', 0.05, 0.2);
 		},
 		wave: (a) => a._arp([64, 67, 71, 76], 0.08, 'square', 0.05, 0.12)
+	},
+	frogger: {
+		hop: (a) => a._tone('square', 420, 760, 0.07, 0.045),
+		splash: (a) => {
+			a._fx(0.6, 0.25, 'lowpass', 2400, 200);
+			a._tone('sine', 500, 120, 0.35, 0.08);
+		},
+		squash: (a) => {
+			a._tone('square', 180, 50, 0.3, 0.08);
+			a._fx(0.3, 0.2, 'lowpass', 1800, 150);
+		},
+		home: (a) => a._arp([72, 76, 79, 84], 0.07, 'square', 0.05, 0.12),
+		coin: (a) => {
+			a._tone('square', 988, 988, 0.07, 0.05);
+			a._tone('square', 1319, 1319, 0.16, 0.05, 0.07);
+		},
+		levelUp: (a) => a._arp([60, 64, 67, 72, 76, 79, 84, 88], 0.07, 'square', 0.05, 0.14),
+		crank: (a) => {
+			for (let i = 0; i < 6; i++) a._fx(0.04, 0.12, 'bandpass', 2600, 2000, i * 0.13);
+		},
+		prize: (a) => a._arp([76, 79, 84, 88, 91, 96], 0.06, 'triangle', 0.08, 0.3)
 	},
 	pong: {
 		paddle: (a) => a._tone('square', 520, 520, 0.06, 0.07),

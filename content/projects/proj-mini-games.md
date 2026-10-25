@@ -1,7 +1,7 @@
 ---
 title: "E.Ngine Games"
-subtitle: "Top Gun · Fishy · Space Invaders · Pong × Brick Breaker · I Spy · Made in high school"
-summary: "A collection of games Edward made in high school. Four of them (Top Gun, Fishy, Space Invaders and Pong × Brick Breaker) are playable right here as E.Ngine Games, ported from Java to TypeScript, with global leaderboards."
+subtitle: "Top Gun · Fishy · Space Invaders · Frogger · Pong × Brick Breaker · I Spy · Made in high school"
+summary: "A collection of games Edward made in high school. Five of them (Top Gun, Fishy, Space Invaders, Frogger and Pong × Brick Breaker) are playable right here as E.Ngine Games, ported from Java and Python to TypeScript, with global leaderboards."
 tags: [game-development, java, typescript, python, pygame, games, high-school]
 weight: 2
 icon: /games/engine-icon.png
@@ -28,9 +28,10 @@ related: [int-video-games, edu-john-cabot]
 <!-- play: engine -->
 
 ## E.Ngine Games
-Edward's high-school Java games, rebuilt to play in the browser on a computer. Each game's Java
-code was ported to TypeScript and draws on a canvas, keeping the original art, menus and
-gameplay. Movement uses W, A, S and D instead of the arrow keys, and the menus are clicked.
+Edward's high-school Java and Python games, rebuilt to play in the browser on a computer. Each
+game's code was ported to TypeScript and draws on a canvas, keeping the original art, menus and
+gameplay (Frogger got all-new 3D graphics). Movement uses W, A, S and D instead of the arrow keys,
+and the menus are clicked. Every game has its own original soundtrack and sound effects.
 Signed-in players choose a leaderboard name and their best scores go on global leaderboards
 for each game.
 
@@ -54,6 +55,14 @@ A remake of the classic arcade game: the player controls a spaceship at the bott
 shooting down waves of descending alien invaders while dodging their projectiles. It has
 destructible bunkers, a bonus mothership and an unlockable ship, and three difficulties: Normal,
 Hard (with boss fights) and No Shields (Hard without the bunkers).
+
+## ![](/games/icons/frogger-panel.png) Frogger
+Edward's Grade 10 Python (pygame) game: get the frog across a busy road and a river of logs to the
+five lily pads at the top, before time runs out. The browser version is rebuilt with chunky 3D
+block graphics in the spirit of Crossy Road, one hop per key press, levels that speed up each time
+all five lily pads are filled, and diving turtles. Coins picked up along the way buy rolls of a
+gumball machine that unlocks 10 swamp animals to play as, from a toad and a turtle to a baby
+alligator, a heron and a dragonfly.
 
 ## ![](/games/icons/pong.png) Pong × Brick Breaker
 Two paddle games in one. In Pong, the ball speeds up, the paddle shrinks and a second ball joins
