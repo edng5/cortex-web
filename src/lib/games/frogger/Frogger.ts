@@ -27,6 +27,8 @@ const PADS = [1, 4, 6, 8, 11];
 const START_COL = 6;
 const ATTEMPT_TIME = 30;
 const ROLL_COST = 30;
+/** Chance (%) of the hidden character on a roll, while it's still to be found. */
+const RARE_PCT = 3;
 const SAVE_KEY = 'frogger-save';
 const LOOP = COLS + 6;
 const SPAN0 = -4;
@@ -76,7 +78,7 @@ function shadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: numbe
 	ctx.fill();
 }
 
-// ── Characters: the frog, and 10 swamp animals from the gumball machine ──────────────────
+// ── Characters: the frog, 10 swamp animals from the gumball machine, and one rare hidden one ─
 function frogLike(body: string, dark: string, eye: string, pupil: string, extra: Box[] = [], wide = 0): Model {
 	return model([
 		bx(0.12 - wide / 2, 0.6, 0, 0.22, 0.26, 0.14, dark),
@@ -93,7 +95,7 @@ function frogLike(body: string, dark: string, eye: string, pupil: string, extra:
 	]);
 }
 
-export const CHARACTERS: { id: string; name: string; model: Model }[] = [
+export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolean }[] = [
 	{ id: 'frog', name: 'Frog', model: frogLike('#4cbb4c', '#2e8b2e', '#ffffff', '#111111') },
 	{
 		id: 'toad',
@@ -178,18 +180,26 @@ export const CHARACTERS: { id: string; name: string; model: Model }[] = [
 		])
 	},
 	{
-		id: 'beaver',
-		name: 'Beaver',
+		id: 'axolotl',
+		name: 'Albino Axolotl',
 		model: model([
-			bx(0.3, 0.8, 0, 0.4, 0.3, 0.08, '#4a3b2b'),
-			bx(0.2, 0.25, 0, 0.6, 0.55, 0.4, '#8b5a2b'),
-			bx(0.3, 0.06, 0.1, 0.4, 0.26, 0.3, '#9b6a3b'),
-			bx(0.43, 0.02, 0.12, 0.14, 0.05, 0.08, '#fff6d5'),
-			bx(0.45, 0.06, 0.34, 0.1, 0.06, 0.05, '#111111'),
-			bx(0.34, 0.1, 0.4, 0.06, 0.06, 0.02, '#111111'),
-			bx(0.6, 0.1, 0.4, 0.06, 0.06, 0.02, '#111111'),
-			bx(0.28, 0.06, 0.4, 0.08, 0.06, 0.06, '#7a4a20'),
-			bx(0.64, 0.06, 0.4, 0.08, 0.06, 0.06, '#7a4a20')
+			bx(0.24, 0.26, 0, 0.12, 0.1, 0.06, '#f7b8c9'),
+			bx(0.64, 0.26, 0, 0.12, 0.1, 0.06, '#f7b8c9'),
+			bx(0.24, 0.6, 0, 0.12, 0.1, 0.06, '#f7b8c9'),
+			bx(0.64, 0.6, 0, 0.12, 0.1, 0.06, '#f7b8c9'),
+			bx(0.42, 0.76, 0.02, 0.16, 0.32, 0.12, '#ffc2d4'),
+			bx(0.46, 0.74, 0.14, 0.08, 0.34, 0.06, '#ffe6ee', 0.85),
+			bx(0.32, 0.22, 0, 0.36, 0.58, 0.18, '#ffd6e0'),
+			bx(0.26, 0.04, 0, 0.48, 0.26, 0.22, '#ffe2ea'),
+			bx(0.12, 0.0, 0.14, 0.14, 0.06, 0.04, '#ff6f9f'),
+			bx(0.1, 0.09, 0.16, 0.16, 0.06, 0.04, '#ff6f9f'),
+			bx(0.12, 0.18, 0.14, 0.14, 0.06, 0.04, '#ff6f9f'),
+			bx(0.74, 0.0, 0.14, 0.14, 0.06, 0.04, '#ff6f9f'),
+			bx(0.74, 0.09, 0.16, 0.16, 0.06, 0.04, '#ff6f9f'),
+			bx(0.74, 0.18, 0.14, 0.14, 0.06, 0.04, '#ff6f9f'),
+			bx(0.33, 0.07, 0.22, 0.07, 0.07, 0.02, '#111111'),
+			bx(0.6, 0.07, 0.22, 0.07, 0.07, 0.02, '#111111'),
+			bx(0.42, 0.04, 0.12, 0.16, 0.02, 0.03, '#e88aa6')
 		])
 	},
 	{
@@ -223,9 +233,44 @@ export const CHARACTERS: { id: string; name: string; model: Model }[] = [
 			bx(0.1, 0.44, 0.5, 0.35, 0.12, 0.02, '#cdefff', 0.75),
 			bx(0.55, 0.44, 0.5, 0.35, 0.12, 0.02, '#cdefff', 0.75)
 		])
+	},
+	{
+		id: 'magikarp',
+		name: 'Magikarp',
+		rare: true,
+		model: model([
+			bx(0.3, 0.82, 0.05, 0.4, 0.16, 0.3, '#f2c84b'),
+			bx(0.14, 0.5, 0.1, 0.1, 0.18, 0.08, '#f2e7c9'),
+			bx(0.76, 0.5, 0.1, 0.1, 0.18, 0.08, '#f2e7c9'),
+			bx(0.24, 0.2, 0.04, 0.52, 0.64, 0.42, '#f2552c'),
+			bx(0.3, 0.62, 0.04, 0.4, 0.22, 0.12, '#f7e3b5'),
+			bx(0.38, 0.14, 0.1, 0.24, 0.08, 0.14, '#f7e3b5'),
+			bx(0.26, 0.18, 0.28, 0.14, 0.08, 0.12, '#ffffff'),
+			bx(0.6, 0.18, 0.28, 0.14, 0.08, 0.12, '#ffffff'),
+			bx(0.3, 0.17, 0.32, 0.06, 0.04, 0.06, '#111111'),
+			bx(0.64, 0.17, 0.32, 0.06, 0.04, 0.06, '#111111'),
+			bx(0.16, 0.16, 0.18, 0.1, 0.04, 0.02, '#f2c84b'),
+			bx(0.74, 0.16, 0.18, 0.1, 0.04, 0.02, '#f2c84b'),
+			bx(0.34, 0.3, 0.46, 0.08, 0.3, 0.12, '#f2c84b'),
+			bx(0.46, 0.26, 0.46, 0.08, 0.34, 0.16, '#f2c84b'),
+			bx(0.58, 0.3, 0.46, 0.08, 0.3, 0.12, '#f2c84b')
+		])
 	}
 ];
 const characterById = (id: string) => CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
+
+/**
+ * The gumball odds: every roll gives a character you don't have yet. The hidden one has a fixed
+ * RARE_PCT chance; the others share the rest equally. Once it's the only one left, it's certain.
+ */
+function gumballOdds(owned: string[]): { id: string; name: string; pct: number; rare: boolean }[] {
+	const left = CHARACTERS.filter((c) => !owned.includes(c.id));
+	const rare = left.filter((c) => c.rare);
+	const normal = left.filter((c) => !c.rare);
+	const rarePct = normal.length ? RARE_PCT : 100 / Math.max(1, rare.length);
+	const normalPct = normal.length ? (100 - rarePct * rare.length) / normal.length : 0;
+	return [...normal, ...rare].map((c) => ({ id: c.id, name: c.name, pct: c.rare ? rarePct : normalPct, rare: !!c.rare }));
+}
 
 // ── Vehicles, logs, turtles, coins ──────────────────────────────────────────────────────
 function vehicle(kind: string, len: number, color: string, dir: number): Model {
@@ -371,6 +416,7 @@ export class Frogger implements ArcadeGame {
 	// Gumball machine
 	roll: { t: number; prize: string; color: string } | null = null;
 	crank = 0;
+	showOdds = false;
 
 	onQuit = () => {};
 	onScore: (board: number, score: number) => void = () => {};
@@ -384,6 +430,8 @@ export class Frogger implements ArcadeGame {
 
 	constructor() {
 		Object.assign(this, loadSave(SAVE_KEY, { best: 0, games: 0, coins: 0, owned: ['frog'], selected: 'frog' }));
+		this.owned = this.owned.map((id) => (id === 'beaver' ? 'axolotl' : id));
+		if (this.selected === 'beaver') this.selected = 'axolotl';
 		if (!this.owned.includes(this.selected)) this.selected = 'frog';
 	}
 
@@ -636,9 +684,10 @@ export class Frogger implements ArcadeGame {
 
 	// ── Gumball machine ──
 	private rollGumball() {
-		const left = CHARACTERS.filter((c) => !this.owned.includes(c.id));
-		if (this.roll || this.coins < ROLL_COST || !left.length) return;
-		const prize = left[Math.floor(Math.random() * left.length)].id;
+		const odds = gumballOdds(this.owned);
+		if (this.roll || this.coins < ROLL_COST || !odds.length) return;
+		let pick = Math.random() * 100;
+		const prize = (odds.find((o) => (pick -= o.pct) < 0) ?? odds[odds.length - 1]).id;
 		this.coins -= ROLL_COST;
 		const colors = ['#ff5a7a', '#5ac8ff', '#ffd23f', '#7bdc6b', '#c88bff', '#ff9a3c'];
 		this.roll = { t: 0, prize, color: colors[Math.floor(Math.random() * colors.length)] };
@@ -673,10 +722,16 @@ export class Frogger implements ArcadeGame {
 			case 'menu':
 				return MENU.map((m, i) => btn(i, 140, 262 + i * 52, 240, 42, () => this.menuAction(m.id)));
 			case 'gumball': {
-				const s: Hotspot[] = [btn(0, 12, 50, 92, 32, () => (this.state = 'menu')), btn(1, 300, 330, 196, 46, () => this.rollGumball())];
+				// The odds pop-up: a click anywhere closes it.
+				if (this.showOdds) return [btn(50, 0, 0, GAME_W, GAME_H, () => (this.showOdds = false))];
+				const s: Hotspot[] = [
+					btn(0, 12, 50, 92, 32, () => (this.state = 'menu')),
+					btn(1, 300, 330, 196, 46, () => this.rollGumball()),
+					btn(2, 340, 410, 116, 28, () => (this.showOdds = true))
+				];
 				CHARACTERS.forEach((c, i) => {
 					if (this.owned.includes(c.id))
-						s.push(btn(10 + i, slotX(i), 478, 42, 56, () => ((this.selected = c.id), this.save())));
+						s.push(btn(10 + i, slotX(i), 478, SLOT_W, 56, () => ((this.selected = c.id), this.save())));
 				});
 				return s;
 			}
@@ -1120,15 +1175,21 @@ export class Frogger implements ArcadeGame {
 		ctx.fillStyle = '#e23b3b';
 		ctx.fillRect(cx - 24, cy - 96, 48, 14);
 
-		// Roll button and coins.
-		const left = CHARACTERS.filter((c) => !this.owned.includes(c.id)).length;
-		const can = this.coins >= ROLL_COST && left > 0 && !this.roll;
-		this.button(ctx, left ? `Roll · ${ROLL_COST} coins` : 'All collected!', 300, 330, 196, 46, this.hover === 1 && can, !can);
+		// Roll button, what's left to find, and the odds.
+		const odds = gumballOdds(this.owned);
+		const normalLeft = odds.filter((o) => !o.rare).length;
+		const can = this.coins >= ROLL_COST && odds.length > 0 && !this.roll;
+		this.button(ctx, odds.length ? `Roll · ${ROLL_COST} coins` : 'All collected!', 300, 330, 196, 46, this.hover === 1 && can, !can);
 		ctx.textAlign = 'center';
 		ctx.font = `bold 13px ${ARIAL}`;
 		ctx.fillStyle = '#c9f5c0';
-		ctx.fillText(left ? `${left} swamp friends left to find` : 'You found every character!', 398, 400);
+		ctx.fillText(
+			normalLeft ? `${normalLeft} swamp friends left to find` : odds.length ? 'A hidden friend is still out there…' : 'You found every character!',
+			398,
+			398
+		);
 		ctx.textAlign = 'left';
+		this.button(ctx, 'See odds', 340, 410, 116, 28, this.hover === 2);
 
 		// The roll: a gumball drops down the chute and pops open to reveal the new character.
 		const r = this.roll;
@@ -1177,26 +1238,64 @@ export class Frogger implements ArcadeGame {
 			ctx.textAlign = 'left';
 		}
 
-		// Collection: click one you own to play as it.
+		// Collection: click one you own to play as it. The hidden one shows as a gold star.
 		ctx.font = `bold 12px ${ARIAL}`;
 		ctx.fillStyle = '#c9f5c0';
-		ctx.fillText('Your collection: click one to play as it', 18, 470);
+		ctx.fillText('Your collection: click one to play as it', slotX(0), 470);
 		CHARACTERS.forEach((c, i) => {
 			const x = slotX(i);
 			const own = this.owned.includes(c.id);
-			ctx.fillStyle = c.id === this.selected ? '#ffe14a' : this.hover === 10 + i ? '#4cc55e' : 'rgba(255,255,255,0.12)';
-			ctx.fillRect(x, 478, 42, 56);
+			const hidden = c.rare && !own;
+			ctx.fillStyle = c.id === this.selected ? '#ffe14a' : this.hover === 10 + i ? '#4cc55e' : hidden ? '#b8860b' : 'rgba(255,255,255,0.12)';
+			ctx.fillRect(x, 478, SLOT_W, 56);
 			ctx.fillStyle = 'rgba(0,0,0,0.25)';
-			ctx.fillRect(x + 2, 480, 38, 52);
-			if (own) drawModel(ctx, c.model, x + 1, 496, 1);
+			ctx.fillRect(x + 2, 480, SLOT_W - 4, 52);
+			if (own) drawModel(ctx, c.model, x + 1, 498, 0.9);
 			else {
 				ctx.font = `bold 22px ${ARIAL_BLACK}`;
-				ctx.fillStyle = 'rgba(255,255,255,0.35)';
+				ctx.fillStyle = hidden ? '#ffd84a' : 'rgba(255,255,255,0.35)';
 				ctx.textAlign = 'center';
-				ctx.fillText('?', x + 21, 514);
+				ctx.fillText(hidden ? '★' : '?', x + SLOT_W / 2, 514);
 				ctx.textAlign = 'left';
 			}
 		});
+		if (this.showOdds) this.drawOdds(ctx, odds);
+	}
+
+	/** Pop-up: each character still to find and its chance on the next roll. */
+	private drawOdds(ctx: CanvasRenderingContext2D, odds: ReturnType<typeof gumballOdds>) {
+		ctx.fillStyle = 'rgba(2,12,8,0.7)';
+		ctx.fillRect(0, 0, GAME_W, GAME_H);
+		const h = 118 + Math.max(1, odds.length) * 30;
+		const y0 = Math.round((GAME_H - h) / 2);
+		ctx.fillStyle = '#0f3320';
+		ctx.fillRect(90, y0, 340, h);
+		ctx.strokeStyle = '#ff8fc0';
+		ctx.lineWidth = 3;
+		ctx.strokeRect(90, y0, 340, h);
+		this.title(ctx, 'GUMBALL ODDS', GAME_W / 2, y0 + 40, 24, '#ff8fc0');
+		ctx.font = `bold 15px ${ARIAL}`;
+		if (!odds.length) {
+			ctx.textAlign = 'center';
+			ctx.fillStyle = '#ffffff';
+			ctx.fillText('You found every character!', GAME_W / 2, y0 + 80);
+		}
+		odds.forEach((o, i) => {
+			const y = y0 + 64 + i * 30;
+			const ch = characterById(o.id);
+			drawModel(ctx, o.rare ? ch.model.map((b) => ({ ...b, c: '#3a3a3a' })) : ch.model, 108, y - 2, 0.55);
+			ctx.textAlign = 'left';
+			ctx.fillStyle = o.rare ? '#ffd84a' : '#ffffff';
+			ctx.fillText(o.rare ? '★ ??? (hidden)' : o.name, 140, y + 18);
+			ctx.textAlign = 'right';
+			ctx.fillText(`${o.pct % 1 ? o.pct.toFixed(1) : o.pct}%`, 410, y + 18);
+		});
+		ctx.textAlign = 'center';
+		ctx.font = `12px ${ARIAL}`;
+		ctx.fillStyle = '#a9d8a0';
+		ctx.fillText("Every roll gives a character you don't have yet.", GAME_W / 2, y0 + h - 30);
+		ctx.fillText('Click anywhere to close', GAME_W / 2, y0 + h - 12);
+		ctx.textAlign = 'left';
 	}
 }
 
@@ -1207,7 +1306,8 @@ const MENU = [
 	{ id: 'controls', label: 'How to Play' },
 	{ id: 'quit', label: 'Quit' }
 ];
-const slotX = (i: number) => 18 + i * 44;
+const SLOT_W = 38;
+const slotX = (i: number) => Math.round((GAME_W - (CHARACTERS.length * (SLOT_W + 3) - 3)) / 2) + i * (SLOT_W + 3);
 
 /** Everything is drawn in code: nothing to load. */
 export const loadAssets = async () => undefined;
