@@ -1569,7 +1569,7 @@ export class Frogger implements ArcadeGame {
 }
 
 const MENU = [
-	{ id: 'classic', label: 'Classic (Timed)' },
+	{ id: 'classic', label: 'Classic' },
 	{ id: 'endless', label: 'Endless' },
 	{ id: 'gumball', label: 'Gumball Machine' },
 	{ id: 'scores', label: 'High Scores' },
