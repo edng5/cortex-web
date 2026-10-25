@@ -22,4 +22,4 @@ Ontario Secondary School Diploma (OSSD), 2014–2018. Graduated as an **Ontario 
 ## Activities
 - **Varsity basketball team** (2015 – 2018)
 - **Co-founded the Computer Science Club** (2018)
-- Made the **Mini Games** projects: I Spy, Top Gun and a Space Invaders remake
+- Made the games now playable as **E.Ngine Games** (Top Gun, Fishy, Space Invaders, Pong × Brick Breaker), plus I Spy

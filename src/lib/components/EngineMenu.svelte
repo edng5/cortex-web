@@ -1,7 +1,7 @@
 <!--
   E.Ngine Games main menu: a stack of game buttons with a preview of the one you point at, the
   monthly leaderboard beside it, and where players log in for the global leaderboards and choose
-  the name shown on them. Used on the left of the Mini Games node (desktop) and in the games pop-up.
+  the name shown on them. Used on the left of the E.Ngine Games node (desktop) and in the games pop-up.
 -->
 <script lang="ts">
 	import { GAMES, type GameId } from '$lib/games/registry';

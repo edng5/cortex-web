@@ -77,7 +77,7 @@
 	// Media floats on the left only when there is room for it beside the panel and graph;
 	// on narrower screens it lives inside the info panel instead.
 	const media = $derived(selected ? nodeMedia(selected) : []);
-	// `mediaLayout: arcade` (Mini Games): the E.Ngine Games menu takes the left side instead of
+	// `mediaLayout: arcade` (E.Ngine Games): the E.Ngine Games menu takes the left side instead of
 	// pictures, and the node's videos go in the info panel.
 	const arcade = $derived(selected?.mediaLayout === 'arcade');
 	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade));
@@ -277,7 +277,7 @@
 	.media-open .hero {
 		opacity: 0;
 	}
-	/* Mini Games: the E.Ngine Games menu where pictures would float. */
+	/* E.Ngine Games node: the games menu where pictures would float. */
 	.arcade-dock {
 		position: fixed;
 		top: 20px;
