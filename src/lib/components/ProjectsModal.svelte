@@ -19,7 +19,8 @@
 	const projects = $derived(rankBySize(nodes.filter((n) => n.type === 'project'), edges));
 	const accent = typeStyle.project.color;
 
-	function thumb(n: OntologyNode): string | null {
+	function thumb(n: OntologyNode, wide = false): string | null {
+		if (wide && n.cover) return n.cover;
 		if (n.icon) return n.icon;
 		const m = nodeMedia(n)[0];
 		if (!m) return null;
@@ -137,7 +138,7 @@
 	{:else}
 	{#each layout as { p, x, y, tilt }, i (p.id)}
 		{@const o = offsets[p.id] ?? { dx: 0, dy: 0, z: 0 }}
-		{@const t = thumb(p)}
+		{@const t = thumb(p, true)}
 		<button
 			class="card"
 			class:dragging={dragging === p.id}

@@ -43,6 +43,8 @@ export interface OntologyNode {
 	mobileImages?: string[];
 	/** Logo / icon / avatar shown next to the title in the info panel (not with the pictures). */
 	icon?: string;
+	/** Wide picture for the Projects tab's cards (else the icon, else the first picture). */
+	cover?: string;
 	/** YouTube / Vimeo links, or video files under /static (.mp4, .webm). */
 	videos: string[];
 	/** Portrait videos (YouTube Shorts / reels) played one after another in a tall player. */

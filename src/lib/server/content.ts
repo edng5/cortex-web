@@ -74,6 +74,7 @@ function parseNode(file: string, folderType: NodeType): OntologyNode {
 		images: asStringArray(data.images),
 		mobileImages: data.mobileImages ? asStringArray(data.mobileImages) : undefined,
 		icon: data.icon ? String(data.icon) : undefined,
+		cover: data.cover ? String(data.cover) : undefined,
 		videos: asStringArray(data.videos),
 		reels: asStringArray(data.reels),
 		mediaLayout: ['float', 'carousel', 'gallery', 'portrait', 'arcade'].includes(data.mediaLayout) ? data.mediaLayout : undefined,
