@@ -121,10 +121,10 @@ export const GAMES: GameSpec[] = [
 	{
 		id: 'frogger',
 		title: 'Frogger',
-		blurb: 'Hop across the road and river to the lily pads, collect coins and roll the gumball machine for swamp friends.',
+		blurb: 'Classic timed lily-pad runs or an endless Crossy Road-style hop. Collect coins and roll the gumball machine for swamp friends.',
 		icon: '/games/icons/frogger.png',
 		preview: '/games/previews/frogger.jpg',
-		tagline: 'Hop, dodge, collect 10 friends',
+		tagline: 'Classic or Endless · 10 friends',
 		accent: '#4ade80',
 		w: 520,
 		h: 560,
@@ -135,7 +135,7 @@ export const GAMES: GameSpec[] = [
 			MOUSE
 		],
 		touch: { gesture: true, buttons: [{ label: 'Pause', code: 'Enter' }] },
-		boards: { 1: 'High score' },
+		boards: { 1: 'Classic', 2: 'Endless' },
 		load: async () => {
 			const m = await import('./frogger/Frogger');
 			return new m.Frogger();

@@ -563,7 +563,19 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 		crank: (a) => {
 			for (let i = 0; i < 6; i++) a._fx(0.04, 0.12, 'bandpass', 2600, 2000, i * 0.13);
 		},
-		prize: (a) => a._arp([76, 79, 84, 88, 91, 96], 0.06, 'triangle', 0.08, 0.3)
+		prize: (a) => a._arp([76, 79, 84, 88, 91, 96], 0.06, 'triangle', 0.08, 0.3),
+		bell: (a) => {
+			for (let i = 0; i < 4; i++) a._tone('triangle', 1760, 1700, 0.18, 0.06, i * 0.3);
+		},
+		train: (a) => {
+			a._fx(1.6, 0.22, 'lowpass', 600, 200);
+			a._tone('sawtooth', 220, 180, 0.5, 0.05);
+			a._tone('sawtooth', 277, 230, 0.5, 0.04);
+		},
+		caught: (a) => {
+			a._tone('square', 1200, 700, 0.25, 0.05);
+			a._tone('square', 1100, 600, 0.25, 0.05, 0.22);
+		}
 	},
 	pong: {
 		paddle: (a) => a._tone('square', 520, 520, 0.06, 0.07),

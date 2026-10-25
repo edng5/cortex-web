@@ -1,14 +1,19 @@
-// Frogger: Edward's Grade 10 pygame game (FroggerV15), rebuilt in TypeScript for the browser.
-// The game is the original's: get the frog from the bottom to the five lily pads at the top,
-// across a road of cars and a river of logs, before the timer runs out, with 3 lives; points
-// for every row forward and for each lily pad reached. What's new:
-//  - Chunky 3D "voxel" graphics (in the spirit of Crossy Road): every car, log, turtle, lily pad
-//    and character is built from little blocks drawn with a lit top and a shaded front.
-//  - One hop per key press; filling all five lily pads is a level up (faster traffic and river,
-//    and diving turtles from level 2) instead of the end of the game.
+// Frogger: Edward's Grade 10 pygame game (FroggerV15), rebuilt in TypeScript for the browser,
+// with two modes:
+//  - Classic (timed), the original: get the frog across a road of cars and a river of logs to
+//    the five lily pads at the top before the timer runs out, with 3 lives; points for every
+//    row forward and for each lily pad. Filling all five is a level up (faster), not the end.
+//  - Endless, in the spirit of Crossy Road: hop forward as far as you can across randomly
+//    generated grass, roads, railways and rivers.
+// What's new:
+//  - Endless mode is random: rows are generated as you go (cars and trucks, trains with a warning
+//    light, rivers of moving logs or still lily pads, trees in the way), getting faster the
+//    further you get. The camera creeps forward, so dawdling gets you caught by a heron.
+//  - Chunky 3D "voxel" graphics: every car, log, train, tree and character is built from little
+//    blocks drawn with a lit top and a shaded front; characters turn to face where they hop.
 //  - Coins to pick up, spent on a gumball machine that rolls 10 swamp animals to play as
-//    (this replaces the original character select).
-//  - Global high scores, a soundtrack and sound effects, like the other E.Ngine Games.
+//    (and a rare hidden one).
+//  - Global high scores (rows travelled), a soundtrack and sound effects.
 import { ARIAL, ARIAL_BLACK, Gfx, drawRecord, loadSave, spotAt, writeSave, type ArcadeGame, type Board, type Hotspot } from '../common';
 
 export const GAME_W = 520;
@@ -20,18 +25,39 @@ const T = 40; // tile size in pixels
 const Z = 30; // pixels per tile of height (how tall blocks look)
 const HUD = 40;
 const COLS = 13;
-const ROWS = 13;
-const RIVER = [1, 2, 3, 4, 5];
-const ROAD = [7, 8, 9, 10, 11];
-const PADS = [1, 4, 6, 8, 11];
+/** Rows on screen. */
+const VISIBLE = 13;
 const START_COL = 6;
-const ATTEMPT_TIME = 30;
-const ROLL_COST = 30;
+const ROLL_COST = 10;
 /** Chance (%) of the hidden character on a roll, while it's still to be found. */
 const RARE_PCT = 3;
 const SAVE_KEY = 'frogger-save';
-const LOOP = COLS + 6;
-const SPAN0 = -4;
+/** Moving things live in [SPAN0, SPAN0 + SPAN) tiles and wrap around (wider than the screen). */
+const SPAN0 = -5;
+const SPAN = COLS + 10;
+/** Global boards: 1 = Classic (points), 2 = Endless (rows). */
+const BOARDS = { classic: 1, endless: 2 } as const;
+type Mode = keyof typeof BOARDS;
+// Classic mode's fixed board, bottom to top (world rows): start, 5 road lanes, a verge, 5 rivers
+// of logs, and the lily pads at the top.
+const PADS = [1, 4, 6, 8, 11];
+const HOME_ROW = 12;
+const ATTEMPT_TIME = 30;
+const CLASSIC: { kind: 'road' | 'river'; v?: string; len: number; dir: 1 | -1; speed: number; count: number }[] = [
+	{ kind: 'road', v: 'muscle', len: 1, dir: -1, speed: 1.6, count: 3 },
+	{ kind: 'road', v: 'bus', len: 3, dir: 1, speed: 0.9, count: 2 },
+	{ kind: 'road', v: 'car', len: 1, dir: -1, speed: 1.3, count: 3 },
+	{ kind: 'road', v: 'sport', len: 1, dir: 1, speed: 2.4, count: 2 },
+	{ kind: 'road', v: 'truck', len: 2, dir: -1, speed: 1.0, count: 2 },
+	{ kind: 'river', len: 2, dir: 1, speed: 1.7, count: 3 },
+	{ kind: 'river', len: 3, dir: -1, speed: 1.2, count: 3 },
+	{ kind: 'river', len: 4, dir: 1, speed: 0.8, count: 2 },
+	{ kind: 'river', len: 2, dir: -1, speed: 1.5, count: 4 },
+	{ kind: 'river', len: 3, dir: 1, speed: 1.1, count: 3 }
+];
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const randInt = (a: number, b: number) => Math.floor(rand(a, b + 1));
+const pick = <X>(xs: X[]): X => xs[Math.floor(Math.random() * xs.length)];
 
 // ── Voxel drawing ────────────────────────────────────────────────────────────────────────
 // A model is a list of boxes in tile units: (x, y) from the tile's top-left corner on the
@@ -274,7 +300,29 @@ export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolea
 ];
 const characterById = (id: string) => CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
 
-/** Draw a character; Magikarp flops about (bounces, tips side to side, flips over) instead of standing. */
+type Facing = 'up' | 'down' | 'left' | 'right';
+const turned = new Map<string, Model>();
+/** A character's model turned to face a direction (built facing up; rotated about the tile's centre). */
+function facingModel(ch: (typeof CHARACTERS)[number], facing: Facing): Model {
+	if (facing === 'up' || ch.flop) return ch.model;
+	const key = ch.id + facing;
+	let m = turned.get(key);
+	if (!m) {
+		m = model(
+			ch.model.map((b) =>
+				facing === 'down'
+					? { ...b, x: 1 - (b.x + b.w), y: 1 - (b.y + b.d) }
+					: facing === 'right'
+						? { ...b, x: 1 - (b.y + b.d), y: b.x, w: b.d, d: b.w }
+						: { ...b, x: b.y, y: 1 - (b.x + b.w), w: b.d, d: b.w }
+			)
+		);
+		turned.set(key, m);
+	}
+	return m;
+}
+
+/** Draw a character facing a way (toward the viewer by default); Magikarp flops about (bounces, tips side to side, flips over) instead of standing. */
 function drawCharacter(
 	ctx: CanvasRenderingContext2D,
 	ch: (typeof CHARACTERS)[number],
@@ -283,9 +331,10 @@ function drawCharacter(
 	time: number,
 	s = 1,
 	alpha = 1,
-	flatten = 1
+	flatten = 1,
+	facing: Facing = 'down'
 ) {
-	if (!ch.flop) return drawModel(ctx, ch.model, px, py, s, alpha, flatten);
+	if (!ch.flop) return drawModel(ctx, facingModel(ch, facing), px, py, s, alpha, flatten);
 	const beat = time / 0.35;
 	const k = beat % 1;
 	const cx = px + (T * s) / 2;
@@ -312,7 +361,7 @@ function gumballOdds(owned: string[]): { id: string; name: string; pct: number; 
 	return [...normal, ...rare].map((c) => ({ id: c.id, name: c.name, pct: c.rare ? rarePct : normalPct, rare: !!c.rare }));
 }
 
-// ── Vehicles, logs, turtles, coins ──────────────────────────────────────────────────────
+// ── Vehicles and logs ──────────────────────────────────────────────────────
 function vehicle(kind: string, len: number, color: string, dir: number): Model {
 	const front = dir > 0 ? len - 0.12 : 0.04;
 	const boxes: Box[] = [
@@ -354,65 +403,64 @@ function logModel(len: number): Model {
 		bx(len - 0.08, 0.18, 0, 0.08, 0.64, 0.3, '#d9b07a')
 	]);
 }
-const TURTLE = model([
-	bx(0.38, 0.06, 0, 0.24, 0.18, 0.12, '#c9b27a'),
-	bx(0.1, 0.2, 0, 0.8, 0.62, 0.16, '#3d7a3a'),
-	bx(0.2, 0.28, 0.16, 0.6, 0.46, 0.1, '#4f9a48'),
-	bx(0.4, 0.4, 0.26, 0.2, 0.2, 0.02, '#2f5e2c')
-]);
+// ── Scenery and trains ─────────────────────────────────────────────────────────────────
+const SCENERY: Model[] = [
+	model([bx(0.42, 0.42, 0, 0.16, 0.16, 0.3, '#7a4a20'), bx(0.16, 0.14, 0.3, 0.68, 0.68, 0.55, '#3f9a3a'), bx(0.26, 0.24, 0.85, 0.48, 0.48, 0.25, '#56b84c')]),
+	model([bx(0.44, 0.44, 0, 0.12, 0.12, 0.25, '#7a4a20'), bx(0.24, 0.24, 0.25, 0.52, 0.52, 0.9, '#2f7d32'), bx(0.32, 0.32, 1.15, 0.36, 0.36, 0.3, '#3f9a3a')]),
+	model([bx(0.16, 0.26, 0, 0.68, 0.56, 0.32, '#9aa0a6'), bx(0.26, 0.34, 0.32, 0.4, 0.34, 0.12, '#b5bbc1')]),
+	model([bx(0.12, 0.3, 0, 0.76, 0.52, 0.34, '#4caf50'), bx(0.24, 0.36, 0.34, 0.4, 0.3, 0.12, '#66c66a')])
+];
 
-// ── Lanes ───────────────────────────────────────────────────────────────────────────────
-type Kind = 'log' | 'turtle' | 'car' | 'sport' | 'muscle' | 'truck' | 'bus';
+function trainModel(len: number, dir: number): Model {
+	const boxes: Box[] = [bx(0, 0.18, 0.06, len, 0.64, 0.56, '#2f6fe0'), bx(0, 0.18, 0.62, len, 0.64, 0.06, '#5a8ef0')];
+	for (let k = 3; k < len; k += 3) boxes.push(bx(k, 0.18, 0.06, 0.08, 0.64, 0.56, '#1b3f8a'));
+	for (let k = 0.3; k < len - 0.4; k += 0.75) boxes.push(bx(k, 0.82, 0.36, 0.45, 0.001, 0.16, '#cfe9ff'));
+	const nose = dir > 0 ? len - 0.9 : 0;
+	boxes.push(bx(nose, 0.16, 0.06, 0.9, 0.68, 0.6, '#e23b3b'));
+	boxes.push(bx(dir > 0 ? len - 0.1 : 0, 0.3, 0.26, 0.1, 0.4, 0.14, '#fff3a0'));
+	return model(boxes);
+}
+
+// ── The endless world: rows generated as you go ─────────────────────────────────────────
+type RowKind = 'grass' | 'road' | 'rail' | 'river' | 'home';
 interface Item {
 	x: number;
+	len: number;
 	m: Model;
 }
-interface Lane {
-	row: number;
-	kind: Kind;
+interface Train {
+	x: number;
+	/** Seconds until it comes (≤ 0: passing now). */
+	wait: number;
+	warned: boolean;
+	len: number;
+	m: Model;
+}
+interface Row {
+	kind: RowKind;
 	dir: 1 | -1;
 	speed: number;
-	len: number;
+	/** Classic mode: the lane's speed at level 1 (it speeds up with each level). */
+	base?: number;
+	/** Vehicles (road) or logs (river). */
 	items: Item[];
-	/** Turtles: one group dives now and then (from level 2). */
-	dive?: number;
+	/** Grass: columns blocked by trees or rocks. */
+	trees: Map<number, Model>;
+	/** River: still lily pads (a lily-pad river has no logs). */
+	pads: Set<number>;
+	coin: number | null;
+	train?: Train;
 }
-const LANES: { row: number; kind: Kind; dir: 1 | -1; speed: number; len: number; count: number }[] = [
-	{ row: 1, kind: 'log', dir: 1, speed: 1.1, len: 3, count: 3 },
-	{ row: 2, kind: 'turtle', dir: -1, speed: 1.5, len: 2, count: 4 },
-	{ row: 3, kind: 'log', dir: 1, speed: 0.8, len: 4, count: 2 },
-	{ row: 4, kind: 'turtle', dir: -1, speed: 1.2, len: 3, count: 3 },
-	{ row: 5, kind: 'log', dir: 1, speed: 1.7, len: 2, count: 3 },
-	{ row: 7, kind: 'truck', dir: -1, speed: 1.0, len: 2, count: 2 },
-	{ row: 8, kind: 'sport', dir: 1, speed: 2.4, len: 1, count: 2 },
-	{ row: 9, kind: 'car', dir: -1, speed: 1.3, len: 1, count: 3 },
-	{ row: 10, kind: 'bus', dir: 1, speed: 0.9, len: 3, count: 2 },
-	{ row: 11, kind: 'muscle', dir: -1, speed: 1.6, len: 1, count: 3 }
-];
 const CAR_COLORS = ['#e23b3b', '#2f6fe0', '#f28c28', '#e8e8e8', '#7b3fe0', '#f2c12e', '#2fbf71'];
-
-function makeLanes(): Lane[] {
-	return LANES.map((l, li) => ({
-		row: l.row,
-		kind: l.kind,
-		dir: l.dir,
-		speed: l.speed,
-		len: l.len,
-		dive: l.kind === 'turtle' ? li * 1.7 : undefined,
-		items: Array.from({ length: l.count }, (_, i) => ({
-			x: SPAN0 + (i * LOOP) / l.count + ((li * 7 + i * 3) % 3) * 0.4,
-			m:
-				l.kind === 'log'
-					? logModel(l.len)
-					: l.kind === 'turtle'
-						? TURTLE
-						: vehicle(l.kind, l.len, l.kind === 'muscle' ? '#f2a020' : CAR_COLORS[(li + i * 2) % CAR_COLORS.length], l.dir)
-		}))
-	}));
-}
+const VEHICLES: [string, number][] = [
+	['car', 1],
+	['sport', 1],
+	['muscle', 1],
+	['truck', 2],
+	['bus', 3]
+];
 
 type State = 'menu' | 'play' | 'paused' | 'over' | 'gumball' | 'scores' | 'controls';
-type Facing = 'up' | 'down' | 'left' | 'right';
 interface Hop {
 	fx: number;
 	fr: number;
@@ -420,35 +468,34 @@ interface Hop {
 	tr: number;
 	t: number;
 }
-interface Coin {
-	x: number;
-	row: number;
-	ttl: number;
-	lane?: Lane;
-}
 
 export class Frogger implements ArcadeGame {
 	state: State = 'menu';
-	lanes = makeLanes();
+	mode: Mode = 'endless';
+	rows = new Map<number, Row>();
+	/** Bottom row on screen (fractional: the camera glides). */
+	cam = 0;
 	// Frog
 	x = START_COL;
-	row = ROWS - 1;
+	row = 1;
 	facing: Facing = 'up';
 	hop: Hop | null = null;
-	dying: { t: number; kind: 'splash' | 'squash' } | null = null;
+	dying: { t: number; kind: 'splash' | 'squash' | 'caught' } | null = null;
+	moved = false;
 	// Run
 	score = 0;
+	runCoins = 0;
+	// Classic mode
 	level = 1;
 	lives = 3;
 	timer = ATTEMPT_TIME;
-	minRow = ROWS - 1;
+	maxRow = 0;
 	filled = new Set<number>();
-	coin: Coin | null = null;
 	coinTimer = 4;
-	runCoins = 0;
 	banner: { text: string; t: number } | null = null;
-	// Saved
+	// Saved: best Endless run (rows) and best Classic score (points)
 	best = 0;
+	bestClassic = 0;
 	games = 0;
 	coins = 0;
 	owned: string[] = ['frog'];
@@ -467,17 +514,27 @@ export class Frogger implements ArcadeGame {
 	private g = new Gfx();
 	private hover = -1;
 	private time = 0;
+	private planKind: RowKind = 'grass';
+	private planLeft = 0;
+	private genTo = -1;
 
 	constructor() {
-		Object.assign(this, loadSave(SAVE_KEY, { best: 0, games: 0, coins: 0, owned: ['frog'], selected: 'frog' }));
-		this.owned = this.owned.map((id) => (id === 'beaver' ? 'axolotl' : id));
-		if (this.selected === 'beaver') this.selected = 'axolotl';
+		this.mode = 'endless';
+		// `best2`: the endless game's best (the old lily-pad game's points aren't comparable).
+		const saved = loadSave(SAVE_KEY, { best: 0, best2: 0, games: 0, coins: 0, owned: ['frog'], selected: 'frog' });
+		this.best = saved.best2;
+		this.bestClassic = saved.best;
+		this.games = saved.games;
+		this.coins = saved.coins;
+		this.owned = saved.owned.map((id) => (id === 'beaver' ? 'axolotl' : id));
+		this.selected = saved.selected === 'beaver' ? 'axolotl' : saved.selected;
 		if (!this.owned.includes(this.selected)) this.selected = 'frog';
+		this.resetWorld();
 	}
 
 	save() {
-		const { best, games, coins, owned, selected } = this;
-		writeSave(SAVE_KEY, { best, games, coins, owned, selected });
+		const { games, coins, owned, selected } = this;
+		writeSave(SAVE_KEY, { best: this.bestClassic, best2: this.best, games, coins, owned, selected });
 	}
 
 	/** Tap / swipe to hop, on touch screens, while playing (menus are tapped as usual). */
@@ -486,50 +543,160 @@ export class Frogger implements ArcadeGame {
 	}
 
 	musicTrack() {
-		if (this.state === 'play' || this.state === 'paused') return 'frogger-play-' + Math.min(3, Math.ceil(this.level / 2));
+		if (this.state === 'play' || this.state === 'paused') {
+			const tier = this.mode === 'classic' ? Math.ceil(this.level / 2) : 1 + Math.floor(this.score / 50);
+			return 'frogger-play-' + Math.min(3, tier);
+		}
 		if (this.state === 'over') return null;
 		return 'frogger-menu';
 	}
 
 	leave() {
-		if ((this.state === 'play' || this.state === 'paused') && this.score > 0) {
-			this.best = Math.max(this.best, this.score);
-			this.onScore(1, this.score);
-		}
+		if (this.state === 'play' || this.state === 'paused') this.record();
 		if (this.state === 'play') this.state = 'paused';
 		this.save();
 	}
 
-	private get speedMult() {
-		return Math.min(2.2, 1 + 0.15 * (this.level - 1));
+	/** Count this run: the mode's best, and its global board. */
+	private record() {
+		if (this.score <= 0) return;
+		if (this.mode === 'classic') this.bestClassic = Math.max(this.bestClassic, this.score);
+		else this.best = Math.max(this.best, this.score);
+		this.onScore(BOARDS[this.mode], this.score);
 	}
 
-	// ── Starting, dying, scoring ──
-	private newGame() {
-		this.lanes = makeLanes();
-		this.score = 0;
-		this.level = 1;
-		this.lives = 3;
-		this.filled.clear();
-		this.coin = null;
-		this.coinTimer = 4;
-		this.runCoins = 0;
-		this.games++;
+	// ── World generation ──
+	private resetWorld() {
+		this.rows.clear();
+		this.planLeft = 0;
+		this.genTo = -1;
+		this.cam = 0;
+		this.hop = null;
+		this.dying = null;
+		this.moved = false;
+		if (this.mode === 'classic') this.buildClassic();
+		else this.ensureRows();
 		this.respawn();
-		this.state = 'play';
-		this.banner = { text: 'GO!', t: 1 };
-		this.save();
 	}
+
+	/** Back to the start (a new run, or Classic's next life / next lily pad). */
 	private respawn() {
 		this.x = START_COL;
-		this.row = ROWS - 1;
+		this.row = this.mode === 'classic' ? 0 : 1;
 		this.facing = 'up';
 		this.hop = null;
 		this.dying = null;
 		this.timer = ATTEMPT_TIME;
-		this.minRow = ROWS - 1;
+		this.maxRow = this.row;
 	}
-	private die(kind: 'splash' | 'squash') {
+
+	/** Classic mode's fixed board (see CLASSIC). */
+	private buildClassic() {
+		const grass = (): Row => ({ kind: 'grass', dir: 1, speed: 0, items: [], trees: new Map(), pads: new Set(), coin: null });
+		this.rows.set(0, grass());
+		CLASSIC.forEach((l, k) => {
+			const items: Item[] = [];
+			const color = pick(CAR_COLORS);
+			for (let n = 0; n < l.count; n++) {
+				const x = SPAN0 + (n * SPAN) / l.count + rand(0, 1);
+				const m = l.kind === 'river' ? logModel(l.len) : vehicle(l.v!, l.len, l.v === 'muscle' ? '#f2a020' : CAR_COLORS[(k + n * 2) % CAR_COLORS.length] ?? color, l.dir);
+				items.push({ x, len: l.len, m });
+			}
+			this.rows.set(k < 5 ? k + 1 : k + 2, { kind: l.kind, dir: l.dir, speed: l.speed, base: l.speed, items, trees: new Map(), pads: new Set(), coin: null });
+		});
+		this.rows.set(6, grass());
+		this.rows.set(HOME_ROW, { kind: 'home', dir: 1, speed: 0, items: [], trees: new Map(), pads: new Set(PADS), coin: null });
+	}
+
+	/** Endless mode: generate rows ahead of the camera; forget the ones far behind. */
+	private ensureRows() {
+		if (this.mode === 'classic') return;
+		while (this.genTo < this.cam + VISIBLE + 4) {
+			this.genTo++;
+			this.rows.set(this.genTo, this.makeRow(this.genTo));
+		}
+		for (const i of this.rows.keys()) if (i < this.cam - 3) this.rows.delete(i);
+	}
+
+	private makeRow(i: number): Row {
+		const prev = this.rows.get(i - 1);
+		// Harder the further you get.
+		const d = 1 + Math.min(1.2, i / 160);
+		const row: Row = { kind: 'grass', dir: Math.random() < 0.5 ? 1 : -1, speed: 0, items: [], trees: new Map(), pads: new Set(), coin: null };
+		if (i < 4) {
+			// A safe meadow to start on, with a few trees at the sides.
+			for (const c of [0, 1, 11, 12]) if (Math.random() < 0.6) row.trees.set(c, pick(SCENERY));
+			return row;
+		}
+		if (this.planLeft <= 0) {
+			const r = Math.random();
+			this.planKind = r < 0.28 ? 'grass' : r < 0.62 ? 'road' : r < 0.84 ? 'river' : 'rail';
+			if (this.planKind === prev?.kind) this.planKind = prev.kind === 'grass' ? 'road' : 'grass';
+			this.planLeft = { grass: randInt(1, 2), road: randInt(1, 4), river: randInt(1, 3), rail: randInt(1, 2) }[this.planKind];
+		}
+		this.planLeft--;
+		row.kind = this.planKind;
+
+		if (row.kind === 'grass') {
+			// Trees and rocks in the way, never too many; lily pads coming out of a river stay open.
+			const n = randInt(0, 4);
+			for (let k = 0; k < n; k++) {
+				const c = randInt(0, COLS - 1);
+				if (!prev?.pads.has(c)) row.trees.set(c, pick(SCENERY));
+			}
+		} else if (row.kind === 'road') {
+			const [kind, len] = pick(VEHICLES);
+			row.speed = rand(1.0, 2.6) * d * (len === 1 ? 1.15 : 0.8);
+			const color = pick(CAR_COLORS);
+			let x = SPAN0 + rand(0, 3);
+			while (x < SPAN0 + SPAN - len) {
+				row.items.push({ x, len, m: vehicle(kind, len, kind === 'muscle' ? '#f2a020' : color, row.dir) });
+				x += len + randInt(3, 6) + rand(0, 1.5);
+			}
+		} else if (row.kind === 'river') {
+			const afterPads = prev?.kind === 'river' && prev.pads.size > 0;
+			if (Math.random() < (afterPads ? 0.55 : 0.35)) {
+				// Still lily pads: always one lined up with the row before, so it can be crossed.
+				if (afterPads) row.pads.add(pick([...prev!.pads]));
+				const n = randInt(3, 6);
+				while (row.pads.size < n) row.pads.add(randInt(0, COLS - 1));
+			} else {
+				if (prev?.kind === 'river' && !prev.pads.size) row.dir = prev.dir === 1 ? -1 : 1;
+				row.speed = rand(0.9, 2.0) * d;
+				let x = SPAN0 + rand(0, 2);
+				while (x < SPAN0 + SPAN - 2) {
+					const len = randInt(2, 4);
+					row.items.push({ x, len, m: logModel(len) });
+					x += len + randInt(2, 4);
+				}
+			}
+		} else {
+			const len = randInt(8, 12);
+			row.train = { x: row.dir > 0 ? SPAN0 - len : SPAN0 + SPAN, wait: rand(1.5, 6), warned: false, len, m: trainModel(len, row.dir) };
+		}
+		if ((row.kind === 'grass' || row.kind === 'road') && Math.random() < 0.16) {
+			const c = randInt(0, COLS - 1);
+			if (!row.trees.has(c)) row.coin = c;
+		}
+		return row;
+	}
+
+	// ── Starting and ending ──
+	private newGame(mode: Mode = this.mode) {
+		this.mode = mode;
+		this.score = 0;
+		this.runCoins = 0;
+		this.level = 1;
+		this.lives = 3;
+		this.filled.clear();
+		this.coinTimer = 4;
+		this.resetWorld();
+		this.games++;
+		this.state = 'play';
+		this.banner = { text: 'GO!', t: 1 };
+		this.save();
+	}
+	private die(kind: 'splash' | 'squash' | 'caught') {
 		if (this.dying) return;
 		this.dying = { t: 0, kind };
 		this.hop = null;
@@ -537,11 +704,12 @@ export class Frogger implements ArcadeGame {
 	}
 	private gameOver() {
 		this.state = 'over';
-		this.best = Math.max(this.best, this.score);
-		this.onScore(1, this.score);
+		this.record();
 		this.sfx('lose');
 		this.save();
 	}
+
+	/** Classic: a lily pad reached (all five = level up, everything faster). */
 	private reachHome(col: number) {
 		this.filled.add(col);
 		this.score += 200 + Math.ceil(this.timer) * 10;
@@ -550,6 +718,8 @@ export class Frogger implements ArcadeGame {
 			this.level++;
 			this.score += 1000;
 			this.filled.clear();
+			const mult = Math.min(2.2, 1 + 0.15 * (this.level - 1));
+			for (const r of this.rows.values()) if (r.base) r.speed = r.base * mult;
 			this.banner = { text: `LEVEL ${this.level}!`, t: 1.6 };
 			this.sfx('levelUp');
 		}
@@ -559,10 +729,10 @@ export class Frogger implements ArcadeGame {
 	// ── Keyboard: WASD (or arrows) to hop, Enter to pause ──
 	keyPressed(code: string): boolean {
 		const dirs: Record<string, [number, number, Facing]> = {
-			KeyW: [0, -1, 'up'],
-			ArrowUp: [0, -1, 'up'],
-			KeyS: [0, 1, 'down'],
-			ArrowDown: [0, 1, 'down'],
+			KeyW: [0, 1, 'up'],
+			ArrowUp: [0, 1, 'up'],
+			KeyS: [0, -1, 'down'],
+			ArrowDown: [0, -1, 'down'],
 			KeyA: [-1, 0, 'left'],
 			ArrowLeft: [-1, 0, 'left'],
 			KeyD: [1, 0, 'right'],
@@ -576,9 +746,9 @@ export class Frogger implements ArcadeGame {
 		} else if (this.state === 'paused' && (enter || dirs[code])) {
 			this.state = 'play';
 		} else if (this.state === 'over' && (enter || code === 'Space')) {
-			this.state = 'menu';
-		} else if (this.state === 'menu' && enter) {
 			this.newGame();
+		} else if (this.state === 'menu' && enter) {
+			this.newGame('endless');
 		} else if (this.state === 'play' && dirs[code]) {
 			const [dx, dr, face] = dirs[code];
 			this.tryHop(dx, dr, face);
@@ -589,16 +759,23 @@ export class Frogger implements ArcadeGame {
 		return /^(Key[WASD]|Arrow|Enter|Space)/.test(code);
 	}
 
+	private isLogs(r?: Row) {
+		return r?.kind === 'river' && r.pads.size === 0;
+	}
+
 	private tryHop(dx: number, dr: number, face: Facing) {
 		if (this.hop || this.dying) return;
 		this.facing = face;
 		const tr = this.row + dr;
+		const target = this.rows.get(tr);
+		if (tr < 0 || !target) return;
 		let tx = this.x + dx;
-		if (tr > ROWS - 1 || tr < 0) return;
-		const onLand = !RIVER.includes(this.row);
-		if (onLand && (tx < 0 || tx > COLS - 1)) return;
-		if (!RIVER.includes(tr)) tx = Math.round(tx);
+		if (!this.isLogs(this.rows.get(this.row)) && (tx < 0 || tx > COLS - 1)) return;
+		if (!this.isLogs(target)) tx = Math.round(tx);
+		// A tree or rock in the way: just turn to face it.
+		if (target.kind === 'grass' && target.trees.has(tx)) return;
 		this.hop = { fx: this.x, fr: this.row, tx, tr, t: 0 };
+		this.moved = true;
 		this.sfx('hop');
 	}
 
@@ -607,64 +784,37 @@ export class Frogger implements ArcadeGame {
 		this.hop = null;
 		this.x = h.tx;
 		this.row = h.tr;
-		if (this.row < this.minRow) {
-			this.minRow = this.row;
+		if (this.mode === 'endless') this.score = Math.max(this.score, this.row - 1);
+		else if (this.row > this.maxRow) {
+			this.maxRow = this.row;
 			this.score += 10;
 		}
-		if (this.row === 0) {
+		const r = this.rows.get(this.row)!;
+		if (r.kind === 'home') {
 			const col = Math.round(this.x);
 			if (PADS.includes(col) && !this.filled.has(col)) this.reachHome(col);
 			else this.die('splash');
 			return;
 		}
-		if (RIVER.includes(this.row) && !this.platform()) this.die('splash');
-		this.checkCoin();
+		if (r.kind === 'river') {
+			if (r.pads.size) {
+				if (!r.pads.has(Math.round(this.x))) return this.die('splash');
+			} else if (!this.log(r)) return this.die('splash');
+		}
+		if (r.coin !== null && r.coin === Math.round(this.x)) {
+			r.coin = null;
+			this.coins++;
+			this.runCoins++;
+			if (this.mode === 'classic') this.score += 25;
+			this.sfx('coin');
+			this.save();
+		}
 	}
 
-	/** The log or surfaced turtle under the frog, if any. */
-	private platform(): Lane | null {
-		const lane = this.lanes.find((l) => l.row === this.row);
-		if (!lane) return null;
+	/** The log under the frog, if any. */
+	private log(r: Row): Item | undefined {
 		const cx = this.x + 0.5;
-		for (const [i, it] of lane.items.entries()) {
-			if (cx >= it.x && cx <= it.x + lane.len) {
-				if (lane.kind === 'turtle' && i === 0 && this.diveDepth(lane) > 0.7) return null;
-				return lane;
-			}
-		}
-		return null;
-	}
-	/** 0 = surfaced, 1 = fully under water (only the first turtle group of a lane dives). */
-	private diveDepth(lane: Lane): number {
-		if (this.level < 2 || lane.dive === undefined) return 0;
-		const p = (this.time + lane.dive) % 6;
-		if (p < 3.5) return 0;
-		if (p < 4.2) return (p - 3.5) / 0.7;
-		if (p < 5.3) return 1;
-		return 1 - (p - 5.3) / 0.7;
-	}
-
-	private checkCoin() {
-		const c = this.coin;
-		if (!c || this.dying || c.row !== this.row || Math.abs(c.x - this.x) > 0.6) return;
-		this.coin = null;
-		this.coins++;
-		this.runCoins++;
-		this.score += 25;
-		this.sfx('coin');
-		this.save();
-	}
-	private spawnCoin() {
-		const rows = [...RIVER, 6, ...ROAD];
-		const row = rows[Math.floor(Math.random() * rows.length)];
-		const lane = this.lanes.find((l) => l.row === row);
-		if (lane && RIVER.includes(row)) {
-			// On a log or turtle, riding along with it.
-			const it = lane.items[Math.floor(Math.random() * lane.items.length)];
-			this.coin = { x: it.x + Math.floor(Math.random() * lane.len), row, ttl: 9, lane };
-		} else {
-			this.coin = { x: Math.floor(Math.random() * COLS), row, ttl: 9 };
-		}
+		return r.items.find((it) => cx >= it.x && cx <= it.x + it.len);
 	}
 
 	// ── Game loop ──
@@ -673,56 +823,78 @@ export class Frogger implements ArcadeGame {
 		if (this.banner && (this.banner.t -= DT) <= 0) this.banner = null;
 		if (this.roll) this.tickRoll();
 		if (this.state === 'paused' || this.state === 'over') return;
-		this.moveLanes();
+		this.ensureRows();
+		this.moveWorld();
 		if (this.state !== 'play') return;
 
 		if (this.dying) {
 			this.dying.t += DT;
-			if (this.dying.t > 0.9) {
-				this.lives--;
-				if (this.lives <= 0) this.gameOver();
-				else this.respawn();
+			if (this.dying.t > 1.1) {
+				if (this.mode === 'classic' && --this.lives > 0) this.respawn();
+				else this.gameOver();
 			}
 			return;
 		}
 		if (this.hop) {
-			this.hop.t += DT / 0.13;
+			this.hop.t += DT / 0.12;
 			if (this.hop.t >= 1) this.land();
 		} else {
-			// Riding a log or turtle; carried off the edge = lost in the river.
-			if (RIVER.includes(this.row)) {
-				const lane = this.platform();
-				if (!lane) this.die('splash');
+			const r = this.rows.get(this.row);
+			// Riding a log; carried off the edge = lost in the river.
+			if (r && this.isLogs(r)) {
+				if (!this.log(r)) this.die('splash');
 				else {
-					this.x += lane.dir * lane.speed * this.speedMult * DT;
+					this.x += r.dir * r.speed * DT;
 					if (this.x + 0.5 < 0 || this.x + 0.5 > COLS) this.die('splash');
 				}
 			}
-			// Hit by a car.
-			const road = this.lanes.find((l) => l.row === this.row && ROAD.includes(l.row));
-			if (road && road.items.some((it) => this.x + 0.78 > it.x + 0.08 && this.x + 0.22 < it.x + road.len - 0.08)) this.die('squash');
-			this.checkCoin();
+			if (r?.kind === 'road' && r.items.some((it) => this.x + 0.78 > it.x + 0.08 && this.x + 0.22 < it.x + it.len - 0.08)) this.die('squash');
+			const tr = r?.train;
+			if (tr && tr.wait <= 0 && this.x + 0.8 > tr.x && this.x + 0.2 < tr.x + tr.len) this.die('squash');
 		}
-		this.timer -= DT;
-		if (this.timer <= 0 && !this.dying) this.die('squash');
-		// Coins come and go.
-		if (this.coin) {
-			if (this.coin.lane) this.coin.x += this.coin.lane.dir * this.coin.lane.speed * this.speedMult * DT;
-			this.coin.ttl -= DT;
-			if (this.coin.ttl <= 0 || this.coin.x < -1 || this.coin.x > COLS) this.coin = null;
-		} else if ((this.coinTimer -= DT) <= 0) {
-			this.spawnCoin();
-			this.coinTimer = 5 + Math.random() * 4;
+		if (this.mode === 'classic') {
+			// Classic: beat the clock; coins pop up on the road and the verge now and then.
+			this.timer -= DT;
+			if (this.timer <= 0 && !this.dying) this.die('squash');
+			if ((this.coinTimer -= DT) <= 0) {
+				this.coinTimer = 5 + Math.random() * 4;
+				for (const r of this.rows.values()) r.coin = null;
+				const r = this.rows.get(randInt(1, 6));
+				if (r) r.coin = randInt(0, COLS - 1);
+			}
+			return;
 		}
+		// The camera keeps up with the frog, and creeps forward on its own once you've set off:
+		// fall off the bottom of the screen and a heron gets you.
+		const target = this.row - 3;
+		if (target > this.cam) this.cam += Math.min(target - this.cam, 6 * DT);
+		if (this.moved && !this.dying) this.cam += Math.min(0.32, 0.1 + this.score / 600) * DT;
+		if (!this.dying && !this.hop && this.row < this.cam - 0.6) this.die('caught');
 	}
 
-	private moveLanes() {
-		const m = this.state === 'play' ? this.speedMult : 1;
-		for (const lane of this.lanes) {
-			for (const it of lane.items) {
-				it.x += lane.dir * lane.speed * m * DT;
-				if (it.x > SPAN0 + LOOP) it.x -= LOOP;
-				if (it.x < SPAN0) it.x += LOOP;
+	private moveWorld() {
+		for (const [i, r] of this.rows) {
+			for (const it of r.items) {
+				it.x += r.dir * r.speed * DT;
+				if (r.dir > 0 && it.x > SPAN0 + SPAN) it.x -= SPAN;
+				if (r.dir < 0 && it.x + it.len < SPAN0) it.x += SPAN;
+			}
+			const tr = r.train;
+			if (!tr) continue;
+			const onScreen = this.state === 'play' && i >= this.cam - 1 && i <= this.cam + VISIBLE;
+			tr.wait -= DT;
+			if (tr.wait < 1.3 && !tr.warned) {
+				tr.warned = true;
+				if (onScreen) this.sfx('bell');
+			}
+			if (tr.wait <= 0) {
+				if (tr.x === (r.dir > 0 ? SPAN0 - tr.len : SPAN0 + SPAN) && onScreen) this.sfx('train');
+				tr.x += r.dir * 22 * DT;
+				if ((r.dir > 0 && tr.x > SPAN0 + SPAN) || (r.dir < 0 && tr.x + tr.len < SPAN0)) {
+					tr.x = r.dir > 0 ? SPAN0 - tr.len : SPAN0 + SPAN;
+					tr.wait = rand(3, 7);
+					tr.warned = false;
+				}
 			}
 		}
 	}
@@ -765,7 +937,7 @@ export class Frogger implements ArcadeGame {
 		});
 		switch (this.state) {
 			case 'menu':
-				return MENU.map((m, i) => btn(i, 140, 262 + i * 52, 240, 42, () => this.menuAction(m.id)));
+				return MENU.map((m, i) => btn(i, 140, 262 + i * 48, 240, 40, () => this.menuAction(m.id)));
 			case 'gumball': {
 				// The odds pop-up: a click anywhere closes it.
 				if (this.showOdds) return [btn(50, 0, 0, GAME_W, GAME_H, () => (this.showOdds = false))];
@@ -786,20 +958,17 @@ export class Frogger implements ArcadeGame {
 			case 'paused':
 				return [btn(0, 140, 290, 240, 42, () => (this.state = 'play')), btn(1, 140, 342, 240, 42, () => this.quitRun())];
 			case 'over':
-				return [btn(0, 140, 330, 240, 42, () => this.newGame()), btn(1, 140, 382, 240, 42, () => (this.state = 'menu'))];
+				return [btn(0, 140, 330, 240, 42, () => this.newGame(this.mode)), btn(1, 140, 382, 240, 42, () => (this.state = 'menu'))];
 		}
 		return [];
 	}
 	private quitRun() {
-		if (this.score > 0) {
-			this.best = Math.max(this.best, this.score);
-			this.onScore(1, this.score);
-		}
+		this.record();
 		this.state = 'menu';
 		this.save();
 	}
 	private menuAction(id: string) {
-		if (id === 'play') this.newGame();
+		if (id === 'classic' || id === 'endless') this.newGame(id);
 		else if (id === 'quit') {
 			this.save();
 			this.onQuit();
@@ -835,101 +1004,120 @@ export class Frogger implements ArcadeGame {
 		if (this.state === 'controls') this.drawControls(ctx);
 		if (this.state === 'paused') this.drawPanel(ctx, 'PAUSED', ['Resume', 'Main Menu'], 290);
 		if (this.state === 'over') {
-			this.drawPanel(ctx, 'GAME OVER', ['Play Again', 'Main Menu'], 330, [`Score ${this.score}`, `Best ${this.best} · +${this.runCoins} coins`]);
+			const best = this.mode === 'classic' ? this.bestClassic : this.best;
+			this.drawPanel(ctx, 'GAME OVER', ['Play Again', 'Main Menu'], 330, [`Score ${this.score}`, `Best ${best} · +${this.runCoins} coins`]);
 		}
+		if (this.state === 'play' && this.dying?.kind === 'caught') this.title(ctx, 'Caught by a heron!', GAME_W / 2, 260, 26, '#ffe14a');
 		if (this.banner && this.state === 'play') this.title(ctx, this.banner.text, GAME_W / 2, 300, 44, '#ffe14a');
 		ctx.restore();
 	}
 
+	/** Screen y of a (possibly fractional) world row. */
 	private rowY(r: number) {
-		return HUD + r * T;
+		return HUD + (this.cam + VISIBLE - 1 - r) * T;
 	}
 
 	private drawBoard(ctx: CanvasRenderingContext2D, now: number) {
 		const t = now / 1000;
-		for (let r = 0; r < ROWS; r++) {
+		const top = Math.ceil(this.cam + VISIBLE) + 1;
+		const bottom = Math.floor(this.cam) - 1;
+		// Ground first (back to front), then everything standing on it (back to front).
+		for (let r = top; r >= bottom; r--) {
+			const row = this.rows.get(r);
+			if (row) this.drawGround(ctx, row, r, t);
+		}
+		for (let r = top; r >= bottom; r--) {
+			const row = this.rows.get(r);
+			if (!row) continue;
 			const y = this.rowY(r);
-			if (r === 0) {
-				ctx.fillStyle = '#2f8f3a';
-				ctx.fillRect(0, y, GAME_W, T);
-			} else if (RIVER.includes(r)) {
-				ctx.fillStyle = r % 2 ? '#2a8fd6' : '#2b86cc';
-				ctx.fillRect(0, y, GAME_W, T);
-				ctx.fillStyle = 'rgba(255,255,255,0.18)';
-				for (let i = 0; i < 6; i++) {
-					const wx = ((i * 97 + t * 18 * (r % 2 ? 1 : -1)) % (GAME_W + 60)) - 30;
-					ctx.fillRect(wx, y + 10 + ((i * 13) % 20), 26, 3);
-				}
-			} else if (ROAD.includes(r)) {
-				ctx.fillStyle = '#4a4f57';
-				ctx.fillRect(0, y, GAME_W, T);
-				if (r < 11) {
-					ctx.fillStyle = '#e8e8e8';
-					for (let x = 8; x < GAME_W; x += 48) ctx.fillRect(x, y + T - 2, 24, 3);
-				}
-			} else {
-				ctx.fillStyle = r % 2 ? '#5fc24d' : '#58b947';
-				ctx.fillRect(0, y, GAME_W, T);
+			if (row.kind === 'grass') for (const [c, m] of row.trees) drawModel(ctx, m, c * T, y);
+			if (row.kind === 'home') {
+				// Reeds along the bank; water inlets with a lily pad each (and a frog once reached).
 				for (let c = 0; c < COLS; c++) {
-					if ((c + r) % 2) {
-						ctx.fillStyle = 'rgba(0,0,0,0.05)';
-						ctx.fillRect(c * T, y, T, T);
-					}
-				}
-			}
-		}
-		// Raised banks: a dirt edge where grass meets water, a curb where it meets road.
-		const edge = (r: number, c: string) => {
-			ctx.fillStyle = c;
-			ctx.fillRect(0, this.rowY(r + 1) - 1, GAME_W, 8);
-		};
-		edge(0, '#6b4a2b');
-		edge(6, '#8a8f96');
-		ctx.fillStyle = '#6b4a2b';
-		ctx.fillRect(0, this.rowY(6) - 6, GAME_W, 6);
-		ctx.fillStyle = '#8a8f96';
-		ctx.fillRect(0, this.rowY(12) - 5, GAME_W, 5);
-
-		// Home row: reeds along the bank, water inlets with lily pads.
-		for (let c = 0; c < COLS; c++) {
-			const x = c * T;
-			const y = this.rowY(0);
-			if (PADS.includes(c)) {
-				ctx.fillStyle = '#2b86cc';
-				ctx.fillRect(x + 2, y + 6, T - 4, T - 4);
-				this.lilyPad(ctx, x + T / 2, y + T / 2 + 2, c);
-				if (this.filled.has(c)) drawCharacter(ctx, characterById(this.selected), x + 4, y + 4, this.time, 0.8);
-			} else {
-				for (let k = 0; k < 3; k++) {
-					const rx = x + 6 + k * 12;
-					const h = 0.5 + ((c * 3 + k) % 3) * 0.2;
-					drawModel(ctx, model([bx(0, 0.4, 0, 0.12, 0.12, h, '#3e8f2c'), bx(0, 0.36, h, 0.12, 0.16, 0.14, '#8b5a2b')]), rx, y + 2);
-				}
-			}
-		}
-
-		// Lanes, back to front, with the frog and the coin in their rows.
-		for (let r = 1; r < ROWS; r++) {
-			const y = this.rowY(r);
-			const lane = this.lanes.find((l) => l.row === r);
-			if (lane) {
-				for (const [i, it] of lane.items.entries()) {
-					if (lane.kind === 'turtle') {
-						const depth = i === 0 ? this.diveDepth(lane) : 0;
-						for (let k = 0; k < lane.len; k++) {
-							drawModel(ctx, TURTLE, (it.x + k) * T, y - depth * 10, 1, 1 - depth * 0.75);
-						}
+					if (PADS.includes(c)) {
+						this.lilyPad(ctx, c * T + T / 2, y + T / 2 + 2, c);
+						if (this.filled.has(c)) drawCharacter(ctx, characterById(this.selected), c * T + 4, y + 4, this.time, 0.8);
 					} else {
-						if (!RIVER.includes(r)) shadow(ctx, (it.x + lane.len / 2) * T, y + T * 0.86, lane.len * T * 0.48, 5, 0.22);
-						drawModel(ctx, it.m, it.x * T, y);
+						for (let k = 0; k < 3; k++) {
+							const h = 0.5 + ((c * 3 + k) % 3) * 0.2;
+							drawModel(ctx, model([bx(0, 0.4, 0, 0.12, 0.12, h, '#3e8f2c'), bx(0, 0.36, h, 0.12, 0.16, 0.14, '#8b5a2b')]), c * T + 6 + k * 12, y + 2);
+						}
 					}
 				}
 			}
-			if (this.coin && this.coin.row === r) this.drawCoin(ctx, this.coin.x, r, t);
+			if (row.kind === 'river') {
+				for (const c of row.pads) this.lilyPad(ctx, c * T + T / 2, y + T / 2, c + r);
+				for (const it of row.items) drawModel(ctx, it.m, it.x * T, y);
+			}
+			if (row.kind === 'road') {
+				for (const it of row.items) {
+					shadow(ctx, (it.x + it.len / 2) * T, y + T * 0.86, it.len * T * 0.48, 5, 0.22);
+					drawModel(ctx, it.m, it.x * T, y);
+				}
+			}
+			if (row.kind === 'rail' && row.train) {
+				const tr = row.train;
+				// Warning light: flashes red while a train is coming or passing.
+				const flashing = tr.wait < 1.3 && Math.floor(t * 4) % 2 === 0;
+				ctx.fillStyle = '#d9d9d9';
+				ctx.fillRect(8, y - 18, 5, 40);
+				ctx.fillStyle = '#222';
+				ctx.fillRect(2, y - 26, 17, 12);
+				ctx.fillStyle = flashing ? '#ff3b30' : '#5a1a1a';
+				ctx.beginPath();
+				ctx.arc(10.5, y - 20, 4.5, 0, Math.PI * 2);
+				ctx.fill();
+				if (tr.wait <= 0) drawModel(ctx, tr.m, tr.x * T, y);
+			}
+			if (row.coin !== null) this.drawCoin(ctx, row.coin, y, t);
 			if ((this.state === 'play' || this.state === 'paused') && this.frogRow() === r) this.drawFrog(ctx);
 		}
-		// The frog mid-hop into the home row.
-		if ((this.state === 'play' || this.state === 'paused') && this.frogRow() === 0) this.drawFrog(ctx);
+	}
+
+	private drawGround(ctx: CanvasRenderingContext2D, row: Row, r: number, t: number) {
+		const y = this.rowY(r);
+		const below = this.rows.get(r - 1);
+		if (row.kind === 'home') {
+			ctx.fillStyle = '#2f8f3a';
+			ctx.fillRect(0, y, GAME_W, T);
+			ctx.fillStyle = '#2b86cc';
+			for (const c of PADS) ctx.fillRect(c * T + 2, y + 6, T - 4, T - 4);
+			ctx.fillStyle = '#6b4a2b';
+			ctx.fillRect(0, y + T - 1, GAME_W, 7);
+		} else if (row.kind === 'grass') {
+			ctx.fillStyle = r % 2 ? '#5fc24d' : '#58b947';
+			ctx.fillRect(0, y, GAME_W, T);
+			ctx.fillStyle = 'rgba(0,0,0,0.05)';
+			for (let c = r % 2; c < COLS; c += 2) ctx.fillRect(c * T, y, T, T);
+			// Raised edge where grass meets water, road or rails.
+			if (below && below.kind !== 'grass') {
+				ctx.fillStyle = below.kind === 'river' ? '#6b4a2b' : '#8a8f96';
+				ctx.fillRect(0, y + T - 1, GAME_W, 7);
+			}
+		} else if (row.kind === 'road') {
+			ctx.fillStyle = '#4a4f57';
+			ctx.fillRect(0, y, GAME_W, T);
+			if (this.rows.get(r + 1)?.kind === 'road') {
+				ctx.fillStyle = '#e8e8e8';
+				for (let x = 8; x < GAME_W; x += 48) ctx.fillRect(x, y - 1, 24, 3);
+			}
+		} else if (row.kind === 'rail') {
+			ctx.fillStyle = '#8a7a68';
+			ctx.fillRect(0, y, GAME_W, T);
+			ctx.fillStyle = '#6b4a2b';
+			for (let x = 4; x < GAME_W; x += 20) ctx.fillRect(x, y + 6, 8, T - 12);
+			ctx.fillStyle = '#c9ccd1';
+			ctx.fillRect(0, y + 11, GAME_W, 4);
+			ctx.fillRect(0, y + 25, GAME_W, 4);
+		} else {
+			ctx.fillStyle = r % 2 ? '#2a8fd6' : '#2b86cc';
+			ctx.fillRect(0, y, GAME_W, T);
+			ctx.fillStyle = 'rgba(255,255,255,0.18)';
+			for (let k = 0; k < 6; k++) {
+				const wx = ((k * 97 + t * 18 * row.dir) % (GAME_W + 60) + GAME_W + 60) % (GAME_W + 60) - 30;
+				ctx.fillRect(wx, y + 10 + ((k * 13) % 20), 26, 3);
+			}
+		}
 	}
 
 	private frogRow() {
@@ -939,11 +1127,11 @@ export class Frogger implements ArcadeGame {
 	private lilyPad(ctx: CanvasRenderingContext2D, cx: number, cy: number, seed: number) {
 		ctx.fillStyle = '#2f7a2a';
 		ctx.beginPath();
-		ctx.ellipse(cx, cy + 3, 15, 10, 0, 0, Math.PI * 2);
+		ctx.ellipse(cx, cy + 3, 16, 11, 0, 0, Math.PI * 2);
 		ctx.fill();
 		ctx.fillStyle = '#4fae3c';
 		ctx.beginPath();
-		ctx.ellipse(cx, cy, 15, 10, 0, 0.35, Math.PI * 2 - 0.05);
+		ctx.ellipse(cx, cy, 16, 11, 0, 0.35, Math.PI * 2 - 0.05);
 		ctx.lineTo(cx, cy);
 		ctx.fill();
 		ctx.strokeStyle = 'rgba(30,90,30,0.6)';
@@ -954,7 +1142,7 @@ export class Frogger implements ArcadeGame {
 		ctx.moveTo(cx, cy);
 		ctx.lineTo(cx - 6, cy + 7);
 		ctx.stroke();
-		if (seed % 3 === 1) {
+		if (seed % 4 === 1) {
 			ctx.fillStyle = '#ff8fc0';
 			ctx.fillRect(cx + 4, cy - 7, 6, 5);
 			ctx.fillStyle = '#ffd1e6';
@@ -962,11 +1150,11 @@ export class Frogger implements ArcadeGame {
 		}
 	}
 
-	private drawCoin(ctx: CanvasRenderingContext2D, x: number, r: number, t: number) {
-		const cx = x * T + T / 2;
-		const cy = this.rowY(r) + T / 2 - 6 + Math.sin(t * 4) * 2;
+	private drawCoin(ctx: CanvasRenderingContext2D, col: number, rowY: number, t: number) {
+		const cx = col * T + T / 2;
+		const cy = rowY + T / 2 - 6 + Math.sin(t * 4) * 2;
 		const w = Math.max(2, Math.abs(Math.cos(t * 3)) * 11);
-		shadow(ctx, cx, this.rowY(r) + T * 0.8, 9, 3);
+		shadow(ctx, cx, rowY + T * 0.8, 9, 3);
 		ctx.fillStyle = '#c99712';
 		ctx.beginPath();
 		ctx.ellipse(cx, cy + 2, w, 11, 0, 0, Math.PI * 2);
@@ -993,9 +1181,9 @@ export class Frogger implements ArcadeGame {
 			lift = Math.sin(k * Math.PI) * 12;
 		}
 		const px = x * T;
-		const py = this.rowY(0) + r * T;
+		const py = this.rowY(r);
 		if (this.dying) {
-			const k = this.dying.t / 0.9;
+			const k = Math.min(1, this.dying.t / 0.9);
 			if (this.dying.kind === 'splash') {
 				ctx.strokeStyle = `rgba(220,240,255,${1 - k})`;
 				ctx.lineWidth = 3;
@@ -1004,15 +1192,22 @@ export class Frogger implements ArcadeGame {
 					ctx.ellipse(px + T / 2, py + T / 2, 6 + k * 22 + i * 6, (6 + k * 22 + i * 6) * 0.5, 0, 0, Math.PI * 2);
 					ctx.stroke();
 				}
-				if (k < 0.3) drawCharacter(ctx, ch, px, py + k * 30, this.time, 1, 1 - k * 3);
+				if (k < 0.3) drawCharacter(ctx, ch, px, py + k * 30, this.time, 1, 1 - k * 3, 1, this.facing);
+			} else if (this.dying.kind === 'caught') {
+				// A heron swoops down and carries the frog off.
+				const heron = characterById('heron');
+				const lift2 = k < 0.5 ? (1 - k * 2) * 220 : (k - 0.5) * -240;
+				if (k < 0.5) drawCharacter(ctx, ch, px, py, this.time, 1, 1, 1, this.facing);
+				drawCharacter(ctx, heron, px - T * 0.4, py - 30 - lift2, this.time, 1.6);
+				if (k >= 0.5) drawCharacter(ctx, ch, px, py - 10 - (k - 0.5) * 240, this.time, 0.8, 1, 1, this.facing);
 			} else {
-				drawCharacter(ctx, ch, px, py, this.time, 1, 1 - k * 0.6, 0.15);
+				drawCharacter(ctx, ch, px, py, this.time, 1, 1 - k * 0.6, 0.15, this.facing);
 			}
 			return;
 		}
 		shadow(ctx, px + T / 2, py + T * 0.78, 13 - lift / 3, 5);
 		const hover = ch.id === 'dragonfly' ? Math.sin(this.time * 6) * 3 : 0;
-		drawCharacter(ctx, ch, px, py - lift + hover, this.time);
+		drawCharacter(ctx, ch, px, py - lift + hover, this.time, 1, 1, 1, this.facing);
 	}
 
 	private drawHud(ctx: CanvasRenderingContext2D) {
@@ -1021,21 +1216,26 @@ export class Frogger implements ArcadeGame {
 		ctx.fillRect(0, 0, GAME_W, HUD);
 		ctx.fillStyle = '#0c2a19';
 		ctx.fillRect(0, HUD - 3, GAME_W, 3);
-		g.font(15, ARIAL_BLACK);
-		if (this.state === 'play' || this.state === 'paused' || this.state === 'over') {
+		if (this.mode === 'classic' && (this.state === 'play' || this.state === 'paused' || this.state === 'over')) {
+			g.font(15, ARIAL_BLACK);
 			g.setColor('#ffffff');
 			g.drawString(`${this.score}`, 12, 26);
 			g.setColor('#9be38a');
 			g.font(12, ARIAL_BLACK);
 			g.drawString(`LV ${this.level}`, 92, 26);
-			// Timer bar.
 			ctx.fillStyle = '#0c2a19';
 			ctx.fillRect(150, 15, 150, 12);
 			const k = Math.max(0, this.timer / ATTEMPT_TIME);
 			ctx.fillStyle = k > 0.3 ? '#5fd35f' : '#ff6b4a';
 			ctx.fillRect(150, 15, 150 * k, 12);
-			// Lives.
 			for (let i = 0; i < this.lives; i++) drawModel(ctx, CHARACTERS[0].model, 312 + i * 22, 14, 0.5);
+		} else if (this.state === 'play' || this.state === 'paused' || this.state === 'over') {
+			g.font(22, ARIAL_BLACK);
+			g.setColor('#ffffff');
+			g.drawString(`${this.score}`, 14, 30);
+			g.font(12, ARIAL_BLACK);
+			g.setColor('#9be38a');
+			g.drawString(`TOP ${Math.max(this.best, this.score)}`, 14 + g.width(`${this.score}`) * 1.9 + 12, 28);
 		}
 		// Coins.
 		ctx.fillStyle = '#c99712';
@@ -1086,7 +1286,7 @@ export class Frogger implements ArcadeGame {
 		ctx.fillStyle = '#c9f5c0';
 		ctx.fillText(ch.name, GAME_W / 2, 254);
 		ctx.textAlign = 'left';
-		MENU.forEach((m, i) => this.button(ctx, m.label, 140, 262 + i * 52, 240, 42, this.hover === i));
+		MENU.forEach((m, i) => this.button(ctx, m.label, 140, 262 + i * 48, 240, 40, this.hover === i));
 	}
 
 	private drawPanel(ctx: CanvasRenderingContext2D, heading: string, buttons: string[], y0: number, lines: string[] = []) {
@@ -1107,32 +1307,26 @@ export class Frogger implements ArcadeGame {
 
 	private drawScores(ctx: CanvasRenderingContext2D) {
 		this.back(ctx);
-		this.title(ctx, 'HIGH SCORES', GAME_W / 2, 140, 40, '#ffe14a');
+		this.title(ctx, 'HIGH SCORES', GAME_W / 2, 128, 40, '#ffe14a');
 		const g = this.g;
-		g.font(18, ARIAL_BLACK);
+		g.font(17, ARIAL_BLACK);
 		g.setColor('#ffffff');
-		g.drawString('Your best', 120, 200);
-		g.drawRight(`${this.best}`, 400, 200);
-		g.drawString('Games played', 120, 236);
-		g.drawRight(`${this.games}`, 400, 236);
-		g.drawString('Characters', 120, 272);
-		g.drawRight(`${this.owned.length} / ${CHARACTERS.length}`, 400, 272);
-		g.font(15, ARIAL_BLACK);
-		g.setColor('#9be38a');
-		g.drawString('GLOBAL RECORD', 120, 330);
-		drawRecord(g, {
-			global: this.global,
-			board: 1,
-			local: this.best,
-			loggedIn: this.loggedIn,
-			x: 120,
-			y: 356,
-			family: ARIAL,
-			color: '#ffffff',
-			dim: '#a9d8a0',
-			size: 16,
-			rows: 3
-		});
+		g.drawString('Best Classic (points)', 100, 180);
+		g.drawRight(`${this.bestClassic}`, 420, 180);
+		g.drawString('Best Endless (rows)', 100, 212);
+		g.drawRight(`${this.best}`, 420, 212);
+		g.drawString('Games played', 100, 244);
+		g.drawRight(`${this.games}`, 420, 244);
+		g.drawString('Characters', 100, 276);
+		g.drawRight(`${this.owned.length} / ${CHARACTERS.length}`, 420, 276);
+		const record = (board: number, label: string, local: number, y: number) => {
+			g.font(14, ARIAL_BLACK);
+			g.setColor('#9be38a');
+			g.drawString(label, 100, y);
+			drawRecord(g, { global: this.global, board, local, loggedIn: this.loggedIn, x: 100, y: y + 24, family: ARIAL, color: '#ffffff', dim: '#a9d8a0', size: 15, rows: 2 });
+		};
+		record(BOARDS.classic, 'GLOBAL · CLASSIC', this.bestClassic, 322);
+		record(BOARDS.endless, 'GLOBAL · ENDLESS', this.best, 430);
 	}
 
 	private drawControls(ctx: CanvasRenderingContext2D) {
@@ -1140,14 +1334,16 @@ export class Frogger implements ArcadeGame {
 		this.title(ctx, 'HOW TO PLAY', GAME_W / 2, 140, 40, '#ffe14a');
 		const lines: [string, string][] = [
 			['W A S D', 'Hop (arrow keys work too)'],
-			['Enter', 'Pause'],
+			['Classic', 'Fill all 5 lily pads before time runs out'],
+			['Endless', 'Hop forward as far as you can'],
 			['Road', "Don't get hit by cars"],
-			['River', 'Ride the logs and turtles'],
-			['Goal', 'Fill all 5 lily pads to level up'],
-			['Coins', 'Spend 30 on the gumball machine']
+			['Railway', 'Red light: a train is coming!'],
+			['River', 'Hop on logs and lily pads'],
+			['Keep up', "Dawdle and a heron gets you"],
+			['Coins', `Spend ${ROLL_COST} on the gumball machine`]
 		];
 		lines.forEach(([k, v], i) => {
-			const y = 190 + i * 46;
+			const y = 180 + i * 42;
 			ctx.fillStyle = '#ffffff';
 			ctx.fillRect(70, y - 22, 110, 32);
 			ctx.fillStyle = '#123d24';
@@ -1345,7 +1541,8 @@ export class Frogger implements ArcadeGame {
 }
 
 const MENU = [
-	{ id: 'play', label: 'New Game' },
+	{ id: 'classic', label: 'Classic (Timed)' },
+	{ id: 'endless', label: 'Endless' },
 	{ id: 'gumball', label: 'Gumball Machine' },
 	{ id: 'scores', label: 'High Scores' },
 	{ id: 'controls', label: 'How to Play' },

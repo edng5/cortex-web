@@ -59,12 +59,14 @@ destructible bunkers, a bonus mothership and an unlockable ship, and three diffi
 Hard (with boss fights) and No Shields (Hard without the bunkers).
 
 ## ![](/games/icons/frogger-panel.png) Frogger
-Edward's Grade 10 Python (pygame) game: get the frog across a busy road and a river of logs to the
-five lily pads at the top, before time runs out. The browser version is rebuilt with chunky 3D
-block graphics in the spirit of Crossy Road, one hop per key press, levels that speed up each time
-all five lily pads are filled, and diving turtles. Coins picked up along the way buy rolls of a
+Edward's Grade 10 Python (pygame) game, rebuilt with chunky 3D block graphics in the spirit of
+Crossy Road, with two modes. Classic (timed) is the original: get the frog across a busy road and
+a river of logs to the five lily pads at the top before time runs out, with levels that speed up
+each time all five are filled. Endless is a Crossy Road-style hop forward through randomly
+generated grass, roads, railways with trains, and rivers of logs or lily pads, for as far as you
+can go. Characters turn to face where they hop, and coins picked up along the way buy rolls of a
 gumball machine that unlocks 10 swamp animals to play as, from a toad and a turtle to a baby
-alligator, a heron and a dragonfly.
+alligator, a heron and a dragonfly. On phones, it's tap to hop and swipe to turn.
 
 ## ![](/games/icons/pong.png) Pong × Brick Breaker
 Two paddle games in one. In Pong, the ball speeds up, the paddle shrinks and a second ball joins
