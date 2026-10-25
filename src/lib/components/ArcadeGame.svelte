@@ -11,6 +11,7 @@
 	import { session } from '$lib/session.svelte';
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import TouchControls from './TouchControls.svelte';
+	import { pullSave, watchSave } from '$lib/games/cloud-save';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
 
@@ -26,6 +27,8 @@
 	const rotate = $derived(touch && portrait && !!spec.touch.landscape);
 	const playing = $derived(active && !rotate);
 	let game: ArcadeGame | null = null;
+	/** Send any unsynced progress to the account now (set once the game starts). */
+	let syncFlush = () => {};
 	const held = new Set<string>();
 
 	onMount(() => {
@@ -36,8 +39,16 @@
 		upright.addEventListener('change', onTurn);
 		let raf = 0;
 		let disposed = false;
-		spec
-			.load()
+		// Signed in: start from the account's progress if it's newer (coins, upgrades, settings…),
+		// and keep sending changes to it while playing.
+		let sync: ReturnType<typeof watchSave> | null = null;
+		(session.user ? pullSave(spec.id, spec.saveKey) : Promise.resolve())
+			.then(() => {
+				// Watch from here on (so taking the account's copy doesn't count as a new change).
+				sync = watchSave(spec.id, spec.saveKey, () => !!session.user);
+				syncFlush = sync.flush;
+				return spec.load();
+			})
 			.then((g) => {
 				if (disposed) return;
 				game = g;
@@ -83,6 +94,7 @@
 			cancelAnimationFrame(raf);
 			gameAudio.stopIf(spec.id);
 			game?.save();
+			sync?.stop();
 		};
 	});
 
@@ -141,6 +153,7 @@
 			releaseAll();
 			gameAudio.stopIf(spec.id);
 			game?.leave();
+			syncFlush();
 		} else if (status === 'running') {
 			queueMicrotask(() => canvas?.focus());
 			loadBoard(); // back again: refresh the global high scores

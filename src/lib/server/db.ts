@@ -85,6 +85,13 @@ export function getDb(): Database.Database {
 		-- Scores from before monthly boards existed count for the month they were set.
 		INSERT OR IGNORE INTO game_monthly (user_id, game, mission, month, best, updated_at)
 			SELECT user_id, game, mission, strftime('%Y-%m', updated_at / 1000, 'unixepoch'), best, updated_at FROM game_scores;
+		CREATE TABLE IF NOT EXISTS game_saves (
+			user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			game        TEXT NOT NULL,
+			data        TEXT NOT NULL,          -- the game's save (coins, upgrades, settings…), as the game stores it
+			saved_at    INTEGER NOT NULL,       -- when it last changed on the player's device (ms); newer wins
+			PRIMARY KEY (user_id, game)
+		);
 		CREATE TABLE IF NOT EXISTS player_names (
 			user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 			name        TEXT NOT NULL,          -- leaderboard name the player chose (public)

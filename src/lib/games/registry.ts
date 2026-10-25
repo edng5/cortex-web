@@ -29,6 +29,8 @@ export interface GameSpec {
 	/** Short line under the title on the menu button. */
 	tagline: string;
 	accent: string;
+	/** Where the game keeps its progress in localStorage (synced to the player's account). */
+	saveKey: string;
 	/** Canvas size (the Java window's drawing area). */
 	w: number;
 	h: number;
@@ -47,6 +49,7 @@ const MOUSE = { keys: ['Mouse'], label: 'menus' };
 export const GAMES: GameSpec[] = [
 	{
 		id: 'topgun',
+		saveKey: 'topgun-save',
 		title: 'Top Gun',
 		blurb: 'Fly three missions against waves of fighter jets, ships and an army base.',
 		icon: '/games/icons/topgun.png',
@@ -72,6 +75,7 @@ export const GAMES: GameSpec[] = [
 	},
 	{
 		id: 'fishy',
+		saveKey: 'fishy-save',
 		title: 'Fishy',
 		blurb: 'Eat smaller fish to grow, dodge the bigger ones, sharks and hooks. 2P local too.',
 		icon: '/games/icons/fishy.png',
@@ -96,6 +100,7 @@ export const GAMES: GameSpec[] = [
 	},
 	{
 		id: 'spaceinvaders',
+		saveKey: 'spaceinvaders-save',
 		title: 'Space Invaders',
 		blurb: 'The arcade classic: Normal, Hard with boss waves, or No Shields with no bunkers to hide behind.',
 		icon: '/games/icons/spaceinvaders.png',
@@ -120,6 +125,7 @@ export const GAMES: GameSpec[] = [
 	},
 	{
 		id: 'frogger',
+		saveKey: 'frogger-save',
 		title: 'Frogger',
 		blurb: 'Classic timed lily-pad runs or an endless Crossy Road-style hop. Collect coins and roll the gumball machine for swamp friends.',
 		icon: '/games/icons/frogger.png',
@@ -143,6 +149,7 @@ export const GAMES: GameSpec[] = [
 	},
 	{
 		id: 'pong',
+		saveKey: 'pong-save',
 		title: 'Pong × Brick Breaker',
 		blurb: 'Two games in one: keep the ball alive as it speeds up, or clear all 50 bricks.',
 		icon: '/games/icons/pong.png',
