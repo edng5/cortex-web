@@ -9,7 +9,7 @@ weight: 3
 icon: /images/logos/queens.png
 images: []
 links: []
-related: [exp-inqubate, proj-neos, proj-speakease, skill-python, skill-ml, proj-keyattack, proj-kobi, skill-architecture]
+related: [exp-inqubate, proj-neos, proj-speakease, skill-python, skill-ml, proj-keyattack, proj-kobi, skill-architecture, int-cooking]
 ---
 
 ## Degree

@@ -9,7 +9,7 @@ weight: 2
 icon: /images/logos/john-cabot.png
 images: []
 links: []
-related: [edu-queens, int-basketball, skill-leadership, proj-mini-games, skill-java, skill-python]
+related: [edu-queens, int-basketball, skill-leadership, proj-mini-games, skill-java, skill-python, int-piano]
 ---
 
 ## Diploma
