@@ -1,6 +1,8 @@
 // Space Invaders (SpaceInvaders.java and its classes), ported to TypeScript. The Java logic is kept
 // as written, quirks included. Changes: menus also work with the mouse (hover + click), W/S
-// replace the arrow keys in menus, and the default ship controls are A/D ("Lefty" in Options).
+// replace the arrow keys in menus, the default ship controls are A/D ("Lefty" in Options), and
+// No Shields (the original's "Shields Down" switch) is a third difficulty: Hard's waves and
+// bosses without bunkers, so each difficulty has its own leaderboard.
 import { Rect } from '../topgun/geometry';
 import { ARIAL, ARIAL_BLACK, COMIC, Gfx, drawRecord, loadImages, loadSave, spotAt, writeSave, type ArcadeGame, type Board, type Hotspot } from '../common';
 
@@ -184,6 +186,8 @@ export class SpaceInvaders implements ArcadeGame {
 			loadSave(SAVE_KEY, { gp: 0, highscore: 0, hwave: 0, kills: 0, bosses: 0, unlock: 0, controls: 2, difficulty: 1, character: 1, shieldsDown: 0 })
 		);
 		if (this.unlock != 1 && this.character == 2) this.character = 1;
+		if (this.shieldsDown == 1) this.difficulty = 3; // saves from when No Shields was a switch
+		this.shieldsDown = this.difficulty == 3 ? 1 : 0;
 		// Create Aliens
 		let startx = 0, starty = 0;
 		for (let i = 0; i < this.numAliens; i++) {
@@ -283,7 +287,7 @@ export class SpaceInvaders implements ArcadeGame {
 		const score = this.score;
 		this.keyPressedJava(k);
 		// Leaving a run from the pause menu still counts its score.
-		if (wasPaused && this.game == 0 && score > 0) this.onScore(1, score);
+		if (wasPaused && this.game == 0 && score > 0) this.onScore(this.difficulty, score);
 		return true;
 	}
 	keyReleased(code: string): boolean {
@@ -356,9 +360,10 @@ export class SpaceInvaders implements ArcadeGame {
 			this.menuMove(k, 3);
 			if (this.delay2 > 5 && k == 'ENTER') {
 				if (this.select == 0) { this.game = 4; this.select = 0; this.delay2 = 0; this.startDelay = 1; }
-				if (this.select == 1) this.difficulty = 1;
-				if (this.select == 2) this.difficulty = 2;
-				if (this.select == 3) this.shieldsDown = this.shieldsDown == 0 ? 1 : 0;
+				if (this.select >= 1) {
+					this.difficulty = this.select; // 1 Normal, 2 Hard, 3 No Shields
+					this.shieldsDown = this.difficulty == 3 ? 1 : 0;
+				}
 			}
 		}
 		// Character Select
@@ -410,7 +415,7 @@ export class SpaceInvaders implements ArcadeGame {
 		const before = this.game;
 		this.run();
 		if (before != 2 && this.game == 2) {
-			this.onScore(1, this.score);
+			this.onScore(this.difficulty, this.score);
 			this.save();
 		}
 	}
@@ -455,7 +460,7 @@ export class SpaceInvaders implements ArcadeGame {
 					this.newWave();
 				}
 			}
-			if (this.difficulty == 2) {
+			if (this.difficulty >= 2) {
 				if (this.aCounter == 45) {
 					this.wave++;
 					this.aCounter = 0;
@@ -935,10 +940,10 @@ export class SpaceInvaders implements ArcadeGame {
 			// Global board, between the title and the stats.
 			g.setColor(Yellow);
 			g.font(14, ARIAL_BLACK);
-			g.drawString('GLOBAL RECORD', 52, 208);
+			g.drawString('GLOBAL RECORD · ' + ['', 'NORMAL', 'HARD', 'NO SHIELDS'][this.difficulty], 52, 208);
 			drawRecord(g, {
 				global: this.global,
-				board: 1,
+				board: this.difficulty,
 				local: this.highscore,
 				loggedIn: this.loggedIn,
 				x: 52,
@@ -974,7 +979,7 @@ export class SpaceInvaders implements ArcadeGame {
 			g.setColor(Yellow);
 			if (this.difficulty == 1) g.fillRect(130, 205, 120, 3);
 			if (this.difficulty == 2) g.fillRect(130, 370, 80, 3);
-			if (this.shieldsDown == 1) g.fillRect(165, 580, 220, 3);
+			if (this.difficulty == 3) g.fillRect(186, 580, 174, 3);
 		}
 		// Character Select Menu
 		if (this.game == 7) {

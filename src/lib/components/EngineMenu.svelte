@@ -42,10 +42,13 @@
 	const askName = $derived(!!session.user && (editing || session.playerName === null));
 </script>
 
-<div class="engine"><div class="cols">
-<div class="menu">
+<div class="engine">
+<header class="head">
 	<img class="logo" src="/games/engine-logo.svg" alt="E.Ngine Games" width="520" height="170" />
 	<p class="tag">Edward's high-school Java games, rebuilt to play in your browser.</p>
+</header>
+<div class="cols">
+<div class="menu">
 
 	<div class="picker">
 		<ul class="stack">
@@ -128,6 +131,13 @@
 		.cols {
 			grid-template-columns: minmax(0, 1fr) 250px;
 		}
+	}
+	.head {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 12px;
+		margin-bottom: 14px;
 	}
 	.menu {
 		display: flex;

@@ -50,6 +50,7 @@
 	const selected = $derived(found && !playlistNode && !galleryNode ? found : null);
 
 	let innerWidth = $state(1200);
+	let innerHeight = $state(800);
 	const insetRight = $derived(selected && innerWidth > 720 ? 518 : 0);
 
 	// ‹ › between nodes, biggest neuron first (wraps around). Web: buttons at the screen
@@ -81,10 +82,18 @@
 	const arcade = $derived(selected?.mediaLayout === 'arcade');
 	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade));
 	const mediaWidth = $derived(Math.round(Math.min(600, Math.max(380, innerWidth * 0.38))));
+	// Wide screens: the games menu and its monthly leaderboard side by side (laid out at
+	// ARCADE_BASE px), scaled up to fill the space between the screen edge and the info panel
+	// (as tall as the window allows), and placed in that space leaning toward the panel.
+	const ARCADE_BASE = 890;
+	const arcadeRoom = $derived(innerWidth - 518 - 64 - 32);
+	const arcadeScale = $derived(
+		innerWidth >= 1480 ? Math.max(1, Math.min(1.4, arcadeRoom / ARCADE_BASE, (innerHeight - 40) / 660)) : 1
+	);
+	const arcadeWidth = $derived(innerWidth >= 1480 ? Math.round(ARCADE_BASE * arcadeScale) : mediaWidth);
+	const arcadeLeft = $derived(innerWidth >= 1480 ? Math.round(64 + Math.max(0, arcadeRoom - arcadeWidth) * 0.6) : 64);
 	// Media may overlap the graph a little, so only shift the graph by about half its width.
-	const insetLeft = $derived(floatMedia ? Math.round(mediaWidth * 0.5) : 0);
-	// Wide screens: room for the games menu and its monthly leaderboard side by side.
-	const arcadeWidth = $derived(innerWidth >= 1480 ? Math.min(mediaWidth + 290, innerWidth - 518 - 64 - 120) : mediaWidth);
+	const insetLeft = $derived(floatMedia ? Math.round((arcade ? arcadeLeft - 64 + arcadeWidth : mediaWidth) * 0.5) : 0);
 	const presentTypes = $derived(NODE_TYPES.filter((t) => graph.nodes.some((n) => n.type === t)));
 
 	// Legend filter: click a type to line its neurons up on the left, click again to clear.
@@ -98,7 +107,7 @@
 	}
 </script>
 
-<svelte:window bind:innerWidth />
+<svelte:window bind:innerWidth bind:innerHeight />
 
 <main
 	class="stage"
@@ -179,8 +188,10 @@
 {#if selected}
 	{#key selected.id}
 		{#if floatMedia && arcade}
-			<section class="arcade-dock" style="--media-w: {arcadeWidth}px" aria-label="E.Ngine Games">
-				<EngineMenu onpick={(id) => session.openGames(id)} onlogin={() => (session.loginOpen = true)} />
+			<section class="arcade-dock" style="--media-w: {arcadeWidth}px; left: {arcadeLeft}px" aria-label="E.Ngine Games">
+				<div class="arcade-scale" style="zoom: {arcadeScale}; width: {arcadeWidth / arcadeScale}px">
+					<EngineMenu onpick={(id) => session.openGames(id)} onlogin={() => (session.loginOpen = true)} />
+				</div>
 			</section>
 		{:else if floatMedia}
 			<div style="--media-w: {mediaWidth}px">
@@ -279,6 +290,10 @@
 		overflow-y: auto;
 		scrollbar-width: none;
 		animation: dock-in 0.25s ease-out;
+	}
+	.arcade-scale {
+		flex: none;
+		margin: auto 0;
 	}
 	@keyframes dock-in {
 		from {

@@ -79,7 +79,7 @@ export const GAMES: GameSpec[] = [
 	{
 		id: 'spaceinvaders',
 		title: 'Space Invaders',
-		blurb: 'The arcade classic, with bunkers, a mothership and boss waves on Hard.',
+		blurb: 'The arcade classic: Normal, Hard with boss waves, or No Shields with no bunkers to hide behind.',
 		icon: '/games/icons/spaceinvaders.png',
 		preview: '/games/previews/spaceinvaders.jpg',
 		tagline: 'Waves, bosses, bunkers',
@@ -93,7 +93,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Shift'], label: 'pause' },
 			MOUSE
 		],
-		boards: { 1: 'High score' },
+		boards: { 1: 'Normal', 2: 'Hard', 3: 'No shields' },
 		load: async () => {
 			const m = await import('./spaceinvaders/SpaceInvaders');
 			return new m.SpaceInvaders(await m.loadAssets());

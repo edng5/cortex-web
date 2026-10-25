@@ -51,7 +51,8 @@ where their bounding boxes overlap.
 
 A remake of the classic arcade game: the player controls a spaceship at the bottom of the screen,
 shooting down waves of descending alien invaders while dodging their projectiles. It has
-destructible bunkers, a bonus mothership, a Hard mode with boss fights, and an unlockable ship.
+destructible bunkers, a bonus mothership and an unlockable ship, and three difficulties: Normal,
+Hard (with boss fights) and No Shields (Hard without the bunkers).
 
 ## Pong × Brick Breaker
 Two paddle games in one. In Pong, the ball speeds up, the paddle shrinks and a second ball joins
