@@ -185,10 +185,17 @@
 				{#if 'html' in part}
 					{@html part.html}
 				{:else if 'play' in part}
-					<button class="play-game" onclick={() => session.openGames(part.play === 'engine' ? null : part.play)}>
-						<span class="play-icon" aria-hidden="true"></span>
-						E.Ngine Games
-					</button>
+					<!-- Desktop shows the games menu on the left already; mid-size screens get a button
+					     to open it; phones (no keyboard) are pointed to the desktop site. -->
+					{#if !videosOnly}
+						<button class="play-game" onclick={() => session.openGames(part.play === 'engine' ? null : part.play)}>
+							<span class="play-icon" aria-hidden="true"></span>
+							E.Ngine Games
+						</button>
+					{/if}
+					<p class="play-note">
+						<span aria-hidden="true">🎮</span> The E.Ngine Games are playable on the desktop version of this website.
+					</p>
 				{:else if part.carousel.length}
 					<div class="inline-carousel">
 						<MediaCarousel
@@ -444,6 +451,20 @@
 		.play-game {
 			display: none;
 		}
+		.body .play-note {
+			display: flex;
+		}
+	}
+	.play-note {
+		display: none;
+		align-items: center;
+		gap: 8px;
+		margin: 4px 0 12px;
+		padding: 10px 12px;
+		border-radius: 10px;
+		border: 1px solid rgba(129, 140, 248, 0.35);
+		background: rgba(99, 102, 241, 0.12);
+		font-size: 0.88rem;
 	}
 	.inline-carousel {
 		margin: 14px 0 18px;
