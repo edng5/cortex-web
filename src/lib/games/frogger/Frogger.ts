@@ -38,21 +38,21 @@ const SPAN = COLS + 10;
 /** Global boards: 1 = Classic (points), 2 = Endless (rows). */
 const BOARDS = { classic: 1, endless: 2 } as const;
 type Mode = keyof typeof BOARDS;
-// Classic mode's fixed board, bottom to top (world rows): start, 5 road lanes, a verge, 5 rivers
-// of logs, and the lily pads at the top.
+// Classic mode's fixed board, bottom to top (world rows): start, 5 road lanes, a verge, 5 river
+// lanes of logs and turtle rafts (the rafts dive from level 2), and the lily pads at the top.
 const PADS = [1, 4, 6, 8, 11];
 const HOME_ROW = 12;
 const ATTEMPT_TIME = 30;
-const CLASSIC: { kind: 'road' | 'river'; v?: string; len: number; dir: 1 | -1; speed: number; count: number }[] = [
+const CLASSIC: { kind: 'road' | 'river'; v?: string; turtles?: boolean; len: number; dir: 1 | -1; speed: number; count: number }[] = [
 	{ kind: 'road', v: 'muscle', len: 1, dir: -1, speed: 1.6, count: 3 },
 	{ kind: 'road', v: 'bus', len: 3, dir: 1, speed: 0.9, count: 2 },
 	{ kind: 'road', v: 'car', len: 1, dir: -1, speed: 1.3, count: 3 },
 	{ kind: 'road', v: 'sport', len: 1, dir: 1, speed: 2.4, count: 2 },
 	{ kind: 'road', v: 'truck', len: 2, dir: -1, speed: 1.0, count: 2 },
 	{ kind: 'river', len: 2, dir: 1, speed: 1.7, count: 3 },
-	{ kind: 'river', len: 3, dir: -1, speed: 1.2, count: 3 },
+	{ kind: 'river', turtles: true, len: 3, dir: -1, speed: 1.2, count: 3 },
 	{ kind: 'river', len: 4, dir: 1, speed: 0.8, count: 2 },
-	{ kind: 'river', len: 2, dir: -1, speed: 1.5, count: 4 },
+	{ kind: 'river', turtles: true, len: 2, dir: -1, speed: 1.5, count: 4 },
 	{ kind: 'river', len: 3, dir: 1, speed: 1.1, count: 3 }
 ];
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -403,6 +403,14 @@ function logModel(len: number): Model {
 		bx(len - 0.08, 0.18, 0, 0.08, 0.64, 0.3, '#d9b07a')
 	]);
 }
+/** Classic's turtle rafts: a row of these, swimming along (one raft per lane dives now and then). */
+const TURTLE = model([
+	bx(0.38, 0.06, 0, 0.24, 0.18, 0.12, '#c9b27a'),
+	bx(0.1, 0.2, 0, 0.8, 0.62, 0.16, '#3d7a3a'),
+	bx(0.2, 0.28, 0.16, 0.6, 0.46, 0.1, '#4f9a48'),
+	bx(0.4, 0.4, 0.26, 0.2, 0.2, 0.02, '#2f5e2c')
+]);
+
 // ── Scenery and trains ─────────────────────────────────────────────────────────────────
 const SCENERY: Model[] = [
 	model([bx(0.42, 0.42, 0, 0.16, 0.16, 0.3, '#7a4a20'), bx(0.16, 0.14, 0.3, 0.68, 0.68, 0.55, '#3f9a3a'), bx(0.26, 0.24, 0.85, 0.48, 0.48, 0.25, '#56b84c')]),
@@ -442,6 +450,8 @@ interface Row {
 	speed: number;
 	/** Classic mode: the lane's speed at level 1 (it speeds up with each level). */
 	base?: number;
+	/** Classic: a lane of turtle rafts; its first raft dives now and then from level 2 (phase offset). */
+	dive?: number;
 	/** Vehicles (road) or logs (river). */
 	items: Item[];
 	/** Grass: columns blocked by trees or rocks. */
@@ -599,10 +609,12 @@ export class Frogger implements ArcadeGame {
 			const color = pick(CAR_COLORS);
 			for (let n = 0; n < l.count; n++) {
 				const x = SPAN0 + (n * SPAN) / l.count + rand(0, 1);
-				const m = l.kind === 'river' ? logModel(l.len) : vehicle(l.v!, l.len, l.v === 'muscle' ? '#f2a020' : CAR_COLORS[(k + n * 2) % CAR_COLORS.length] ?? color, l.dir);
+				const m = l.turtles ? TURTLE : l.kind === 'river' ? logModel(l.len) : vehicle(l.v!, l.len, l.v === 'muscle' ? '#f2a020' : CAR_COLORS[(k + n * 2) % CAR_COLORS.length] ?? color, l.dir);
 				items.push({ x, len: l.len, m });
 			}
-			this.rows.set(k < 5 ? k + 1 : k + 2, { kind: l.kind, dir: l.dir, speed: l.speed, base: l.speed, items, trees: new Map(), pads: new Set(), coin: null });
+			const row: Row = { kind: l.kind, dir: l.dir, speed: l.speed, base: l.speed, items, trees: new Map(), pads: new Set(), coin: null };
+			if (l.turtles) row.dive = k * 1.7;
+			this.rows.set(k < 5 ? k + 1 : k + 2, row);
 		});
 		this.rows.set(6, grass());
 		this.rows.set(HOME_ROW, { kind: 'home', dir: 1, speed: 0, items: [], trees: new Map(), pads: new Set(PADS), coin: null });
@@ -811,10 +823,20 @@ export class Frogger implements ArcadeGame {
 		}
 	}
 
-	/** The log under the frog, if any. */
+	/** The log (or surfaced turtle raft) under the frog, if any. */
 	private log(r: Row): Item | undefined {
 		const cx = this.x + 0.5;
-		return r.items.find((it) => cx >= it.x && cx <= it.x + it.len);
+		return r.items.find((it, i) => cx >= it.x && cx <= it.x + it.len && !(i === 0 && this.diveDepth(r) > 0.7));
+	}
+
+	/** Classic's diving rafts: 0 = surfaced, 1 = fully under (only each turtle lane's first raft dives). */
+	private diveDepth(r: Row): number {
+		if (this.mode !== 'classic' || this.level < 2 || r.dive === undefined) return 0;
+		const p = (this.time + r.dive) % 6;
+		if (p < 3.5) return 0;
+		if (p < 4.2) return (p - 3.5) / 0.7;
+		if (p < 5.3) return 1;
+		return 1 - (p - 5.3) / 0.7;
 	}
 
 	// ── Game loop ──
@@ -1047,7 +1069,12 @@ export class Frogger implements ArcadeGame {
 			}
 			if (row.kind === 'river') {
 				for (const c of row.pads) this.lilyPad(ctx, c * T + T / 2, y + T / 2, c + r);
-				for (const it of row.items) drawModel(ctx, it.m, it.x * T, y);
+				row.items.forEach((it, i) => {
+					if (row.dive === undefined) return drawModel(ctx, it.m, it.x * T, y);
+					// Turtle rafts: one turtle per tile; the diving raft sinks and fades.
+					const depth = i === 0 ? this.diveDepth(row) : 0;
+					for (let k = 0; k < it.len; k++) drawModel(ctx, it.m, (it.x + k) * T, y - depth * 10, 1, 1 - depth * 0.75);
+				});
 			}
 			if (row.kind === 'road') {
 				for (const it of row.items) {
