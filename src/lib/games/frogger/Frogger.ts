@@ -239,19 +239,36 @@ export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolea
 		name: 'Magikarp',
 		rare: true,
 		flop: true,
-		// Lying on its side, head to the left: a fish out of water.
+		// A chunky block fish on its belly, facing the camera: pink lips round a dark mouth,
+		// eyes either side, yellow whiskers and fins, a white dorsal fin and a spreading tail.
 		model: model([
-			bx(0.74, 0.22, 0.02, 0.2, 0.56, 0.16, '#f2c84b'),
-			bx(0.22, 0.16, 0.06, 0.1, 0.16, 0.08, '#f2c84b'),
-			bx(0.36, 0.12, 0.06, 0.1, 0.2, 0.1, '#f2c84b'),
-			bx(0.5, 0.16, 0.06, 0.1, 0.16, 0.08, '#f2c84b'),
-			bx(0.12, 0.3, 0, 0.62, 0.42, 0.24, '#f2552c'),
-			bx(0.12, 0.64, 0, 0.62, 0.1, 0.18, '#f7e3b5'),
-			bx(0.05, 0.4, 0.03, 0.09, 0.16, 0.14, '#f7e3b5'),
-			bx(0.0, 0.38, 0.12, 0.08, 0.03, 0.02, '#f2c84b'),
-			bx(0.18, 0.36, 0.24, 0.13, 0.13, 0.02, '#ffffff'),
-			bx(0.21, 0.39, 0.26, 0.06, 0.06, 0.01, '#111111'),
-			bx(0.38, 0.5, 0.24, 0.14, 0.1, 0.02, '#f2e7c9')
+			// Tail, spreading out behind.
+			bx(0.18, -0.14, 0.14, 0.64, 0.12, 0.26, '#f2f2f2'),
+			bx(0.3, -0.04, 0.1, 0.4, 0.24, 0.3, '#d6d6d6'),
+			// Body, with darker stripes across its back.
+			bx(0.2, 0.18, 0.04, 0.6, 0.6, 0.42, '#e8462a'),
+			bx(0.2, 0.3, 0.46, 0.6, 0.05, 0.005, '#b9321c'),
+			bx(0.2, 0.44, 0.46, 0.6, 0.05, 0.005, '#b9321c'),
+			bx(0.2, 0.18, 0.04, 0.6, 0.1, 0.42, '#d33e24'),
+			// White dorsal fin standing up, with grey ribs.
+			bx(0.44, 0.24, 0.46, 0.12, 0.42, 0.24, '#ececec'),
+			bx(0.44, 0.34, 0.7, 0.12, 0.04, 0.005, '#9a9a9a'),
+			bx(0.44, 0.48, 0.7, 0.12, 0.04, 0.005, '#9a9a9a'),
+			// Yellow side fins and whiskers.
+			bx(0.08, 0.44, 0.06, 0.12, 0.2, 0.06, '#f2dd6b'),
+			bx(0.8, 0.44, 0.06, 0.12, 0.2, 0.06, '#f2dd6b'),
+			bx(0.02, 0.66, 0.3, 0.18, 0.04, 0.04, '#f2dd6b'),
+			bx(0.8, 0.66, 0.3, 0.18, 0.04, 0.04, '#f2dd6b'),
+			bx(0.04, 0.72, 0.18, 0.16, 0.04, 0.04, '#e8c94a'),
+			bx(0.8, 0.72, 0.18, 0.16, 0.04, 0.04, '#e8c94a'),
+			// Eyes on the front corners.
+			bx(0.21, 0.76, 0.28, 0.14, 0.04, 0.14, '#ffffff'),
+			bx(0.65, 0.76, 0.28, 0.14, 0.04, 0.14, '#ffffff'),
+			bx(0.25, 0.8, 0.32, 0.06, 0.01, 0.06, '#111111'),
+			bx(0.69, 0.8, 0.32, 0.06, 0.01, 0.06, '#111111'),
+			// Big pink lips round a dark open mouth.
+			bx(0.36, 0.78, 0.06, 0.28, 0.06, 0.26, '#f29a9a'),
+			bx(0.42, 0.84, 0.12, 0.16, 0.01, 0.14, '#3a1212')
 		])
 	}
 ];
