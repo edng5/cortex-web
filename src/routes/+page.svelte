@@ -15,6 +15,7 @@
 	import GalleryModal from '$lib/components/GalleryModal.svelte';
 	import GamePopup from '$lib/components/GamePopup.svelte';
 	import EngineMenu from '$lib/components/EngineMenu.svelte';
+	import ReelPlayer from '$lib/components/ReelPlayer.svelte';
 	import { session } from '$lib/session.svelte';
 	import { nodeMedia } from '$lib/media';
 	import { cortex } from '$lib/cortex.svelte';
@@ -80,7 +81,11 @@
 	// `mediaLayout: arcade` (E.Ngine Games): the E.Ngine Games menu takes the left side instead of
 	// pictures, and the node's videos go in the info panel.
 	const arcade = $derived(selected?.mediaLayout === 'arcade');
-	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade));
+	// Nodes with `reels` (SpeakEase AI): a tall portrait player on the left, and the node's
+	// pictures and videos in the info panel.
+	const hasReels = $derived(!!selected?.reels.length);
+	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade || hasReels));
+	const reelHeight = $derived(Math.round(Math.min(760, innerHeight - 110)));
 	const mediaWidth = $derived(Math.round(Math.min(600, Math.max(380, innerWidth * 0.38))));
 	// Wide screens: the games menu and its monthly leaderboard side by side (laid out at
 	// ARCADE_BASE px), scaled up to fill the space between the screen edge and the info panel
@@ -193,6 +198,10 @@
 					<EngineMenu onpick={(id) => session.openGames(id)} onlogin={() => (session.loginOpen = true)} />
 				</div>
 			</section>
+		{:else if floatMedia && hasReels}
+			<section class="reel-dock" style="--media-w: {mediaWidth}px" aria-label="{selected.title} videos">
+				<ReelPlayer reels={selected.reels} captions={selected.captions} title={selected.title} height="{reelHeight}px" autoplay />
+			</section>
 		{:else if floatMedia}
 			<div style="--media-w: {mediaWidth}px">
 				<MediaFloat
@@ -211,7 +220,8 @@
 			onselect={(id) => cortex.select(id)}
 			onstep={step}
 			{enterFrom}
-			inlineMedia={!floatMedia || arcade}
+			inlineMedia={!floatMedia || arcade || hasReels}
+			inlineReels={!floatMedia}
 			videosOnly={floatMedia && arcade}
 		/>
 	{/key}
@@ -289,6 +299,19 @@
 		align-items: safe center;
 		overflow-y: auto;
 		scrollbar-width: none;
+		animation: dock-in 0.25s ease-out;
+	}
+	/* Reels: the portrait player centred where pictures would float. */
+	.reel-dock {
+		position: fixed;
+		top: 20px;
+		bottom: 20px;
+		left: 64px;
+		width: var(--media-w, 480px);
+		z-index: 25;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		animation: dock-in 0.25s ease-out;
 	}
 	.arcade-scale {

@@ -45,6 +45,8 @@ export interface OntologyNode {
 	icon?: string;
 	/** YouTube / Vimeo links, or video files under /static (.mp4, .webm). */
 	videos: string[];
+	/** Portrait videos (YouTube Shorts / reels) played one after another in a tall player. */
+	reels: string[];
 	/**
 	 * Picture style: 'float' (draggable pile, the default), 'carousel' (beside the panel),
 	 * 'gallery' (clicking the node opens a large centred gallery instead of the panel), or

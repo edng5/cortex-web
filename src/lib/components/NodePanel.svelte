@@ -9,6 +9,7 @@
 	import { carouselMedia, nodeMedia } from '$lib/media';
 	import MediaItem from './MediaItem.svelte';
 	import MediaCarousel from './MediaCarousel.svelte';
+	import ReelPlayer from './ReelPlayer.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { brandFor } from '$lib/brand';
 	import type { GraphData, OntologyNode } from '$lib/types';
@@ -26,8 +27,10 @@
 		inlineMedia?: boolean;
 		/** Only the videos inside the panel (the E.Ngine Games menu has the left side). */
 		videosOnly?: boolean;
+		/** Show the node's reels inside the panel too (screens without room for them on the left). */
+		inlineReels?: boolean;
 	}
-	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true, videosOnly = false }: Props = $props();
+	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true, videosOnly = false, inlineReels = true }: Props = $props();
 	const media = $derived(nodeMedia(node, true).filter((m) => !videosOnly || m.kind !== 'image'));
 
 	// Body markdown is your own trusted content from /content.
@@ -145,6 +148,12 @@
 	{/if}
 
 	{#if node.summary}<p class="summary">{node.summary}</p>{/if}
+
+	{#if inlineReels && node.reels.length}
+		<div class="reels-inline" data-swipe-ignore>
+			<ReelPlayer reels={node.reels} captions={node.captions} title={node.title} height="440px" />
+		</div>
+	{/if}
 
 	{#if inlineMedia && media.length}
 		<div class="gallery" data-swipe-ignore>
@@ -333,6 +342,9 @@
 	.summary {
 		font-size: 1.02rem;
 		margin: 14px 0;
+	}
+	.reels-inline {
+		margin: 4px 0 16px;
 	}
 	.gallery {
 		display: flex;

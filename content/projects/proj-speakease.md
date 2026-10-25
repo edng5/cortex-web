@@ -7,13 +7,17 @@ end: 2025-01
 tags: [mobile-apps, react-native, llm, speech, language-learning, startup, typescript, nodejs]
 weight: 3
 icon: /images/speakease/icon.png
-images:
-  - /images/speakease/phone-11.png
-  - /images/speakease/phone-12.png
-  - /images/speakease/phone-13.png
 videos:
   - https://www.youtube.com/watch?v=kTqgac8nIwQ
+reels:
+  - https://www.youtube.com/shorts/RZvXYffFZUY
+  - https://www.youtube.com/shorts/uo1zOJf-fgs
+  - https://www.youtube.com/shorts/NmLFOLGg1Cc
 carousels:
+  screens:
+    - /images/speakease/phone-11.png
+    - /images/speakease/phone-12.png
+    - /images/speakease/phone-13.png
   team:
     - /images/speakease/team/edward.jpg
     - /images/speakease/team/amber.jpg
@@ -22,6 +26,9 @@ carousels:
     - /images/speakease/team/oliver.jpg
 captions:
   https://www.youtube.com/watch?v=kTqgac8nIwQ: "SpeakEase AI trailer"
+  https://www.youtube.com/shorts/RZvXYffFZUY: "Introducing SpeakEase AI"
+  https://www.youtube.com/shorts/uo1zOJf-fgs: "New Friends"
+  https://www.youtube.com/shorts/NmLFOLGg1Cc: "Meet Easso!"
   /images/speakease/team/edward.jpg: "Edward — Lead Application Developer"
   /images/speakease/team/amber.jpg: "Amber — Technical Analyst"
   /images/speakease/team/sabrina.jpg: "Sabrina — Business Analyst"
@@ -46,6 +53,8 @@ SpeakEase AI gives feedback on pronunciation, sentence structure, and grammar ba
 performance while talking to Easso. Different coloured text indicates mispronunciation, and
 clicking the checkmark gives an assessment of the sentence. Whenever users are stuck, Easso can
 suggest what to say, and audio playback lets them replay messages.
+
+<!-- carousel: screens -->
 
 ## Multilingual
 SpeakEase AI supports 10+ languages, including English, French, Mandarin, Spanish, and Hindi

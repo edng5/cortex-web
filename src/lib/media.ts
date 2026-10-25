@@ -6,7 +6,7 @@ export type MediaItem =
 	| { kind: 'embed'; src: string; embedUrl: string; provider: 'youtube' | 'vimeo'; thumb?: string; caption?: string }
 	| { kind: 'video'; src: string; caption?: string };
 
-function youtubeId(url: string): string | null {
+export function youtubeId(url: string): string | null {
 	const m = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
 	return m ? m[1] : null;
 }

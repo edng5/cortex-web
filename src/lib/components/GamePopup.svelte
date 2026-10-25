@@ -1,9 +1,10 @@
 <!--
-  E.Ngine Games pop-up: the games menu, and the game being played. Once opened it stays mounted
-  (just hidden and paused when closed), and so does every game started in it, so going back to
-  the menu or reopening later finds each game where you left it. Closing during a game (Esc, ✕
-  or a click outside) asks first, so a stray key press doesn't end a run; the game pauses while
-  asking. Choosing Quit / Exit in a game's own menu goes back to the games menu.
+  E.Ngine Games pop-up: the game being played (picked from the menu on the E.Ngine Games node).
+  Leaving a game (Esc, ✕, a click outside, or Quit / Exit in its own menu) closes the pop-up,
+  back to the node. Esc, ✕ and clicking outside ask first, so a stray key press doesn't end a
+  run; the game pauses while asking. The pop-up stays mounted (hidden and paused), and so does
+  every game started in it, so each one is where you left it when reopened.
+  On mid-size screens the node has no menu beside it, so the pop-up opens on the menu instead.
 -->
 <script lang="ts">
 	import ArcadeGame from './ArcadeGame.svelte';
@@ -34,11 +35,8 @@
 	}
 	function close() {
 		confirming = false;
-		onclose();
-	}
-	function toMenu() {
-		confirming = false;
 		session.gameId = null;
+		onclose();
 	}
 	function login() {
 		close();
@@ -69,15 +67,13 @@
 >
 	<div class="card" class:menu={!current}>
 		<button class="close" onclick={askClose} aria-label="Close E.Ngine Games">✕</button>
-		{#if current}
-			<button class="back" onclick={toMenu}>‹ E.Ngine Games</button>
-		{:else}
+		{#if !current}
 			<EngineMenu onpick={(id) => (session.gameId = id)} onlogin={login} />
 		{/if}
 
 		{#each GAMES.filter((g) => started.includes(g.id)) as g (g.id)}
 			<div class="game" hidden={current?.id !== g.id}>
-				<ArcadeGame spec={g} active={open && !confirming && current?.id === g.id} onquit={toMenu} />
+				<ArcadeGame spec={g} active={open && !confirming && current?.id === g.id} onquit={close} />
 			</div>
 		{/each}
 
@@ -114,7 +110,7 @@
 	}
 	.card {
 		position: relative;
-		padding: 18px 18px 16px;
+		padding: 50px 18px 16px; /* clear of the ✕ */
 		border-radius: 18px;
 		background: rgba(10, 14, 26, 0.9);
 		border: 1px solid rgba(129, 140, 248, 0.35);
@@ -126,22 +122,6 @@
 	.card.menu {
 		width: min(940px, calc(100vw - 32px));
 		padding: 44px 22px 22px; /* clear of the ✕ */
-	}
-	.back {
-		display: block;
-		margin: -6px 0 10px;
-		padding: 4px 10px;
-		border-radius: 8px;
-		border: 1px solid rgba(148, 163, 184, 0.3);
-		background: transparent;
-		color: #c7d2fe;
-		font: inherit;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.back:hover {
-		border-color: #818cf8;
-		color: #fff;
 	}
 	.game[hidden] {
 		display: none;
