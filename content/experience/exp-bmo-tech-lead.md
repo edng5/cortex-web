@@ -8,7 +8,7 @@ weight: 3
 icon: /images/logos/bmo.jpg
 images: []
 links: []
-related: [exp-bmo-lead-dev, skill-ml, skill-llm-apis]
+related: [exp-bmo-lead-dev, skill-ml, skill-llm-apis, skill-data-science, skill-pytorch, skill-databases, skill-python, skill-rag, skill-leadership, skill-architecture, skill-typescript, skill-nodejs, skill-github, skill-docker, skill-iis, skill-aws, skill-patching-vuln, skill-rnd, skill-prompting, skill-sdd]
 ---
 
 ## What Edward does

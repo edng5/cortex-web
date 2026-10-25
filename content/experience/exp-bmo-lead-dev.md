@@ -9,7 +9,7 @@ weight: 2
 icon: /images/logos/bmo.jpg
 images: []
 links: []
-related: [exp-bmo-tech-lead, exp-bmo-dev, skill-aws, skill-ml]
+related: [exp-bmo-tech-lead, exp-bmo-dev, skill-aws, skill-ml, skill-python, skill-pytorch, skill-data-science, skill-github]
 ---
 
 ## What Edward did

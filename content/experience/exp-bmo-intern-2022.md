@@ -9,7 +9,7 @@ weight: 1
 icon: /images/logos/bmo.jpg
 images: []
 links: []
-related: [exp-bmo-dev]
+related: [exp-bmo-dev, skill-python, skill-pytorch, skill-data-science, skill-github]
 ---
 
 Edward cleaned and tagged datasets for model training, augmented documents to expand the datasets,

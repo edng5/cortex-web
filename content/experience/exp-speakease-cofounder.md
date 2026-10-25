@@ -4,7 +4,7 @@ subtitle: "SpeakEase AI"
 summary: "Co-founded SpeakEase AI and led development of a language-learning chatbot app released on the App Store and Google Play, reaching 500+ users globally."
 start: 2024-01
 end: 2025-01
-tags: [startup, mobile-apps, react-native, nodejs, express, azure, leadership, typescript]
+tags: [startup, mobile-apps, react-native, nodejs, express, azure, leadership, typescript, admob, monetization]
 weight: 3
 icon: /images/speakease/icon.png
 images: []
@@ -24,6 +24,7 @@ related: [proj-speakease, exp-inqubate, skill-react-native, skill-nodejs, skill-
   refining UI/UX elements based on user feedback.
 - Bundled the app with Expo Go and released it to the Apple App Store and Google Play Store,
   scaling to 500+ users globally.
+- Monetized the app with ad revenue using Google AdMob.
 
 ## Tech
-TypeScript, React Native, Node, Express, Expo Go, Azure Speech SDK.
+TypeScript, React Native, Node, Express, Expo Go, Azure Speech SDK, Google AdMob.

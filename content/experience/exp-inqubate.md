@@ -10,7 +10,7 @@ icon: /images/logos/inqubate.jpg
 images:
   - /images/about/inqubate.jpg
 links: []
-related: [proj-speakease, exp-speakease-cofounder, edu-queens]
+related: [proj-speakease, exp-speakease-cofounder, edu-queens, skill-typescript, skill-nodejs, skill-express, skill-react-native, skill-prompting, skill-pitching]
 ---
 
 ## What Edward did
