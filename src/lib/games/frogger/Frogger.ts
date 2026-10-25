@@ -121,6 +121,44 @@ function frogLike(body: string, dark: string, eye: string, pupil: string, extra:
 	]);
 }
 
+/**
+ * Magikarp as a pixel-art side profile (head to the left), laid flat on the ground as a fish
+ * flops on its side. Returned facing up (head at the top), like every other model.
+ */
+function magikarpModel(): Model {
+	const art = [
+		'.......Y..Y.....',
+		'......YYYYY.Y...',
+		'.....YYyYYYYY...',
+		'....oOoOoOoO....',
+		'...OOOOOoOOOOO.r',
+		'..OwwwOOOoOOOOrW',
+		'.OOwwKOOOOOOOOWg',
+		'POOwwwOOOOOOOOrW',
+		'POOOOOOggggOOOWg',
+		'POOOOOGgggGOOOrW',
+		'WPOOOOOOggOOOO.r',
+		'W.OOOOOOOOOOOO..',
+		'W..oOOOOOOOOo...',
+		'W....YyY.YyY....',
+		'.W...YYYYYYY....',
+		'................'
+	];
+	const col: Record<string, string> = {
+		Y: '#f6d75a', y: '#e2b93a', O: '#ee5a2c', o: '#c9381e', r: '#e8462a', P: '#f4a0a0',
+		w: '#ffffff', K: '#111111', W: '#f2f2f2', g: '#d8d8de', G: '#a8a8b2'
+	};
+	const p = 1 / 16;
+	const boxes: Box[] = [];
+	art.forEach((row, r) =>
+		[...row].forEach((ch, c) => {
+			// Grid cell (column c, row r) of the left-facing art → the up-facing model (see facingModel).
+			if (col[ch]) boxes.push(bx(1 - (r + 1) * p, c * p, 0.02, p, p, ch === 'K' || ch === 'w' ? 0.12 : 0.1, col[ch]));
+		})
+	);
+	return model(boxes);
+}
+
 export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolean; flop?: boolean }[] = [
 	{ id: 'frog', name: 'Frog', model: frogLike('#4cbb4c', '#2e8b2e', '#ffffff', '#111111') },
 	{
@@ -265,37 +303,8 @@ export const CHARACTERS: { id: string; name: string; model: Model; rare?: boolea
 		name: 'Magikarp',
 		rare: true,
 		flop: true,
-		// A chunky block fish on its belly, facing the camera: pink lips round a dark mouth,
-		// eyes either side, yellow whiskers and fins, a white dorsal fin and a spreading tail.
-		model: model([
-			// Tail, spreading out behind.
-			bx(0.18, -0.14, 0.14, 0.64, 0.12, 0.26, '#f2f2f2'),
-			bx(0.3, -0.04, 0.1, 0.4, 0.24, 0.3, '#d6d6d6'),
-			// Body, with darker stripes across its back.
-			bx(0.2, 0.18, 0.04, 0.6, 0.6, 0.42, '#e8462a'),
-			bx(0.2, 0.3, 0.46, 0.6, 0.05, 0.005, '#b9321c'),
-			bx(0.2, 0.44, 0.46, 0.6, 0.05, 0.005, '#b9321c'),
-			bx(0.2, 0.18, 0.04, 0.6, 0.1, 0.42, '#d33e24'),
-			// White dorsal fin standing up, with grey ribs.
-			bx(0.44, 0.24, 0.46, 0.12, 0.42, 0.24, '#ececec'),
-			bx(0.44, 0.34, 0.7, 0.12, 0.04, 0.005, '#9a9a9a'),
-			bx(0.44, 0.48, 0.7, 0.12, 0.04, 0.005, '#9a9a9a'),
-			// Yellow side fins and whiskers.
-			bx(0.08, 0.44, 0.06, 0.12, 0.2, 0.06, '#f2dd6b'),
-			bx(0.8, 0.44, 0.06, 0.12, 0.2, 0.06, '#f2dd6b'),
-			bx(0.02, 0.66, 0.3, 0.18, 0.04, 0.04, '#f2dd6b'),
-			bx(0.8, 0.66, 0.3, 0.18, 0.04, 0.04, '#f2dd6b'),
-			bx(0.04, 0.72, 0.18, 0.16, 0.04, 0.04, '#e8c94a'),
-			bx(0.8, 0.72, 0.18, 0.16, 0.04, 0.04, '#e8c94a'),
-			// Eyes on the front corners.
-			bx(0.21, 0.76, 0.28, 0.14, 0.04, 0.14, '#ffffff'),
-			bx(0.65, 0.76, 0.28, 0.14, 0.04, 0.14, '#ffffff'),
-			bx(0.25, 0.8, 0.32, 0.06, 0.01, 0.06, '#111111'),
-			bx(0.69, 0.8, 0.32, 0.06, 0.01, 0.06, '#111111'),
-			// Big pink lips round a dark open mouth.
-			bx(0.36, 0.78, 0.06, 0.28, 0.06, 0.26, '#f29a9a'),
-			bx(0.42, 0.84, 0.12, 0.16, 0.01, 0.14, '#3a1212')
-		])
+		// Lying on its side, flopping: seen from above it shows its side profile, pixel-art style.
+		model: magikarpModel()
 	}
 ];
 const characterById = (id: string) => CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
@@ -304,7 +313,7 @@ type Facing = 'up' | 'down' | 'left' | 'right';
 const turned = new Map<string, Model>();
 /** A character's model turned to face a direction (built facing up; rotated about the tile's centre). */
 function facingModel(ch: (typeof CHARACTERS)[number], facing: Facing): Model {
-	if (facing === 'up' || ch.flop) return ch.model;
+	if (facing === 'up') return ch.model;
 	const key = ch.id + facing;
 	let m = turned.get(key);
 	if (!m) {
@@ -322,7 +331,10 @@ function facingModel(ch: (typeof CHARACTERS)[number], facing: Facing): Model {
 	return m;
 }
 
-/** Draw a character facing a way (toward the viewer by default); Magikarp flops about (bounces, tips side to side, flips over) instead of standing. */
+/**
+ * Draw a character facing a way (toward the viewer by default); Magikarp flops about on its side
+ * (bounces and tips head and tail up in turn) instead of standing, shown side-on unless moving.
+ */
 function drawCharacter(
 	ctx: CanvasRenderingContext2D,
 	ch: (typeof CHARACTERS)[number],
@@ -332,19 +344,18 @@ function drawCharacter(
 	s = 1,
 	alpha = 1,
 	flatten = 1,
-	facing: Facing = 'down'
+	facing?: Facing
 ) {
-	if (!ch.flop) return drawModel(ctx, facingModel(ch, facing), px, py, s, alpha, flatten);
+	if (!ch.flop) return drawModel(ctx, facingModel(ch, facing ?? 'down'), px, py, s, alpha, flatten);
 	const beat = time / 0.35;
 	const k = beat % 1;
 	const cx = px + (T * s) / 2;
-	const cy = py + T * s * 0.6;
+	const cy = py + T * s * 0.5;
 	ctx.save();
 	ctx.translate(cx, cy - Math.sin(k * Math.PI) * 7 * s);
-	ctx.rotate(Math.sin(k * Math.PI * 2) * 0.22);
-	ctx.scale(Math.floor(beat) % 2 ? -1 : 1, 1);
+	ctx.rotate(Math.sin(k * Math.PI * 2) * 0.3);
 	ctx.translate(-cx, -cy);
-	drawModel(ctx, ch.model, px, py, s, alpha, flatten);
+	drawModel(ctx, facingModel(ch, facing ?? 'left'), px, py, s, alpha, flatten);
 	ctx.restore();
 }
 
@@ -1552,7 +1563,8 @@ export class Frogger implements ArcadeGame {
 		odds.forEach((o, i) => {
 			const y = y0 + 64 + i * 30;
 			const ch = characterById(o.id);
-			drawModel(ctx, o.rare ? ch.model.map((b) => ({ ...b, c: '#3a3a3a' })) : ch.model, 108, y - 2, 0.55);
+			const m = facingModel(ch, ch.flop ? 'left' : 'up');
+			drawModel(ctx, o.rare ? m.map((b) => ({ ...b, c: '#3a3a3a' })) : m, 108, y - 2, 0.55);
 			ctx.textAlign = 'left';
 			ctx.fillStyle = o.rare ? '#ffd84a' : '#ffffff';
 			ctx.fillText(o.rare ? '★ ??? (hidden)' : o.name, 140, y + 18);
