@@ -1052,6 +1052,8 @@ export class Frogger implements ArcadeGame {
 			const row = this.rows.get(r);
 			if (!row) continue;
 			const y = this.rowY(r);
+			// Coins lie on the ground, under any car driving over them.
+			if (row.coin !== null) this.drawCoin(ctx, row.coin, y, t);
 			if (row.kind === 'grass') for (const [c, m] of row.trees) drawModel(ctx, m, c * T, y);
 			if (row.kind === 'home') {
 				// Reeds along the bank; water inlets with a lily pad each (and a frog once reached).
@@ -1096,7 +1098,6 @@ export class Frogger implements ArcadeGame {
 				ctx.fill();
 				if (tr.wait <= 0) drawModel(ctx, tr.m, tr.x * T, y);
 			}
-			if (row.coin !== null) this.drawCoin(ctx, row.coin, y, t);
 			if ((this.state === 'play' || this.state === 'paused') && this.frogRow() === r) this.drawFrog(ctx);
 		}
 	}
