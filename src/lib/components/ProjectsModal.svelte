@@ -1,7 +1,7 @@
 <!--
   All projects as floating cards (like the pictures on the left): they drift, can be
   dragged around, and a click opens the project just like clicking its neuron.
-  Phones get a swipeable wheel instead: one big card at a time, neighbours peeking in.
+  Phones get a plain list instead: each project's icon, title and subtitle.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -25,6 +25,8 @@
 		if (!m) return null;
 		return m.kind === 'image' ? m.src : m.kind === 'embed' ? (m.thumb ?? null) : null;
 	}
+	/** Vector logos are shown whole (with breathing room), not cropped to fill. */
+	const isVector = (src: string) => /\.svg($|\?)/i.test(src);
 
 	// Scatter cards over a loose grid, with a little tilt and nudge each.
 	let W = $state(1200);
@@ -80,21 +82,8 @@
 		dragging = null;
 	}
 
-	// ── Phone wheel ──────────────────────────────────────────────────────────
+	// ── Phones: a list ──
 	const phone = $derived(W <= 720);
-	let wheel = $state<HTMLElement>();
-	let current = $state(0);
-	function onWheelScroll() {
-		if (!wheel) return;
-		const card = wheel.querySelector<HTMLElement>('.slide');
-		if (!card) return;
-		const step = card.offsetWidth + 14; // card width + gap
-		current = Math.max(0, Math.min(projects.length - 1, Math.round(wheel.scrollLeft / step)));
-	}
-	function goTo(i: number) {
-		const card = wheel?.querySelectorAll<HTMLElement>('.slide')[i];
-		card?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-	}
 
 	onMount(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -123,31 +112,28 @@
 >
 	<header>
 		<h2>Projects</h2>
-		<p>{phone ? 'Swipe through · tap one to open it' : 'Drag them around · click one to open it'}</p>
+		<p>{phone ? 'Tap one to open it' : 'Drag them around · click one to open it'}</p>
 		<button class="close" onclick={() => (session.projectsOpen = false)} aria-label="Close">✕</button>
 	</header>
 
 	{#if phone}
-		<div class="wheel" bind:this={wheel} onscroll={onWheelScroll} aria-label="Projects">
-			{#each projects as p, i (p.id)}
+		<ul class="list" aria-label="Projects">
+			{#each projects as p (p.id)}
 				{@const t = thumb(p)}
-				<button class="slide" class:active={i === current} onclick={() => onopen(p.id)} aria-label="Open {p.title}">
-					<span class="thumb">
-						{#if t}<img src={t} alt="" draggable="false" />{:else}<span class="ph">{p.title[0]}</span>{/if}
-					</span>
-					<strong>{p.title}</strong>
-					{#if p.subtitle}<span class="sub">{p.subtitle}</span>{/if}
-				</button>
+				<li>
+					<button class="row" onclick={() => onopen(p.id)}>
+						<span class="icon">
+							{#if t}<img src={t} alt="" class:logo={isVector(t)} draggable="false" />{:else}<span class="ph">{p.title[0]}</span>{/if}
+						</span>
+						<span class="text">
+							<strong>{p.title}</strong>
+							{#if p.subtitle}<span class="sub">{p.subtitle}</span>{/if}
+						</span>
+						<span class="chev" aria-hidden="true">›</span>
+					</button>
+				</li>
 			{/each}
-		</div>
-		<div class="wheel-nav">
-			<button class="arrow" onclick={() => goTo(current - 1)} disabled={current === 0} aria-label="Previous project">‹</button>
-			<span class="count">{current + 1} / {projects.length}</span>
-			<button class="arrow" onclick={() => goTo(current + 1)} disabled={current === projects.length - 1} aria-label="Next project">›</button>
-		</div>
-		<div class="dots" aria-hidden="true">
-			{#each projects as p, i (p.id)}<span class:on={i === current}></span>{/each}
-		</div>
+		</ul>
 	{:else}
 	{#each layout as { p, x, y, tilt }, i (p.id)}
 		{@const o = offsets[p.id] ?? { dx: 0, dy: 0, z: 0 }}
@@ -166,7 +152,7 @@
 		>
 			<span class="paper">
 				<span class="thumb">
-					{#if t}<img src={t} alt="" draggable="false" />{:else}<span class="ph">{p.title[0]}</span>{/if}
+					{#if t}<img src={t} alt="" class:logo={isVector(t)} draggable="false" />{:else}<span class="ph">{p.title[0]}</span>{/if}
 				</span>
 				<strong>{p.title}</strong>
 				{#if p.subtitle}<span class="sub">{p.subtitle}</span>{/if}
@@ -259,6 +245,7 @@
 		scale: 1.06;
 	}
 	.thumb {
+		position: relative;
 		display: grid;
 		place-items: center;
 		height: 130px;
@@ -286,110 +273,92 @@
 		font-size: 0.8rem;
 		padding: 0 2px;
 	}
-	/* ── Phone wheel ── (vertically centred: card ≈ thumb + 150px, then arrows and dots) */
-	.desk {
-		--wheel-top: max(92px, calc((100svh - min(52vw, 260px) - 230px) / 2));
-	}
-	.wheel {
+	.thumb img.logo {
 		position: absolute;
-		top: var(--wheel-top);
+		inset: 0;
+		box-sizing: border-box;
+		object-fit: contain;
+		padding: 14px;
+	}
+	/* ── Phones: a list ── */
+	.list {
+		position: absolute;
+		top: 92px;
+		bottom: 0;
 		left: 0;
 		right: 0;
-		display: flex;
-		gap: 14px;
-		overflow-x: auto;
-		scroll-snap-type: x mandatory;
-		padding: 18px 12vw 22px; /* first and last cards can centre too */
-		scrollbar-width: none;
-		-webkit-overflow-scrolling: touch;
-	}
-	.wheel::-webkit-scrollbar {
-		display: none;
-	}
-	.slide {
-		flex: 0 0 76vw;
-		scroll-snap-align: center;
+		margin: 0;
+		padding: 0 14px 24px;
+		list-style: none;
+		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		padding: 12px 12px 16px;
-		border-radius: 16px;
-		border: 1px solid color-mix(in srgb, var(--accent) 55%, rgba(148, 163, 184, 0.2));
+		-webkit-overflow-scrolling: touch;
+	}
+	.row {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 12px;
+		border-radius: 14px;
+		border: 1px solid color-mix(in srgb, var(--accent) 35%, rgba(148, 163, 184, 0.15));
 		background: rgba(10, 14, 26, 0.92);
 		color: var(--text);
 		font: inherit;
 		text-align: left;
-		box-shadow:
-			0 18px 36px -14px rgba(0, 0, 0, 0.9),
-			0 0 34px -12px color-mix(in srgb, var(--accent) 60%, transparent);
-		opacity: 0.55;
-		scale: 0.92;
-		transition:
-			opacity 0.25s ease,
-			scale 0.25s ease;
 		cursor: pointer;
 	}
-	.slide.active {
-		opacity: 1;
-		scale: 1;
+	.row:active {
+		background: rgba(30, 27, 60, 0.95);
 	}
-	.slide .thumb {
-		height: min(52vw, 260px);
+	.icon {
+		flex: none;
+		width: 52px;
+		height: 52px;
+		display: grid;
+		place-items: center;
+		border-radius: 12px;
+		overflow: hidden;
+		background: #fff;
 	}
-	.slide strong {
-		font-size: 1.1rem;
+	.icon img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
-	.wheel-nav {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: calc(var(--wheel-top) + min(52vw, 260px) + 150px);
+	.icon img.logo {
+		box-sizing: border-box;
+		object-fit: contain;
+		padding: 6px;
+	}
+	.icon .ph {
+		font-size: 1.5rem;
+	}
+	.text {
+		flex: 1;
+		min-width: 0;
 		display: flex;
-		justify-content: center;
-		align-items: center;
-		gap: 18px;
+		flex-direction: column;
+		gap: 2px;
 	}
-	.arrow {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		border: 1px solid color-mix(in srgb, var(--accent) 45%, rgba(148, 163, 184, 0.2));
-		background: rgba(10, 14, 26, 0.8);
-		color: #fff;
-		font-size: 22px;
-		line-height: 1;
-		cursor: pointer;
+	.text strong {
+		font-size: 0.98rem;
 	}
-	.arrow:disabled {
-		opacity: 0.3;
-		cursor: default;
+	.text .sub {
+		padding: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
 	}
-	.count {
+	.chev {
+		flex: none;
 		color: var(--muted);
-		font-size: 0.85rem;
-		min-width: 52px;
-		text-align: center;
-	}
-	.dots {
-		position: absolute;
-		left: 0;
-		right: 0;
-		top: calc(var(--wheel-top) + min(52vw, 260px) + 204px);
-		display: flex;
-		justify-content: center;
-		gap: 6px;
-	}
-	.dots span {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: rgba(148, 163, 184, 0.35);
-		transition: background 0.2s, width 0.2s;
-	}
-	.dots span.on {
-		width: 16px;
-		border-radius: 99px;
-		background: var(--accent);
+		font-size: 1.4rem;
 	}
 	@keyframes deal {
 		from {
