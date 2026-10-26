@@ -22,6 +22,8 @@ export interface ArcadeGame {
 	save(): void;
 	/** Touch screens: true while taps/swipes on the screen should steer (TouchSpec.gesture). */
 	gestures?(): boolean;
+	/** Touch screens: the on-screen buttons (by key code) that do nothing right now, shown greyed out. */
+	disabledButtons?(): string[];
 	/** Sound effects: the host sets this; the game calls it with a sound's name. */
 	sfx: (name: string) => void;
 	/** The soundtrack for what's on screen ('<game>-menu', '<game>-<difficulty>'…), or null for silence. */

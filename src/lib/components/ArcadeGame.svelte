@@ -23,6 +23,8 @@
 	let portrait = $state(false);
 	/** The game wants taps/swipes as controls right now (Frogger while playing). */
 	let gestures = $state(false);
+	/** On-screen buttons the game has turned off for now (Pong's Serve mid-rally). */
+	let disabled = $state('');
 	/** Wide games held upright on a phone: ask to rotate, and wait (paused) until they do. */
 	const rotate = $derived(touch && portrait && !!spec.touch.landscape);
 	const playing = $derived(active && !rotate);
@@ -68,6 +70,8 @@
 					if (!game || !ctx || !playing) return;
 					const g = !!game.gestures?.();
 					if (g !== gestures) gestures = g;
+					const d = game.disabledButtons?.().join(' ') ?? '';
+					if (d !== disabled) disabled = d;
 					// The soundtrack for this screen (menu, or gameplay by mode / difficulty).
 					gameAudio.music(game.musicTrack());
 					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
@@ -239,7 +243,7 @@
 			<p>Rotate your phone to play {spec.title}</p>
 		</div>
 	{:else if touch && status === 'running' && active}
-		<TouchControls spec={spec.touch} {gestures} press={touchPress} release={touchRelease} />
+		<TouchControls spec={spec.touch} {gestures} disabled={disabled ? disabled.split(' ') : []} press={touchPress} release={touchRelease} />
 	{/if}
 	<ul class="help" class:hidden={touch} aria-label="Controls">
 		{#each spec.help as h (h.label)}

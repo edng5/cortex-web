@@ -10,9 +10,10 @@
 	let {
 		spec,
 		gestures = false,
+		disabled = [],
 		press,
 		release
-	}: { spec: TouchSpec; gestures?: boolean; press: (code: string) => void; release: (code: string) => void } = $props();
+	}: { spec: TouchSpec; gestures?: boolean; disabled?: string[]; press: (code: string) => void; release: (code: string) => void } = $props();
 
 	/** Tap = forward; swipe = that direction (a key tap: press then release). */
 	function swipeArea(el: HTMLElement) {
@@ -180,7 +181,7 @@
 	{/if}
 	<div class="right">
 		{#each spec.buttons as b (b.code)}
-			<div class="btn" class:big={b.big} use:button={b.code}>{b.label}</div>
+			<div class="btn" class:big={b.big} class:off={disabled.includes(b.code)} use:button={b.code}>{b.label}</div>
 		{/each}
 		{#if spec.stick2}
 			<div class="pad stick small" use:stick={{ keys: ARROWS, mode: '8' }}>
@@ -301,6 +302,10 @@
 	}
 	.btn:global(.on) {
 		background: rgba(255, 255, 255, 0.32);
+	}
+	.btn.off {
+		pointer-events: none;
+		opacity: 0.3;
 	}
 	/* Landscape phones: smaller, so they sit beside the game. */
 	@media (orientation: landscape) {

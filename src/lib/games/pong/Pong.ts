@@ -86,6 +86,10 @@ export class Pong implements ArcadeGame {
 		if (this.game == 1) return this.mode == 2 ? 'pong-brick' : 'pong-' + this.difficulty;
 		return null;
 	}
+	/** Serve only before the ball is in play; it comes back once the game is over. */
+	disabledButtons() {
+		return this.game == 1 && this.start == 1 ? ['Space'] : [];
+	}
 	global: Board | null = null;
 	loggedIn = false;
 
