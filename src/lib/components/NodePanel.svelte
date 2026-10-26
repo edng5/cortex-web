@@ -36,8 +36,8 @@
 	// Body markdown is your own trusted content from /content.
 	const html = $derived(marked.parse(node.body, { async: false }) as string);
 	// Split the body at `<!-- carousel: name [round] -->` markers → html / carousel parts, and
-	// at `<!-- play: engine -->` (or a game id) markers → an "E.Ngine Games" button that opens the
-	// in-browser games.
+	// at `<!-- play: engine -->` (or a game id) markers → a "Play" button (shown under the title)
+	// that opens the in-browser games.
 	type BodyPart =
 		| { html: string }
 		| { carousel: ReturnType<typeof carouselMedia>; round: boolean }
@@ -56,6 +56,7 @@
 		}
 		return parts;
 	});
+	const play = $derived(bodyParts.find((p) => 'play' in p) as { play: string } | undefined);
 	const style = $derived(typeStyle[node.type]);
 
 	const related = $derived.by(() => {
@@ -137,6 +138,15 @@
 		</div>
 	{/if}
 
+	<!-- Desktop shows the games menu on the left already; smaller screens (phones included, with
+	     on-screen controls) get a button to open it. -->
+	{#if play && !videosOnly}
+		<button class="play-game" onclick={() => session.openGames(play.play === 'engine' ? null : play.play)}>
+			<img class="engine-icon" src="/games/engine-icon.png" alt="" width="34" height="34" />
+			<span class="engine-text">Play</span>
+		</button>
+	{/if}
+
 	{#if node.wip}
 		<div class="wip" role="status">
 			<span class="wip-icon" aria-hidden="true">🚧</span>
@@ -194,15 +204,7 @@
 				{#if 'html' in part}
 					{@html part.html}
 				{:else if 'play' in part}
-					<!-- Desktop shows the games menu on the left already; smaller screens (phones
-					     included, with on-screen controls) get a button to open it. -->
-					{#if !videosOnly}
-						<button class="play-game" onclick={() => session.openGames(part.play === 'engine' ? null : part.play)}>
-							<img class="engine-icon" src="/games/engine-icon.png" alt="" width="34" height="34" />
-							<span class="engine-text">E.Ngine Games</span>
-						</button>
-					{/if}
-
+					<!-- shown under the title instead -->
 				{:else if part.carousel.length}
 					<div class="inline-carousel">
 						<MediaCarousel

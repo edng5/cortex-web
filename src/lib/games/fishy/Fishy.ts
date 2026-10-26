@@ -3,8 +3,8 @@
 //  - Collisions are pixel-perfect: two fish only touch where both sprites have solid pixels, not
 //    wherever their bounding boxes overlap (the Java version compared corner points of boxes).
 //    And a bigger fish only eats you if you run into its mouth (the front), not its body or tail.
-//  - Single player moves with WASD (the original used the arrow keys); in multiplayer, player 1
-//    has WASD and player 2 the arrow keys, as before.
+//  - Single player moves with WASD or the arrow keys (so either on-screen joystick works on
+//    phones); in multiplayer, player 1 has WASD and player 2 the arrow keys, as before.
 //  - A moment of safety after losing a life, so you can't be eaten again where you respawn.
 import { COMIC, Gfx, Mask, drawRecord, loadImages, loadSave, pixelsTouch, writeSave, type ArcadeGame, type Board, type Sprite } from '../common';
 
@@ -214,10 +214,10 @@ export class Fishy implements ArcadeGame {
 		const known = enter || /^Key[WASD]$/.test(code) || /^Arrow(Up|Down|Left|Right)$/.test(code);
 		if (!known) return false;
 		if (this.game == 1 && this.hooked == 0) {
-			if (code == 'KeyA') { this.direction = 2; this.dx = -sp; }
-			if (code == 'KeyD') { this.direction = 1; this.dx = sp; }
-			if (code == 'KeyW') this.dy = -sp;
-			if (code == 'KeyS') this.dy = sp;
+			if (code == 'KeyA' || code == 'ArrowLeft') { this.direction = 2; this.dx = -sp; }
+			if (code == 'KeyD' || code == 'ArrowRight') { this.direction = 1; this.dx = sp; }
+			if (code == 'KeyW' || code == 'ArrowUp') this.dy = -sp;
+			if (code == 'KeyS' || code == 'ArrowDown') this.dy = sp;
 		}
 		if (this.game == 2) {
 			if (code == 'KeyA') { this.direction = 2; this.mdx = -sp; }
@@ -234,8 +234,8 @@ export class Fishy implements ArcadeGame {
 	}
 	keyReleased(code: string): boolean {
 		if (this.game == 1) {
-			if (code == 'KeyW' || code == 'KeyS') this.dy = 0;
-			if (code == 'KeyA' || code == 'KeyD') this.dx = 0;
+			if (code == 'KeyW' || code == 'KeyS' || code == 'ArrowUp' || code == 'ArrowDown') this.dy = 0;
+			if (code == 'KeyA' || code == 'KeyD' || code == 'ArrowLeft' || code == 'ArrowRight') this.dx = 0;
 		}
 		if (this.game == 2) {
 			if (code == 'ArrowUp' || code == 'ArrowDown') this.dy = 0;

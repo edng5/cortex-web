@@ -59,6 +59,11 @@
 			{#if ambient.muted}<path d="M3 3l18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />{/if}
 		</svg>
 	</button>
+	<!-- E.Ngine Games: the joystick icon and "Play" (just the icon on phones). -->
+	<button class="play" onclick={() => session.openGames()} aria-label="Play E.Ngine Games" title="Play E.Ngine Games">
+		<img src="/games/engine-icon.png" alt="" width="22" height="22" />
+		<span>Play</span>
+	</button>
 	<button class="link" onclick={() => (session.experienceOpen = true)}>Experience</button>
 	<button class="link" onclick={() => (session.projectsOpen = true)}>Projects</button>
 	{#if user}
@@ -165,6 +170,39 @@
 	}
 	.music.off {
 		color: #64748b;
+	}
+	/* Play: styled like the E.Ngine Games icon, a dark tile in a cyan → violet → pink frame. */
+	.play {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 3px 12px 3px 3px;
+		border-radius: 999px;
+		border: 2px solid transparent;
+		background:
+			linear-gradient(#0b1022, #0b1022) padding-box,
+			linear-gradient(90deg, #22d3ee, #818cf8 55%, #e879f9) border-box;
+		transition: box-shadow 0.2s;
+	}
+	.play:hover {
+		box-shadow: 0 0 14px -2px rgba(232, 121, 249, 0.6);
+	}
+	.play img {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		image-rendering: pixelated;
+	}
+	.play span {
+		font-family: 'Arial Black', 'Arial Bold', Impact, sans-serif;
+		font-size: 0.8rem;
+		font-weight: 900;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		background: linear-gradient(90deg, #22d3ee, #818cf8 55%, #e879f9);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
 	}
 	.login {
 		padding: 7px 16px;
@@ -333,6 +371,26 @@
 		.music svg {
 			width: 15px;
 			height: 15px;
+		}
+	}
+	/* Phones (and other touch screens): the Play button is just the icon. */
+	@media (max-width: 560px), (pointer: coarse) {
+		.play {
+			padding: 2px;
+		}
+		.play span {
+			display: none;
+		}
+	}
+	@media (max-width: 420px) {
+		.nav {
+			gap: 1px;
+		}
+		.link {
+			padding: 6px 6px;
+		}
+		.login {
+			padding: 6px 9px;
 		}
 	}
 	@media (max-width: 360px) {

@@ -359,9 +359,15 @@
 			font-size: 0.95rem;
 		}
 	}
+	/* Narrow phones: smaller, so the header buttons don't cover it. */
+	@media (max-width: 420px) {
+		.hero .logo {
+			height: 17px;
+		}
+	}
 	@media (max-width: 360px) {
 		.hero .logo {
-			height: 18px;
+			height: 15px;
 		}
 	}
 	.legend {
