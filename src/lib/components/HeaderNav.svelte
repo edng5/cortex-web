@@ -7,6 +7,8 @@
 	let { user }: { user: ClientUser | null } = $props();
 
 	let menuOpen = $state(false);
+	/** Phones: the folded-up menu is open. */
+	let expanded = $state(false);
 	// The nickname as changed in this visit, else as the page loaded with it.
 	const nickname = $derived(session.playerName !== undefined ? session.playerName : (user?.nickname ?? null));
 	const who = $derived(nickname || user?.name || user?.email || '');
@@ -37,82 +39,106 @@
 	onclick={() => {
 		menuOpen = false;
 		editing = false;
+		expanded = false;
 	}}
 />
 
-<nav class="nav" aria-label="Main">
+<!-- On phones it folds into one button that opens the links as a list below it. -->
+<nav class="nav" class:open={expanded} aria-label="Main">
 	<button
-		class="music"
-		class:off={ambient.muted}
+		class="toggle"
 		onclick={(e) => {
 			e.stopPropagation();
-			ambient.toggle();
+			expanded = !expanded;
 		}}
-		aria-pressed={!ambient.muted}
-		aria-label={ambient.muted ? 'Play background music' : 'Mute background music'}
-		title={ambient.muted ? 'Play background music' : 'Mute background music'}
+		aria-expanded={expanded}
+		aria-controls="nav-items"
+		aria-label={expanded ? 'Close menu' : 'Open menu'}
 	>
-		<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-			<path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-			<circle cx="6.5" cy="18" r="2.6" fill="currentColor" />
-			<circle cx="17.5" cy="16" r="2.6" fill="currentColor" />
-			{#if ambient.muted}<path d="M3 3l18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />{/if}
+		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+			{#if expanded}
+				<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+			{:else}
+				<path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+			{/if}
 		</svg>
 	</button>
-	<!-- E.Ngine Games: the joystick icon and "Play" (just the icon on phones). -->
-	<button class="play" onclick={() => session.openGames()} aria-label="Play E.Ngine Games" title="Play E.Ngine Games">
-		<img src="/games/engine-icon.png" alt="" width="22" height="22" />
-		<span>Play</span>
-	</button>
-	<button class="link" onclick={() => (session.experienceOpen = true)}>Experience</button>
-	<button class="link" onclick={() => (session.projectsOpen = true)}>Projects</button>
-	{#if user}
-		<div class="account">
-			<button
-				class="avatar"
-				class:member={user.isMember}
-				onclick={(e) => {
-					e.stopPropagation();
-					menuOpen = !menuOpen;
-				}}
-				aria-haspopup="menu"
-				aria-expanded={menuOpen}
-				aria-label="Account"
-				title={user.email}>{initial}</button
-			>
-			{#if menuOpen}
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-				<div class="menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-					<p class="who">{who}</p>
-					{#if who !== user.email}<p class="email">{user.email}</p>{/if}
-					{#if user.isMember}<span class="badge">★ Member</span>{/if}
-					{#if editing}
-						<form class="nick" onsubmit={save}>
-							<label for="nickname">Nickname</label>
-							<input
-								id="nickname"
-								bind:value={draft}
-								maxlength="16"
-								autocomplete="nickname"
-								spellcheck="false"
-								placeholder="3–16 letters or numbers"
-							/>
-							{#if error}<p class="err" role="alert">{error}</p>{:else}<p class="hint">Shown on the E.Ngine Games leaderboards. Keep it friendly.</p>{/if}
-							<div class="row">
-								<button type="submit" class="save" disabled={saving || draft.trim().length < 3}>{saving ? 'Saving…' : 'Save'}</button>
-								<button type="button" class="cancel" onclick={() => (editing = false)}>Cancel</button>
-							</div>
-						</form>
-					{:else}
-						<button class="edit" role="menuitem" onclick={startEdit}>{nickname ? 'Change nickname' : 'Set a nickname'}</button>
-					{/if}
-					<button class="out" role="menuitem" onclick={() => session.logout()}>Log out</button>
-				</div>
-			{/if}
-		</div>
-	{:else}
-		<button class="login" onclick={() => (session.loginOpen = true)}>Log in</button>
-	{/if}
+	<div class="items" id="nav-items">
+		<button
+			class="music"
+			class:off={ambient.muted}
+			onclick={(e) => {
+				e.stopPropagation();
+				ambient.toggle();
+			}}
+			aria-pressed={!ambient.muted}
+			aria-label={ambient.muted ? 'Play background music' : 'Mute background music'}
+			title={ambient.muted ? 'Play background music' : 'Mute background music'}
+		>
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+				<path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+				<circle cx="6.5" cy="18" r="2.6" fill="currentColor" />
+				<circle cx="17.5" cy="16" r="2.6" fill="currentColor" />
+				{#if ambient.muted}<path d="M3 3l18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />{/if}
+			</svg>
+			<span class="label">{ambient.muted ? 'Mute on' : 'Mute off'}</span>
+		</button>
+		<!-- E.Ngine Games: the joystick icon and "Play". -->
+		<button class="play" onclick={() => session.openGames()} aria-label="Play E.Ngine Games" title="Play E.Ngine Games">
+			<img src="/games/engine-icon.png" alt="" width="22" height="22" />
+			<span>Play</span>
+		</button>
+		<button class="link" onclick={() => (session.experienceOpen = true)}>Experience</button>
+		<button class="link" onclick={() => (session.projectsOpen = true)}>Projects</button>
+		{#if user}
+			<div class="account">
+				<button
+					class="avatar"
+					class:member={user.isMember}
+					onclick={(e) => {
+						e.stopPropagation();
+						menuOpen = !menuOpen;
+					}}
+					aria-haspopup="menu"
+					aria-expanded={menuOpen}
+					aria-label="Account"
+					title={user.email}>{initial}</button
+				>
+				<span class="label">{who}</span>
+				{#if menuOpen}
+					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+					<div class="menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+						<p class="who">{who}</p>
+						{#if who !== user.email}<p class="email">{user.email}</p>{/if}
+						{#if user.isMember}<span class="badge">★ Member</span>{/if}
+						{#if editing}
+							<form class="nick" onsubmit={save}>
+								<label for="nickname">Nickname</label>
+								<input
+									id="nickname"
+									bind:value={draft}
+									maxlength="16"
+									autocomplete="nickname"
+									spellcheck="false"
+									placeholder="3–16 letters or numbers"
+								/>
+								{#if error}<p class="err" role="alert">{error}</p>{:else}<p class="hint">Shown on the E.Ngine Games leaderboards. Keep it friendly.</p>{/if}
+								<div class="row">
+									<button type="submit" class="save" disabled={saving || draft.trim().length < 3}>{saving ? 'Saving…' : 'Save'}</button>
+									<button type="button" class="cancel" onclick={() => (editing = false)}>Cancel</button>
+								</div>
+							</form>
+						{:else}
+							<button class="edit" role="menuitem" onclick={startEdit}>{nickname ? 'Change nickname' : 'Set a nickname'}</button>
+						{/if}
+						<button class="out" role="menuitem" onclick={() => session.logout()}>Log out</button>
+					</div>
+				{/if}
+			</div>
+		{:else}
+			<button class="login" onclick={() => (session.loginOpen = true)}>Log in</button>
+		{/if}
+	</div>
 </nav>
 
 <style>
@@ -350,57 +376,104 @@
 		border-color: #fca5a5;
 		color: #fca5a5;
 	}
+	.items {
+		display: contents;
+	}
+	.toggle,
+	.label {
+		display: none;
+	}
+	/* Phones: one menu button; the links open as a list below it. */
 	@media (max-width: 560px) {
 		.nav {
 			top: 14px;
 			right: 10px;
-			gap: 2px;
+			flex-direction: column;
+			align-items: flex-end;
+			gap: 0;
+			padding: 4px;
+			border-radius: 20px;
 		}
-		.link {
-			padding: 6px 8px;
-			font-size: 0.8rem;
+		.toggle {
+			display: grid;
+			place-items: center;
+			width: 34px;
+			height: 34px;
+			padding: 0;
+			border: none;
+			border-radius: 50%;
+			background: none;
+			color: #cbd5e1;
 		}
-		.login {
-			padding: 6px 11px;
-			font-size: 0.8rem;
+		.toggle:hover {
+			color: #fff;
 		}
-		.music {
-			width: 28px;
-			height: 28px;
-		}
-		.music svg {
-			width: 15px;
-			height: 15px;
-		}
-	}
-	/* Phones (and other touch screens): the Play button is just the icon. */
-	@media (max-width: 560px), (pointer: coarse) {
-		.play {
-			padding: 2px;
-		}
-		.play span {
+		.items {
 			display: none;
 		}
-	}
-	@media (max-width: 420px) {
-		.nav {
-			gap: 1px;
+		.nav.open .items {
+			display: flex;
+			flex-direction: column;
+			align-items: stretch;
+			gap: 4px;
+			min-width: 190px;
+			padding: 4px 4px 6px;
 		}
 		.link {
-			padding: 6px 6px;
+			order: 1;
+			text-align: left;
+			padding: 10px 12px;
+			border-radius: 12px;
+			font-size: 0.95rem;
+		}
+		.play {
+			order: 2;
+			padding: 5px 12px 5px 5px;
+			border-radius: 12px;
+		}
+		.music {
+			order: 3;
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			width: auto;
+			height: auto;
+			padding: 9px 12px;
+			border-radius: 12px;
+		}
+		.label {
+			display: inline;
+			font-size: 0.95rem;
+			color: #cbd5e1;
+		}
+		.account {
+			order: 4;
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 10px;
+			padding: 4px 8px;
+		}
+		.account .label {
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.menu {
+			position: static;
+			flex-basis: 100%;
+			min-width: 0;
+		}
+		.nick {
+			width: auto;
 		}
 		.login {
-			padding: 6px 9px;
-		}
-	}
-	@media (max-width: 360px) {
-		.link {
-			padding: 5px 6px;
-			font-size: 0.74rem;
-		}
-		.login {
-			padding: 5px 9px;
-			font-size: 0.74rem;
+			order: 4;
+			padding: 10px 12px;
+			border-radius: 12px;
+			font-size: 0.95rem;
 		}
 	}
 </style>
