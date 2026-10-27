@@ -484,6 +484,21 @@ export class FishStore {
 		this.save();
 		return ok();
 	}
+	/** Change a show tank's decorations to exactly `want` (new ones are bought; removed ones aren't refunded). */
+	setDecor(showId: number, want: DecorTag[]): Result {
+		const t = this.s.show.find((x) => x.id === showId);
+		if (!t) return no('No such tank.');
+		const adds = want.filter((d) => !t.decor.includes(d));
+		const wrong = want.map((d) => TANK_DECOR.find((x) => x.id === d)!).find((d) => d.water && d.water !== t.water);
+		if (wrong) return no(`${wrong.name} is for ${wrong.water === 'salt' ? 'saltwater' : 'freshwater'} tanks.`);
+		if (want.length > this.decorSlots(t)) return no(`This tank has room for ${this.decorSlots(t)} decorations.`);
+		const cost = adds.reduce((a, d) => a + TANK_DECOR.find((x) => x.id === d)!.cost, 0);
+		if (this.s.cash < cost) return no(`That comes to $${cost}: not enough cash.`);
+		this.s.cash -= cost;
+		t.decor = [...want];
+		this.save();
+		return ok(cost ? `Decorations updated for $${cost}.` : 'Decorations updated.');
+	}
 	removeDecor(showId: number, tag: DecorTag) {
 		const t = this.s.show.find((x) => x.id === showId);
 		if (t) t.decor = t.decor.filter((d) => d !== tag);
@@ -868,17 +883,21 @@ export class FishStore {
 		if ((t.growth ?? 0) < 45) return no("The plants don't need trimming yet.");
 		return this.startTask('trim', 'Trim the plants', TRIM_TIME * t.seg, t.id);
 	}
-	/** Change a show tank's glass shape (the new shape's price) or its trim, stand or lights. */
+	/** What restyling a show tank would cost: the new shape's price, plus a fee per repaint. */
+	restyleCost(t: ShowTank, change: Partial<TankLook>) {
+		const look = this.lookOf(t);
+		let cost = 0;
+		if (change.shape && change.shape !== look.shape) cost += Math.max(150, TANK_SHAPES.find((x) => x.id === change.shape)!.cost) * t.seg;
+		for (const k of ['trim', 'stand', 'light'] as const) if (change[k] && change[k] !== look[k]) cost += RESTYLE_COST;
+		return cost;
+	}
+	/** Change a show tank's glass shape or its trim, stand or lights. */
 	restyle(id: number, change: Partial<TankLook>): Result {
 		const t = this.s.show.find((x) => x.id === id);
 		if (!t) return no('No such tank.');
 		const look = this.lookOf(t);
-		let cost = 0;
-		if (change.shape && change.shape !== look.shape) {
-			if (this.s.tasks.some((x) => x.ref === id || x.ref2 === id)) return no('Wait for the current job on this tank to finish.');
-			cost += Math.max(150, TANK_SHAPES.find((x) => x.id === change.shape)!.cost) * t.seg;
-		}
-		for (const k of ['trim', 'stand', 'light'] as const) if (change[k] && change[k] !== look[k]) cost += RESTYLE_COST;
+		if (change.shape && change.shape !== look.shape && this.s.tasks.some((x) => x.ref === id || x.ref2 === id)) return no('Wait for the current job on this tank to finish.');
+		const cost = this.restyleCost(t, change);
 		if (!cost) return ok();
 		if (this.s.cash < cost) return no(`That costs $${cost}.`);
 		this.s.cash -= cost;

@@ -46,6 +46,7 @@
 		tier,
 		type DecorTag,
 		type Species,
+		type StoreItem,
 		type TankLook,
 		type TankShape,
 		type TankTier,
@@ -100,6 +101,79 @@
 	let buildWater = $state<Water>('fresh');
 	let buildTemp = $state<Temp>('tropical');
 	let buildShape = $state<TankShape>('rect');
+	// Choices you make before paying: nothing is bought until you press Apply.
+	let decorDraft = $state<DecorTag[]>([]);
+	let styleDraft = $state<TankLook | null>(null);
+	type CartTank = { tier: TankTier; water: Water; temp: Temp };
+	let cart = $state<{ tanks: CartTank[]; decor: Partial<Record<StoreItem, number>>; floor: string | null }>({ tanks: [], decor: {}, floor: null });
+	function openDecor(id: number) {
+		decorFor = id;
+		decorDraft = [...(s.show.find((x) => x.id === id)?.decor ?? [])];
+	}
+	function toggleDraft(tag: DecorTag) {
+		decorDraft = decorDraft.includes(tag) ? decorDraft.filter((d) => d !== tag) : [...decorDraft, tag];
+	}
+	function openBuild() {
+		cart = { tanks: [], decor: {}, floor: null };
+		building = true;
+	}
+	const cartCost = $derived(
+		cart.tanks.reduce((a, t) => a + store.tankCost(t.tier, t.water), 0) +
+			Object.entries(cart.decor).reduce((a, [id, n]) => a + (STORE_DECOR.find((d) => d.id === id)?.cost ?? 0) * (n ?? 0), 0) +
+			(cart.floor && !s.floors.includes(cart.floor) ? (FLOORS.find((f) => f.id === cart.floor)?.cost ?? 0) : 0)
+	);
+	const cartCount = $derived(cart.tanks.length + Object.values(cart.decor).reduce((a, n) => a + (n ?? 0), 0) + (cart.floor && cart.floor !== s.floor ? 1 : 0));
+	function addToCart(tier: TankTier) {
+		cart.tanks = [...cart.tanks, { tier, water: buildWater, temp: buildWater === 'salt' ? 'tropical' : buildTemp }];
+		sfx('click');
+	}
+	function bump(item: StoreItem, by: number) {
+		cart.decor = { ...cart.decor, [item]: Math.max(0, (cart.decor[item] ?? 0) + by) };
+		sfx('click');
+	}
+	/** Buy everything in the cart, or nothing if it can't all go through. */
+	function checkout() {
+		if (cartCost > s.cash) return act({ ok: false, msg: `That comes to ${money(cartCost)}: you have ${money(s.cash)}.` });
+		const freeStaff = s.staff.length - s.tasks.length;
+		if (cart.tanks.length > freeStaff) return act({ ok: false, msg: `Each new tank needs a free staff member to set it up: you have ${Math.max(0, freeStaff)} free. Hire more or buy fewer tanks.` });
+		const failed: string[] = [];
+		if (cart.floor && cart.floor !== s.floor) {
+			const r = store.setFloor(cart.floor);
+			if (!r.ok) failed.push(r.msg);
+		}
+		for (const [id, n] of Object.entries(cart.decor))
+			for (let i = 0; i < (n ?? 0); i++) {
+				const r = store.buyStoreDecor(id as StoreItem);
+				if (!r.ok) failed.push(r.msg);
+			}
+		for (const t of cart.tanks) {
+			const r = store.buildTank(t.tier, t.water, t.temp);
+			if (!r.ok) failed.push(r.msg);
+		}
+		building = false;
+		if (failed.length) act({ ok: false, msg: `Some things couldn't be bought: ${[...new Set(failed)].join(' ')}` });
+		else act({ ok: true, msg: 'Bought! New tanks are being set up; decorations are on the floor (move them in Layout mode).' }, 'coin');
+	}
+	function openStyle() {
+		styleDraft = { ...store.lookOf(show) };
+	}
+	function applyStyle() {
+		if (!styleDraft) return;
+		const t = show;
+		const change = { ...styleDraft };
+		const cost = store.restyleCost(t, change);
+		const done = () => {
+			if (act(store.restyle(t.id, change), 'coin')) {
+				styleDraft = null;
+				panel = null;
+			}
+		};
+		if (!cost) return ((styleDraft = null), (panel = null));
+		if (change.shape !== store.lookOf(t).shape) {
+			const sh = TANK_SHAPES.find((x) => x.id === change.shape)!;
+			ask({ title: `Refit as a ${sh.name.toLowerCase()} tank?`, body: `Costs ${money(cost)} in all. It holds the same number of fish, and all ${t.fish.length} of them stay in the tank.`, fish: t.fish, yes: 'Apply', run: done });
+		} else done();
+	}
 	// The show tank's pop-out panels.
 	type Panel = 'stats' | 'fish' | 'pet' | 'style' | 'tank' | 'new';
 	let panel = $state<Panel | null>(null);
@@ -108,18 +182,6 @@
 	function ask(q: NonNullable<typeof confirmAsk>) {
 		confirmAsk = q;
 		sfx('click');
-	}
-	function askRestyle(t: ShowTank, change: Partial<TankLook>) {
-		const cur = store.lookOf(t);
-		if (!change.shape || change.shape === cur.shape) return act(store.restyle(t.id, change), 'coin');
-		const sh = TANK_SHAPES.find((x) => x.id === change.shape)!;
-		ask({
-			title: `Refit as a ${sh.name.toLowerCase()} tank?`,
-			body: `Costs ${money(Math.max(150, sh.cost) * t.seg)}. It holds the same number of fish, and all ${t.fish.length} of them stay in the tank.`,
-			fish: t.fish,
-			yes: 'Refit',
-			run: () => act(store.restyle(t.id, change), 'coin')
-		});
 	}
 	const rareFish = (fs: Fish[]) => fs.filter((f) => RARITY_ORDER(f) >= 2);
 	let showcase = $state<{ store: string; species: string; fishName: string | null; bond: number; mine?: boolean }[] | null>(null);
@@ -476,9 +538,9 @@
 		{#if note}<p class="note">{note}</p>{/if}
 
 		{#if tab === 'store'}
-			<div class="storeview">
+			<div class="storeview" role="presentation" onclick={(e) => picked && !(e.target as Element).closest('.storepop, .floorbox') && (picked = null)}>
 			<div class="row">
-				<button class="primary" onclick={() => (building = true)}>🔨 Build & buy</button>
+				<button class="primary" onclick={openBuild}>🔨 Build & buy</button>
 				<button class:on={layout} onclick={() => ((layout = !layout), (picked = null))}>{layout ? '✓ Done arranging' : '↔ Layout mode'}</button>
 				<span class="muted">{layout ? 'Tap something, then tap where it should go.' : 'Tap a tank or the supply shelf to manage it. ★ = show tank.'}</span>
 			</div>
@@ -545,9 +607,9 @@
 			{@const task = tasksFor(show.id)}
 			{@const lk = store.lookOf(show)}
 			{@const plants = show.decor.includes('plants')}
-			<div class="stage">
+			<div class="stage" role="presentation" onclick={(e) => panel && !(e.target as Element).closest('.pop, .tools, .hud, .nudge') && ((panel = null), (styleDraft = null))}>
 				{#if show.ready}
-					<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={isMain ? s.center : null} happy={s.pet.happy} height={0} look={lk} growth={show.growth ?? 30} stand />
+					<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={isMain ? s.center : null} happy={s.pet.happy} height={0} look={panel === 'style' && styleDraft ? styleDraft : lk} growth={show.growth ?? 30} stand />
 				{:else}
 					<div class="building">
 						<span>🏗️</span>
@@ -580,11 +642,11 @@
 				<!-- Icon toolbar: each pops out a panel over the tank. -->
 				<nav class="tools" aria-label="Show tank tools">
 					{#each [['stats', '📊', 'Stats'], ['fish', '🐠', 'Fish'], ...(isMain ? [['pet', '💗', 'Centrepiece']] : []), ['style', '🎨', 'Style'], ['tank', '⬆️', 'Tank'], ['new', '🏗️', 'New show tank']] as [id, ic, label] (id)}
-						<button class:on={panel === id} title={label} aria-label={label} onclick={() => ((panel = panel === id ? null : (id as Panel)), sfx('click'))}>{ic}</button>
+						<button class:on={panel === id} title={label} aria-label={label} onclick={() => ((panel = panel === id ? null : (id as Panel)), panel === 'style' ? openStyle() : (styleDraft = null), sfx('click'))}>{ic}</button>
 					{/each}
 					<hr />
 					<button title="Add fish" aria-label="Add fish" disabled={!show.ready} onclick={() => (adding = `show:${show.id}`)}>➕</button>
-					<button title="Decorate" aria-label="Decorate" disabled={!show.ready} onclick={() => (decorFor = show.id)}>🪸</button>
+					<button title="Decorate" aria-label="Decorate" disabled={!show.ready} onclick={() => openDecor(show.id)}>🪸</button>
 					<button title="Clean" aria-label="Clean" disabled={!show.ready || !!task} onclick={() => act(store.clean(`show:${show.id}`))}>🧽</button>
 					{#if plants}<button title="Trim plants" aria-label="Trim plants" disabled={!!task} onclick={() => act(store.trim(show.id))}>✂️</button>{/if}
 					{#if isMain && center}<button title="Feed (uses fish food)" aria-label="Feed" onclick={() => act(store.feed(), 'feed')}>🍤</button>{/if}
@@ -592,7 +654,7 @@
 
 				{#if panel}
 					<div class="pop">
-						<button class="x" aria-label="Close" onclick={() => (panel = null)}>✕</button>
+						<button class="x" aria-label="Close" onclick={() => ((panel = null), (styleDraft = null))}>✕</button>
 						{#if panel === 'stats'}
 							<h3>{isMain ? 'Main show tank' : `Show tank #${show.id}`}</h3>
 							<p class="muted small">Level {show.level}{show.seg > 1 ? ` · ${show.seg} tanks combined` : ''} · {show.water === 'salt' ? 'Saltwater' : show.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'} · {TANK_SHAPES.find((x) => x.id === lk.shape)?.name}</p>
@@ -627,29 +689,37 @@
 								<p class="small">Pick a fish from this tank to look after like a pet. Keep it fed, its water clean and its favourite decorations in, and its happiness makes the whole store more popular.</p>
 								<button class="primary" disabled={!show.fish.length} onclick={() => (choosingCenter = true)}>Choose centrepiece</button>
 							{/if}
-						{:else if panel === 'style'}
+						{:else if panel === 'style' && styleDraft}
+							{@const d = styleDraft}
+							{@const cost = store.restyleCost(show, d)}
 							<h3>Style this tank</h3>
+							<p class="muted small">Pick what you like: the tank shows a preview. Nothing changes until you press Apply.</p>
 							<h4>Glass shape</h4>
 							<div class="shapes">
 								{#each TANK_SHAPES as sh (sh.id)}
-									<button class:on={lk.shape === sh.id} onclick={() => askRestyle(show, { shape: sh.id })}>
+									<button class:on={d.shape === sh.id} onclick={() => (d.shape = sh.id)}>
 										<b>{sh.name}</b>
 										<span class="small muted">{sh.blurb}</span>
 										<span class="small">{lk.shape === sh.id ? 'Current' : money(Math.max(150, sh.cost) * show.seg)}{sh.beauty ? ` · +${sh.beauty} niceness` : ''}</span>
 									</button>
 								{/each}
 							</div>
-							<h4>Trim · {money(RESTYLE_COST)}</h4>
+							<h4>Trim · {money(RESTYLE_COST)} to change</h4>
 							<div class="swatches">
-								{#each TANK_TRIMS as x (x.id)}<button class:on={lk.trim === x.id} style="--sw: {x.color}" title={x.name} aria-label={x.name} onclick={() => act(store.restyle(show.id, { trim: x.id }), 'coin')}></button>{/each}
+								{#each TANK_TRIMS as x (x.id)}<button class:on={d.trim === x.id} style="--sw: {x.color}" title={x.name} aria-label={x.name} onclick={() => (d.trim = x.id)}></button>{/each}
 							</div>
-							<h4>Stand · {money(RESTYLE_COST)}</h4>
+							<h4>Stand · {money(RESTYLE_COST)} to change</h4>
 							<div class="swatches">
-								{#each TANK_STANDS as x (x.id)}<button class:on={lk.stand === x.id} style="--sw: {x.color}" title={x.name} aria-label={x.name} onclick={() => act(store.restyle(show.id, { stand: x.id }), 'coin')}></button>{/each}
+								{#each TANK_STANDS as x (x.id)}<button class:on={d.stand === x.id} style="--sw: {x.color}" title={x.name} aria-label={x.name} onclick={() => (d.stand = x.id)}></button>{/each}
 							</div>
-							<h4>Lights · {money(RESTYLE_COST)}</h4>
+							<h4>Lights · {money(RESTYLE_COST)} to change</h4>
 							<div class="row">
-								{#each TANK_LIGHTS as x (x.id)}<button class:on={lk.light === x.id} onclick={() => act(store.restyle(show.id, { light: x.id }), 'coin')}>{x.name}</button>{/each}
+								{#each TANK_LIGHTS as x (x.id)}<button class:on={d.light === x.id} onclick={() => (d.light = x.id)}>{x.name}</button>{/each}
+							</div>
+							<div class="applybar">
+								<span>{cost ? `Total ${money(cost)}` : 'No changes yet'}</span>
+								<button onclick={() => ((styleDraft = null), (panel = null))}>✕ Cancel</button>
+								<button class="primary" disabled={!cost || cost > s.cash} onclick={applyStyle}>Apply</button>
 							</div>
 						{:else if panel === 'tank'}
 							<h3>Tank</h3>
@@ -843,7 +913,7 @@
 
 	<!-- ── Dialogs ── -->
 	{#if naming}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (naming = null)}>
 			<form
 				class="dlg"
 				onsubmit={(e) => {
@@ -865,7 +935,7 @@
 	{#if moving}
 		{@const m = moving}
 		{@const f = store.fishAt(m.from).find((x) => x.u === m.uid)}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (moving = null)}>
 			<div class="dlg">
 				<h3>Move {f ? species(f.s).name : 'fish'} to…</h3>
 				<ul class="dest">
@@ -886,7 +956,7 @@
 	{#if adding}
 		{@const to = adding}
 		{@const t = store.tankAt(to)}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (adding = null)}>
 			<div class="dlg wide">
 				<h3>Add fish to {tankName(to)}</h3>
 				{#if t}<p class="muted small">{t.water === 'salt' ? 'Saltwater' : 'Freshwater'} · {t.temp} · space left {store.capOf(t) - store.used(t)} · fits up to {SIZE_LABEL[store.maxSizeOf(t)]}</p>{/if}
@@ -909,7 +979,7 @@
 
 	{#if crate}
 		{@const c = crate}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (crate && crate.open >= crate.fish.length && (crate = null))}>
 			<div class="dlg wide crate">
 				<h3>📦 Shipment arrived!</h3>
 				<div class="cards">
@@ -938,9 +1008,11 @@
 	{/if}
 
 	{#if building}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (building = false)}>
 			<div class="dlg wide">
+				<button class="x" aria-label="Cancel" onclick={() => (building = false)}>✕</button>
 				<h3>🔨 Build & buy</h3>
+				<p class="muted small">Add what you want, then Buy. Nothing is paid for until you do.</p>
 				<h4>Sale tanks</h4>
 				<div class="row">
 					<select bind:value={buildWater}><option value="fresh">Freshwater</option><option value="salt">Saltwater (+50% gear)</option></select>
@@ -948,53 +1020,81 @@
 				</div>
 				<ul class="dest">
 					{#each TANK_TIERS as tt (tt.id)}
-						<li><button onclick={() => act(store.buildTank(tt.id as TankTier, buildWater, buildWater === 'salt' ? 'tropical' : buildTemp)) && (building = false)}>{tt.name} · {tt.gallons} gal · holds {tt.cap} · up to {SIZE_LABEL[tt.maxSize]} · {money(store.tankCost(tt.id, buildWater))} · {time(tt.build * 1000)}</button></li>
+						<li><button onclick={() => addToCart(tt.id as TankTier)}>＋ {tt.name} · {tt.gallons} gal · holds {tt.cap} · up to {SIZE_LABEL[tt.maxSize]} · {money(store.tankCost(tt.id as TankTier, buildWater))} · {time(tt.build * 1000)}</button></li>
 					{/each}
 				</ul>
+				{#if cart.tanks.length}
+					<ul class="cartlist">
+						{#each cart.tanks as ct, i (i)}
+							<li>{tier(ct.tier).name} ({ct.water === 'salt' ? 'salt' : ct.temp === 'cold' ? 'cold fresh' : 'fresh'}) · {money(store.tankCost(ct.tier, ct.water))}<button class="link" onclick={() => (cart.tanks = cart.tanks.filter((_, j) => j !== i))}>remove</button></li>
+						{/each}
+					</ul>
+				{/if}
 				<h4>Show tanks</h4>
 				<button onclick={() => ((building = false), (tab = 'show'), (panel = 'new'))}>⭐ Build a show tank (choose its shape)…</button>
 				<h4>Store decorations (popularity)</h4>
-				<div class="row">
+				<ul class="dest">
 					{#each STORE_DECOR as d (d.id)}
-						<button onclick={() => act(store.buyStoreDecor(d.id), 'coin')}>{d.icon} {d.name} · {money(d.cost)} · +{d.appeal}</button>
+						{@const n = cart.decor[d.id] ?? 0}
+						<li class="qty">
+							<span>{d.icon} {d.name} · {money(d.cost)} · +{d.appeal}</span>
+							<button disabled={!n} onclick={() => bump(d.id, -1)} aria-label="One fewer">−</button>
+							<b>{n}</b>
+							<button onclick={() => bump(d.id, 1)} aria-label="One more">＋</button>
+						</li>
 					{/each}
-				</div>
+				</ul>
 				<h4>Floor</h4>
 				<div class="row">
 					{#each FLOORS as f (f.id)}
-						<button class:on={s.floor === f.id} onclick={() => act(store.setFloor(f.id))}>{f.name}{s.floors.includes(f.id) ? '' : ` · ${money(f.cost)}`} · +{f.appeal}</button>
+						<button class:on={(cart.floor ?? s.floor) === f.id} onclick={() => (cart.floor = f.id)}>{f.name}{s.floors.includes(f.id) ? '' : ` · ${money(f.cost)}`} · +{f.appeal}</button>
 					{/each}
 				</div>
-				<button onclick={() => (building = false)}>Close</button>
+				<div class="applybar">
+					<span>{cartCount ? `${cartCount} item${cartCount === 1 ? '' : 's'} · ${money(cartCost)}` : 'Nothing picked yet'}</span>
+					<button onclick={() => (building = false)}>✕ Cancel</button>
+					<button class="primary" disabled={!cartCount || cartCost > s.cash} onclick={checkout}>Buy</button>
+				</div>
 			</div>
 		</div>
 	{/if}
 
 	{#if decorFor !== null}
 		{@const t = s.show.find((x) => x.id === decorFor)!}
-		<div class="modal">
+		{@const adds = decorDraft.filter((d) => !t.decor.includes(d))}
+		{@const removes = t.decor.filter((d) => !decorDraft.includes(d))}
+		{@const cost = adds.reduce((a, d) => a + (TANK_DECOR.find((x) => x.id === d)?.cost ?? 0), 0)}
+		{@const full = decorDraft.length >= store.decorSlots(t)}
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (decorFor = null)}>
 			<div class="dlg wide">
-				<h3>🪸 Decorate · {t.decor.length}/{store.decorSlots(t)}</h3>
+				<button class="x" aria-label="Cancel" onclick={() => (decorFor = null)}>✕</button>
+				<h3>🪸 Decorate · {decorDraft.length}/{store.decorSlots(t)}</h3>
+				<p class="muted small">Tick what you want in the tank, then Apply. Removed decorations aren't refunded.</p>
 				<ul class="dest">
 					{#each TANK_DECOR as d (d.id)}
-						{@const has = t.decor.includes(d.id)}
+						{@const on = decorDraft.includes(d.id)}
+						{@const had = t.decor.includes(d.id)}
 						{@const wrong = !!d.water && d.water !== t.water}
 						<li>
-							{#if has}
-								<button class="on" onclick={() => store.removeDecor(t.id, d.id as DecorTag)}>✓ {d.name} (remove)</button>
-							{:else}
-								<button disabled={wrong} onclick={() => act(store.addDecor(t.id, d.id as DecorTag), 'coin')}>{d.name} · {money(d.cost)} · beauty +{d.beauty}{wrong ? ` · ${d.water} only` : ''}</button>
-							{/if}
+							<button class="pick" class:on disabled={wrong || (!on && full)} onclick={() => toggleDraft(d.id as DecorTag)}>
+								<span class="tick">{on ? '☑' : '☐'}</span>
+								{d.name} · beauty +{d.beauty}
+								<span class="muted small">{had ? (on ? 'in the tank' : 'will be removed') : wrong ? `${d.water} only` : money(d.cost)}</span>
+							</button>
 						</li>
 					{/each}
 				</ul>
-				<button onclick={() => (decorFor = null)}>Done</button>
+				<div class="applybar">
+					<span>{adds.length || removes.length ? `${adds.length ? `Adding ${adds.length} · ${money(cost)}` : ''}${adds.length && removes.length ? ' · ' : ''}${removes.length ? `removing ${removes.length}` : ''}` : 'No changes yet'}</span>
+					<button onclick={() => (decorFor = null)}>✕ Cancel</button>
+					<button class="primary" disabled={(!adds.length && !removes.length) || cost > s.cash} onclick={() => act(store.setDecor(t.id, decorDraft), 'coin') && (decorFor = null)}>Apply</button>
+				</div>
 			</div>
 		</div>
 	{/if}
 
 	{#if combining}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (combining = false)}>
 			<div class="dlg">
 				<h3>🔗 Combine with show tank #{show.id}</h3>
 				<p class="muted small">Two show tanks become one bigger tank ({money(COMBINE_COST)}, takes a while). Both need the same water, and all their fish must get along.</p>
@@ -1009,7 +1109,7 @@
 	{/if}
 
 	{#if choosingCenter}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (choosingCenter = false)}>
 			<div class="dlg wide">
 				<h3>Choose your centrepiece</h3>
 				<p class="muted small">Your centrepiece is a pet: feed it, keep its tank clean and decorated the way it likes, and play with it. A happy, bonded centrepiece makes your show tank (and store) shine.</p>
@@ -1032,7 +1132,7 @@
 	{#if confirmAsk}
 		{@const q = confirmAsk}
 		{@const rare = rareFish(q.fish)}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (confirmAsk = null)}>
 			<div class="dlg">
 				<h3>{q.title}</h3>
 				<p class="small">{q.body}</p>
@@ -1055,7 +1155,7 @@
 
 	{#if sellDecor !== null}
 		{@const d = s.decor.find((x) => x.id === sellDecor)}
-		<div class="modal">
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (sellDecor = null)}>
 			<div class="dlg">
 				{#if d}
 					{@const info = STORE_DECOR.find((x) => x.id === d.item)!}
@@ -1737,6 +1837,72 @@
 		padding: 0;
 		background: none;
 		border: none;
+	}
+	.applybar {
+		position: sticky;
+		bottom: -16px;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+		margin: 4px -16px -16px;
+		padding: 10px 16px;
+		background: #0b1c2a;
+		border-top: 1px solid rgba(42, 176, 232, 0.3);
+	}
+	.pop .applybar {
+		bottom: -14px;
+		margin: 4px -14px -14px;
+		padding: 10px 14px;
+	}
+	.applybar span {
+		margin-right: auto;
+		font-weight: 700;
+		color: #fde68a;
+	}
+	.dlg {
+		position: relative;
+	}
+	.dlg > .x {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		padding: 2px 8px !important;
+	}
+	.pick {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.pick .muted {
+		margin-left: auto;
+	}
+	.tick {
+		font-size: 1.05rem;
+	}
+	.qty {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.qty span {
+		flex: 1;
+	}
+	.qty b {
+		min-width: 18px;
+		text-align: center;
+	}
+	.dest .qty button {
+		width: auto;
+		padding: 2px 10px;
+	}
+	.cartlist {
+		list-style: none;
+		margin: 0;
+		padding: 6px 10px;
+		border-radius: 8px;
+		background: rgba(42, 176, 232, 0.1);
+		font-size: 0.85rem;
 	}
 	.warnline {
 		margin: 0;
