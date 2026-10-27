@@ -1,10 +1,10 @@
 // Drawing fish in the chunky voxel style of Frogger: each species is first painted from its
 // body shape, colours and pattern (stripes, bands, spots, calico patches…), then rebuilt out of
 // blocks, each with a lighter top face and a darker underside, like Frogger's boxes. Sprites are
-// cached per species, size and tail-swish frame. Magikarp (the easter egg) is Frogger's own
-// voxel model.
+// cached per species, size and tail-swish frame. Magikarp and Stockfish (the easter eggs) have
+// their own hand-built models (fishModels.ts); Fishy is drawn from its original art.
 import type { Species } from './data';
-import { bx, drawVoxel, layered, magikarpModel, model, type Box, type Model } from '../voxel';
+import { bx, drawVoxel, model, type Box, type Model } from '../voxel';
 import { customModel } from './fishModels';
 import { buildFromPlan, planOf } from './bodyPlans';
 
@@ -33,7 +33,6 @@ const sprites = new Map<string, HTMLCanvasElement>();
  * built from voxel blocks. `t` swishes the tail.
  */
 export function drawFish(c: Ctx, sp: Species, x: number, y: number, len: number, dir: 1 | -1, t: number, _key = sp.id, alpha = 1) {
-	if (sp.shape === 'magikarp') return drawMagikarp(c, x, y, len, dir, t, alpha);
 	if (sp.img) return drawPicture(c, sp.img, x, y, len, dir, t, alpha);
 	const frame = ((Math.floor(((t * 6) / (Math.PI * 2)) * FRAMES) % FRAMES) + FRAMES) % FRAMES;
 	const key = `${sp.id}|${frame}|${dir}`;
@@ -244,24 +243,6 @@ function drawPicture(c: Ctx, img: [string, string], x: number, y: number, len: n
 	c.save();
 	c.globalAlpha = alpha;
 	c.drawImage(im, x - len / 2, y - h / 2 + Math.sin(t * 3) * 2, len, h);
-	c.restore();
-}
-
-let karp: { left: Model; right: Model } | null = null;
-/** Frogger's voxel Magikarp, side-on, bobbing and flopping. */
-function drawMagikarp(c: Ctx, x: number, y: number, len: number, dir: 1 | -1, t: number, alpha: number) {
-	if (!karp) {
-		const up = magikarpModel();
-		karp = {
-			left: layered(up.map((b) => ({ ...b, x: b.y, y: 1 - (b.x + b.w), w: b.d, d: b.w }))),
-			right: layered(up.map((b) => ({ ...b, x: 1 - (b.y + b.d), y: b.x, w: b.d, d: b.w })))
-		};
-	}
-	const T = len;
-	c.save();
-	c.translate(x, y + Math.sin(t * 3) * len * 0.05);
-	c.rotate(Math.sin(t * 5) * 0.12);
-	drawVoxel(c, dir < 0 ? karp.left : karp.right, -T / 2, -T / 2, T, T * 0.75, 1, alpha);
 	c.restore();
 }
 

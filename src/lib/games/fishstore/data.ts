@@ -168,6 +168,23 @@ function parseCatalog(): Species[] {
 		cm: 14,
 		img: ['/games/fishy/FishyCharR.png', '/games/fishy/FishyCharL.png']
 	});
+	// The shiny one: gold all over, and even rarer to see.
+	out.push({ ...out.find((x) => x.id === 'magikarp')!, id: 'shiny-magikarp', name: 'Shiny Magikarp', sci: 'Pokémon, shiny (easter egg)', colors: ['#ffd23a', '#fbe8b0', '#fff07a'] });
+	// And a chess knight that learned to swim, named after the chess engine.
+	out.push({
+		id: 'stockfish',
+		name: 'Stockfish',
+		sci: 'Chess engine (easter egg)',
+		water: 'salt',
+		temp: 'tropical',
+		size: 'M',
+		rarity: 'mythic',
+		likes: ['rock', 'sand'],
+		shape: 'tall',
+		colors: ['#efe6d2', '#d6cab0', '#9fd4e8'],
+		pattern: 'none',
+		cm: 18
+	});
 	return out;
 }
 

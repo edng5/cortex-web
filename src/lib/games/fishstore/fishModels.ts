@@ -19,7 +19,7 @@
 //
 // Tile units as in fishArt: x along the fish (tail at 0, nose at 1), y across (viewer at larger
 // y), z up, with the middle of the body at MID.
-import { bx, type Box } from '../voxel';
+import { bx, magikarpModel, type Box } from '../voxel';
 import type { Species } from './data';
 
 export const MID = 0.32;
@@ -27,6 +27,8 @@ type Seg = [number, number, string];
 
 /** Which hand-built model a species uses (varieties share their species' model). */
 export function customModel(sp: Species): ((sp: Species, phase: number) => Box[]) | null {
+	if (sp.id === 'magikarp' || sp.id === 'shiny-magikarp') return magikarp;
+	if (sp.id === 'stockfish') return stockfish;
 	if (sp.sci.startsWith('Astronotus')) return oscar;
 	if (sp.sci.startsWith('Symphysodon')) return discus;
 	if (sp.sci.startsWith('Osteoglossum') || sp.sci.startsWith('Scleropages')) return arowana;
@@ -666,3 +668,79 @@ const lighten = (hex: string, f: number) => {
 	const ch = (v: number) => Math.max(0, Math.min(255, Math.round(f > 1 ? v + (255 - v) * (f - 1) : v * f)));
 	return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => ch(v).toString(16).padStart(2, '0')).join('');
 };
+
+// ── The mythic easter eggs ──────────────────────────────────────────────────────────
+
+/**
+ * Magikarp: Frogger's own model, exactly, but turned to stand the right way up for swimming in
+ * a tank: belly down, its crown fin along the top, and its flank (with the eye and side fin)
+ * facing the glass. Frogger lies it flat; FishMart sits it on its belly. The shiny one is the
+ * same model with every bit of orange turned yellow.
+ */
+const SHINY: Record<string, string> = { '#ee5a2c': '#ffd23a', '#c9381e': '#e0a818', '#e8462a': '#f0b020' };
+function magikarp(sp: Species): Box[] {
+	const shiny = sp.id === 'shiny-magikarp';
+	// Frogger's model: x across (belly → back), y along (head → tail), z up out of its flank.
+	// Here: x along (tail → head), z up (belly → back), y toward the viewer (the flank).
+	const boxes = magikarpModel().map((b) => ({ ...b, x: 1 - (b.y + b.d), w: b.d, y: b.z, d: b.h, z: b.x, h: b.w, c: (shiny && SHINY[b.c]) || b.c }));
+	// Centre it: its middle at MID, its thickness around the middle of the tile.
+	const z0 = Math.min(...boxes.map((b) => b.z));
+	const z1 = Math.max(...boxes.map((b) => b.z + b.h));
+	const y1 = Math.max(...boxes.map((b) => b.y + b.d));
+	return boxes.map((b) => ({ ...b, z: b.z + MID - (z0 + z1) / 2, y: b.y + 0.5 - y1 / 2 }));
+}
+
+/**
+ * Stockfish: a fish carved as a chess knight. A white Staunton knight swims upright: a round
+ * weighted base with a checkered band and green felt, a curved neck with a ridged mane, a long
+ * horse's head with ears and a nostril, and little fins (a back fin along the mane, a side fin
+ * at the chest and a fan tail out behind the base) so it can swim.
+ */
+function stockfish(_sp: Species, phase: number): Box[] {
+	const out: Box[] = [];
+	const ivory = '#efe6d2';
+	const shadow = '#d6cab0';
+	const ink = '#22222a';
+	const felt = '#2f6b3a';
+	const fin = '#9fd4e8';
+	const sw = swishOf(phase);
+	const d = 0.3;
+	const y = 0.5 - d / 2;
+	const disc = (x: number, w: number, z: number, h: number, col: string, dd = d) => out.push(bx(x, 0.5 - dd / 2, z, w, dd, h, col));
+	// The base: felt, a black-and-white checkered band, a collar.
+	disc(0.26, 0.5, 0.02, 0.02, felt, d + 0.04);
+	disc(0.26, 0.5, 0.04, 0.07, ivory, d + 0.04);
+	for (let i = 0; i < 6; i++) out.push(bx(0.27 + i * 0.08, 0.5 + (d + 0.04) / 2 + 0.002, 0.06, 0.08, 0.004, 0.03, i % 2 ? ink : ivory));
+	disc(0.3, 0.42, 0.11, 0.04, shadow, d);
+	disc(0.33, 0.36, 0.15, 0.04, ivory, d - 0.04);
+	// The neck rising from the base and curving forward, chest out in front.
+	const neck: [number, number, number][] = [
+		// [left edge (the mane side), right edge (the chest), z]
+		[0.34, 0.64, 0.19],
+		[0.33, 0.66, 0.24],
+		[0.33, 0.67, 0.29],
+		[0.34, 0.66, 0.34],
+		[0.35, 0.64, 0.39],
+		[0.37, 0.64, 0.44]
+	];
+	for (const [a, b, z] of neck) out.push(bx(a, y + 0.03, z, b - a, d - 0.06, 0.055, ivory));
+	// The head: long, reaching forward and a little down, the muzzle squared off.
+	out.push(bx(0.38, y + 0.04, 0.48, 0.3, d - 0.08, 0.07, ivory));
+	out.push(bx(0.4, y + 0.04, 0.55, 0.3, d - 0.08, 0.06, ivory));
+	out.push(bx(0.62, y + 0.05, 0.43, 0.2, d - 0.1, 0.1, ivory));
+	out.push(bx(0.42, y + 0.04, 0.61, 0.2, d - 0.08, 0.04, ivory));
+	// Ears.
+	out.push(bx(0.43, 0.48, 0.65, 0.04, 0.06, 0.06, ivory), bx(0.5, 0.48, 0.65, 0.04, 0.06, 0.05, shadow));
+	// The mouth line, nostril and eye on the near side.
+	const near = 0.5 + (d - 0.08) / 2 + 0.003;
+	out.push(bx(0.68, near, 0.455, 0.14, 0.004, 0.012, ink));
+	out.push(bx(0.77, near, 0.5, 0.025, 0.004, 0.02, ink));
+	out.push(bx(0.55, near, 0.56, 0.035, 0.004, 0.035, ink), bx(0.56, near + 0.002, 0.575, 0.012, 0.004, 0.012, '#ffffff'));
+	// The mane: carved ridges down the back of the neck, with a fin along it.
+	for (let i = 0; i < 6; i++) out.push(bx(0.32, 0.5 - 0.04, 0.24 + i * 0.065, 0.035, 0.08, 0.035, i % 2 ? shadow : ivory));
+	for (let i = 0; i < 5; i++) out.push(bx(0.27 + Math.sin(phase * Math.PI * 2 + i) * 0.006, 0.48, 0.26 + i * 0.07, 0.05, 0.04, 0.05, fin));
+	// A side fin at the chest and a fan tail out behind the base.
+	out.push(bx(0.5, near + 0.004, 0.27 + sw * 0.01, 0.1, 0.006, 0.06, fin));
+	for (let s = 0; s < 3; s++) out.push(bx(0.22 - (s + 1) * 0.04, 0.475 + sw * 0.03, 0.12 - s * 0.025, 0.042, 0.05, 0.1 + s * 0.05, fin));
+	return out;
+}

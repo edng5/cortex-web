@@ -1014,7 +1014,9 @@ export class FishStore {
 		const pool = SPECIES.filter((s) => s.water === water && RARITIES.indexOf(s.rarity) >= 2);
 		let r = RARITIES.indexOf(roll(CATCH_ODDS));
 		while (r > 2 && !pool.some((s) => s.rarity === RARITIES[r])) r--;
-		const sp = pick(pool.filter((s) => s.rarity === RARITIES[r]));
+		let sp = pick(pool.filter((s) => s.rarity === RARITIES[r] && s.id !== 'shiny-magikarp'));
+		// One Magikarp in seven is shiny.
+		if (sp.id === 'magikarp' && Math.random() < 1 / 7) sp = species('shiny-magikarp');
 		this.save();
 		return { ok: true, sp };
 	}
