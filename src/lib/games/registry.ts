@@ -1,8 +1,18 @@
 // E.Ngine Games: the in-browser ports of Edward's high-school Java games. Each game's code loads
 // only when it's first played.
+import type { Component } from 'svelte';
 import type { ArcadeGame } from './common';
 
-export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong';
+export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ifish';
+
+/** What a component game (spec.ui) is given. */
+export interface GameUiProps {
+	/** Showing (false: hidden, paused). */
+	active: boolean;
+	/** The player picked Quit in the game. */
+	onquit: () => void;
+	loggedIn: boolean;
+}
 
 /** On-screen controls for touch screens (TouchControls.svelte). */
 export interface TouchSpec {
@@ -39,9 +49,13 @@ export interface GameSpec {
 	/** Controls under the game: keys, then what they do. */
 	help: { keys: string[]; label: string }[];
 	touch: TouchSpec;
-	/** What the global boards are called (board number → name). */
+	/** What the global boards are called (board number → name); none for games without high scores. */
 	boards: Record<number, string>;
-	load: () => Promise<ArcadeGame>;
+	/** A canvas game… */
+	load?: () => Promise<ArcadeGame>;
+	/** …or a game made of Svelte components (menus and panels), with its soundtrack. */
+	ui?: () => Promise<Component<GameUiProps>>;
+	music?: string;
 }
 
 const MOUSE = { keys: ['Mouse'], label: 'menus' };
@@ -171,6 +185,24 @@ export const GAMES: GameSpec[] = [
 			const m = await import('./pong/Pong');
 			return new m.Pong(await m.loadAssets());
 		}
+	},
+	{
+		id: 'ifish',
+		saveKey: 'ifish-save',
+		title: 'iFish',
+		blurb: 'Run your own fish store: 700+ real fish, daily supplier shipments, a show tank with a pet centrepiece, staff, fishing for legendaries, and a global showcase.',
+		icon: '/games/icons/ifish.png',
+		preview: '/games/previews/ifish.jpg',
+		tagline: 'Fish store sim · global showcase',
+		accent: '#2ab0e8',
+		w: 1040,
+		h: 700,
+		tickMs: 1000,
+		help: [],
+		touch: { buttons: [] },
+		boards: {},
+		music: 'ifish-store',
+		ui: async () => (await import('./fishstore/IFish.svelte')).default
 	}
 ];
 

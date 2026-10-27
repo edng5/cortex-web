@@ -33,7 +33,7 @@
 		<h3>Monthly leaders</h3>
 		<span class="month">{data ? monthName(data.month) : ' '}</span>
 	</header>
-	{#each GAMES as g (g.id)}
+	{#each GAMES.filter((g) => Object.keys(g.boards).length) as g (g.id)}
 		{@const row = data?.games[g.id]}
 		<section style="--accent: {g.accent}">
 			<h4>

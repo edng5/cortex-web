@@ -47,14 +47,21 @@ export const nameKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g
 
 export type NameCheck = { ok: true; name: string } | { ok: false; message: string };
 
-export function checkName(raw: unknown): NameCheck {
-	if (typeof raw !== 'string') return { ok: false, message: 'Please enter a nickname.' };
+/**
+ * Check a public name: a leaderboard nickname by default; `what`/`min`/`max` adapt it for other
+ * names players choose (an iFish store's name, a pet fish's name).
+ */
+export function checkName(raw: unknown, what = 'nickname', min = NAME_MIN, max = NAME_MAX): NameCheck {
+	const What = what[0].toUpperCase() + what.slice(1);
+	if (typeof raw !== 'string') return { ok: false, message: `Please enter a ${what}.` };
 	const name = raw.normalize('NFKC').trim().replace(/\s+/g, ' ');
-	if (name.length < NAME_MIN || name.length > NAME_MAX) {
-		return { ok: false, message: `Nicknames are ${NAME_MIN} to ${NAME_MAX} characters.` };
+	if (name.length < min || name.length > max) {
+		return { ok: false, message: `${What}s are ${min} to ${max} characters.` };
 	}
-	if (!/^[A-Za-z0-9][A-Za-z0-9 _.-]*$/.test(name)) {
-		return { ok: false, message: 'Use letters, numbers, spaces, and _ . - only (starting with a letter or number).' };
+	// Store and fish names may also use ' and & ("Ed's Reef & Co").
+	const punct = what === 'nickname' ? '' : "'&";
+	if (!new RegExp(`^[A-Za-z0-9][A-Za-z0-9 _.${punct}-]*$`).test(name)) {
+		return { ok: false, message: `Use letters, numbers, spaces, and _ . ${punct ? "' & " : ''}- only (starting with a letter or number).` };
 	}
 	if (!/[A-Za-z]/.test(name)) return { ok: false, message: 'Include at least one letter.' };
 
@@ -70,10 +77,10 @@ export function checkName(raw: unknown): NameCheck {
 	const inappropriate =
 		stems.some((t) => flat.includes(t) || (unrepeat(t).length >= 4 && unrepeat(flat).includes(unrepeat(t)))) ||
 		words.some((w) => BANNED_WORDS.includes(w) || BANNED_WORDS.includes(unrepeat(w)));
-	if (inappropriate) return { ok: false, message: "That nickname isn't allowed. Please pick something friendly." };
+	if (inappropriate) return { ok: false, message: `That ${what} isn't allowed. Please pick something friendly.` };
 
 	if (RESERVED.includes(squash(name)) || RESERVED.includes(nameKey(name)) || squash(name).startsWith('edwardng') || squash(name).startsWith('admin')) {
-		return { ok: false, message: 'That nickname is reserved. Please pick another.' };
+		return { ok: false, message: `That ${what} is reserved. Please pick another.` };
 	}
 	return { ok: true, name };
 }

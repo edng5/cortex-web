@@ -98,6 +98,29 @@ export function getDb(): Database.Database {
 			name_key    TEXT NOT NULL UNIQUE,   -- normalised, so names are unique ignoring case/spaces
 			updated_at  INTEGER NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS ifish_showcase (
+			user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			store       TEXT NOT NULL,          -- the player's store name (checked, public)
+			species     TEXT NOT NULL,          -- the fish they're showing off
+			fish_name   TEXT,                   -- its name, if given (checked, public)
+			rank        INTEGER NOT NULL,       -- rarity rank, for sorting
+			bond        INTEGER NOT NULL,       -- how bonded the centrepiece is (0-100)
+			updated_at  INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS ifish_market (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			seller_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			store       TEXT NOT NULL,          -- the seller's store name (checked, public)
+			species     TEXT NOT NULL,          -- the fish for sale (rare or better)
+			fish_name   TEXT,                   -- its name, if given (checked, public)
+			price       INTEGER NOT NULL,
+			currency    TEXT NOT NULL,          -- 'cash' | 'gems'
+			created_at  INTEGER NOT NULL,
+			buyer_id    TEXT,                   -- set when sold
+			sold_at     INTEGER,
+			claimed     INTEGER NOT NULL DEFAULT 0  -- 1 once the seller has collected the money
+		);
+		CREATE INDEX IF NOT EXISTS ifish_market_open ON ifish_market (buyer_id, created_at);
 		CREATE TABLE IF NOT EXISTS chat_strikes (
 			key_hash      TEXT PRIMARY KEY,     -- blind index of 'ip:…' or 'user:…'
 			strikes       INTEGER NOT NULL,     -- warnings given since the last ban (expire with time)

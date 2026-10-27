@@ -1,7 +1,7 @@
 <!--
   The loading screen for one E.Ngine game, themed on the game: Top Gun's jet streaks across the
   sky, Fishy's fish swims through rising bubbles, a Space Invader marches over the stars, Frogger's
-  frog hops across the lanes, and Pong's ball rallies between the paddles.
+  frog hops across the lanes, Pong's ball rallies between the paddles, and iFish opens up shop.
 -->
 <script lang="ts">
 	import type { GameSpec } from '$lib/games/registry';
@@ -13,7 +13,8 @@
 		fishy: 'Filling the tank',
 		spaceinvaders: 'Incoming wave',
 		frogger: 'Looking both ways',
-		pong: 'Serving'
+		pong: 'Serving',
+		ifish: 'Opening the store'
 	};
 </script>
 
@@ -37,6 +38,11 @@
 			<span class="lane l1"></span>
 			<span class="lane l2"></span>
 			<span class="frog"><img src={spec.icon} alt="" /></span>
+		{:else if spec.id === 'ifish'}
+			<span class="awning"></span>
+			<span class="shop"><img src={spec.icon} alt="" /></span>
+			<span class="open">OPEN</span>
+			<span class="swimmer"></span>
 		{:else}
 			<span class="paddle left"></span>
 			<span class="paddle right"></span>
@@ -105,6 +111,73 @@
 		width: 100%;
 		height: 100%;
 		image-rendering: pixelated;
+	}
+
+	/* iFish: the shop opens, its sign swinging, a fish swimming past the window. */
+	.ifish {
+		background: radial-gradient(ellipse at 50% 40%, #134a6a, #07121c 75%);
+	}
+	.ifish .scene {
+		background: #1b3550;
+	}
+	.awning {
+		position: absolute;
+		inset: 0 0 auto;
+		height: 22px;
+		background: repeating-linear-gradient(90deg, #e8434b 0 20px, #f4f1ea 20px 40px);
+		box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
+	}
+	.shop {
+		position: absolute;
+		left: 50%;
+		bottom: 6px;
+		width: 92px;
+		height: 92px;
+		margin-left: -46px;
+		animation: bob 1.6s ease-in-out infinite;
+	}
+	.open {
+		position: absolute;
+		top: 30px;
+		right: 24px;
+		padding: 2px 6px;
+		font: 900 0.7rem/1 'Arial Black', Impact, sans-serif;
+		color: #04121c;
+		background: #4ade80;
+		border-radius: 3px;
+		transform-origin: 50% -8px;
+		animation: swing 1.8s ease-in-out infinite;
+	}
+	.swimmer {
+		position: absolute;
+		top: 64px;
+		width: 18px;
+		height: 9px;
+		background: #2ab0e8;
+		box-shadow: -7px 0 0 -1px #1a7ab0;
+		animation: swimby 3.2s linear infinite;
+	}
+	@keyframes bob {
+		50% {
+			transform: translateY(-5px);
+		}
+	}
+	@keyframes swing {
+		0%,
+		100% {
+			transform: rotate(-8deg);
+		}
+		50% {
+			transform: rotate(8deg);
+		}
+	}
+	@keyframes swimby {
+		from {
+			left: -30px;
+		}
+		to {
+			left: 110%;
+		}
 	}
 
 	/* Top Gun: a jet streaking through the sky. */

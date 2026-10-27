@@ -4,9 +4,11 @@
 	import ArcadeGame from '$lib/components/ArcadeGame.svelte';
 	import { gameById } from '$lib/games/registry';
 	import { site } from '$lib/config/site';
+	import { session } from '$lib/session.svelte';
 
 	let { data } = $props();
 	const spec = $derived(gameById(data.id)!);
+	$effect.pre(() => session.init({ user: data.user, quota: null, auth: data.auth }));
 	let phone = $state<boolean | null>(null);
 	onMount(() => (phone = matchMedia('(max-width: 720px), (pointer: coarse)').matches));
 </script>

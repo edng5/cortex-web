@@ -1,13 +1,14 @@
 <!--
-  One E.Ngine game (Edward's high-school games, ported to TypeScript) on a <canvas>.
+  One E.Ngine game (Edward's high-school games, ported to TypeScript) on a <canvas>, or (for games
+  made of menus and panels, like iFish) the game's own Svelte component.
   Played with the keyboard, menus clicked; on touch screens, with on-screen controls
   (TouchControls) that send the same key presses, and the game sized to fill the width.
   `active` = false pauses the game (pop-up hidden, another game showing, or "Leave the game?").
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 	import type { ArcadeGame, Board } from '$lib/games/common';
-	import type { GameSpec } from '$lib/games/registry';
+	import type { GameSpec, GameUiProps } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import TouchControls from './TouchControls.svelte';
@@ -30,6 +31,8 @@
 	const rotate = $derived(touch && portrait && !!spec.touch.landscape);
 	const playing = $derived(active && !rotate);
 	let game: ArcadeGame | null = null;
+	/** A component game (spec.ui), once loaded. */
+	let Ui = $state<Component<GameUiProps> | null>(null);
 	/** Send any unsynced progress to the account now (set once the game starts). */
 	let syncFlush = () => {};
 	const held = new Set<string>();
@@ -46,15 +49,30 @@
 		// and keep sending changes to it while playing.
 		let sync: ReturnType<typeof watchSave> | null = null;
 		const shown = performance.now();
-		(session.user ? pullSave(spec.id, spec.saveKey) : Promise.resolve())
-			.then(() => {
-				// Watch from here on (so taking the account's copy doesn't count as a new change).
-				sync = watchSave(spec.id, spec.saveKey, () => !!session.user);
-				syncFlush = sync.flush;
-				return spec.load();
-			})
+		const ready = (session.user ? pullSave(spec.id, spec.saveKey) : Promise.resolve()).then(() => {
+			// Watch from here on (so taking the account's copy doesn't count as a new change).
+			sync = watchSave(spec.id, spec.saveKey, () => !!session.user);
+			syncFlush = sync.flush;
+		});
+		const atLeast = <T,>(v: T) => new Promise<T>((done) => setTimeout(() => done(v), Math.max(0, shown + 900 - performance.now())));
+		if (spec.ui) {
+			const load = spec.ui;
+			ready
+				.then(load)
+				.then(atLeast)
+				.then((c) => {
+					if (disposed) return;
+					Ui = c;
+					status = 'running';
+				})
+				.catch((err) => {
+					console.error(`[${spec.id}]`, err);
+					status = 'error';
+				});
+		} else ready
+			.then(() => spec.load!())
 			// Show the loading screen for a moment at least, so it doesn't just flash.
-			.then((g) => new Promise<ArcadeGame>((done) => setTimeout(() => done(g), Math.max(0, shown + 900 - performance.now()))))
+			.then(atLeast)
 			.then((g) => {
 				if (disposed) return;
 				game = g;
@@ -162,10 +180,14 @@
 			gameAudio.stopIf(spec.id);
 			game?.leave();
 			syncFlush();
-		} else if (status === 'running') {
+		} else if (status === 'running' && !spec.ui) {
 			queueMicrotask(() => canvas?.focus());
 			loadBoard(); // back again: refresh the global high scores
 		}
+	});
+	// Component games: their soundtrack plays while they're showing.
+	$effect(() => {
+		if (Ui && active && spec.music) gameAudio.music(spec.music);
 	});
 
 	function onKeyDown(e: KeyboardEvent) {
@@ -216,7 +238,10 @@
 </script>
 
 <section class="stage">
-	<div class="screen" style="--w: {spec.w}; --h: {spec.h}; --accent: {spec.accent}">
+	<div class="screen" class:ui={!!spec.ui} style="--w: {spec.w}; --h: {spec.h}; --accent: {spec.accent}">
+		{#if spec.ui}
+			{#if Ui}<Ui {active} onquit={() => onquit?.()} loggedIn={!!session.user} />{/if}
+		{:else}
 		<canvas
 			bind:this={canvas}
 			class:pointer
@@ -228,6 +253,7 @@
 			onpointermove={onPointerMove}
 			onpointerdown={onPointerDown}
 		></canvas>
+		{/if}
 		{#if status !== 'running'}
 			<div class="cover">
 				{#if status === 'loading'}
@@ -277,6 +303,13 @@
 			0 30px 80px -20px rgba(0, 0, 0, 0.9),
 			0 0 50px -12px color-mix(in srgb, var(--accent) 50%, transparent);
 	}
+	/* Component games: as big as the window allows (not a fixed shape), scrolling inside. */
+	.screen.ui {
+		width: min(calc(var(--w) * 1px), calc(100vw - 72px));
+		height: min(calc(var(--h) * 1px), calc(100vh - 110px));
+		aspect-ratio: auto;
+		background: #07121c;
+	}
 	canvas {
 		touch-action: none;
 		display: block;
@@ -314,6 +347,11 @@
 			border-radius: 0;
 			border-left: none;
 			border-right: none;
+		}
+		.screen.ui {
+			width: 100vw;
+			height: calc(100svh - 58px);
+			border: none;
 		}
 	}
 	@media (pointer: coarse) and (orientation: landscape) {

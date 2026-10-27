@@ -1,0 +1,704 @@
+<!--
+  A live aquarium, drawn in 3D: you look in through the front glass at the back wall, the side
+  panes and the substrate floor receding into the tank, with rocks, wood, plants and coral built
+  from chunky voxel blocks (in Frogger's style) standing at different depths. Fish (to scale: the
+  tank is `widthCm` wide) swim forward and back as well as about, smaller and hazier further
+  away, casting shadows on the sand. The glass shape (classic, bow-front, hexagon, cylinder or
+  rimless), trim, stand and lights follow the tank's look. Dirty water turns murky with algae on
+  the glass; live plants grow taller over time and get overgrown until trimmed. The centrepiece
+  swims briskly with hearts when happy, and mopes near the bottom when it isn't.
+-->
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { DEFAULT_LOOK, TANK_LIGHTS, TANK_STANDS, TANK_TRIMS, species, type DecorTag, type TankLook, type Water } from './data';
+	import { drawFish } from './fishArt';
+	import { shade } from '../voxel';
+	import type { Fish } from './store.svelte';
+
+	let {
+		fish,
+		decor = [],
+		water,
+		clean,
+		widthCm,
+		center = null,
+		happy = 50,
+		height = 220,
+		look = DEFAULT_LOOK,
+		growth = 30,
+		stand = false
+	}: {
+		fish: Fish[];
+		decor?: DecorTag[];
+		water: Water;
+		clean: number;
+		widthCm: number;
+		center?: number | null;
+		happy?: number;
+		/** Pixels, or 0 to fill the parent's height. */
+		height?: number;
+		look?: TankLook;
+		growth?: number;
+		/** Draw the cabinet stand under the tank. */
+		stand?: boolean;
+	} = $props();
+
+	let canvas = $state<HTMLCanvasElement>();
+	let wrap = $state<HTMLDivElement>();
+
+	/** A fish's place in the tank: u across (0 left → 1 right), v down (0 surface → 1 floor), z depth (0 back → 1 front). */
+	interface Swimmer {
+		u: number;
+		v: number;
+		z: number;
+		tu: number;
+		tv: number;
+		tz: number;
+		dir: 1 | -1;
+		phase: number;
+	}
+	const swimmers = new Map<number, Swimmer>();
+
+	onMount(() => {
+		let raf = 0;
+		let last = performance.now();
+		const frame = (now: number) => {
+			raf = requestAnimationFrame(frame);
+			const dt = Math.min(0.05, (now - last) / 1000);
+			last = now;
+			draw(now / 1000, dt);
+		};
+		raf = requestAnimationFrame(frame);
+		return () => cancelAnimationFrame(raf);
+	});
+
+	// ── The tank's geometry ─────────────────────────────────────────────────────────────
+	// Front glass rectangle (F) and the back wall (B), smaller and a little lower: you look
+	// slightly down into the tank, so the floor shows. P() maps a point in the tank to the screen.
+	let fx0 = 0,
+		fx1 = 0,
+		fy0 = 0,
+		fy1 = 0,
+		bx0 = 0,
+		bx1 = 0,
+		by0 = 0,
+		by1 = 0;
+	const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+	function P(u: number, v: number, z: number): [number, number] {
+		return [lerp(bx0 + u * (bx1 - bx0), fx0 + u * (fx1 - fx0), z), lerp(by0 + v * (by1 - by0), fy0 + v * (fy1 - fy0), z)];
+	}
+	/** How much smaller things look at depth z. */
+	const depthScale = (z: number) => lerp((bx1 - bx0) / (fx1 - fx0), 1, z);
+	/** The substrate's surface (v). */
+	const FLOOR = 0.88;
+
+	function quad(c: CanvasRenderingContext2D, pts: [number, number][], fill: string | CanvasGradient) {
+		c.fillStyle = fill;
+		c.beginPath();
+		c.moveTo(pts[0][0], pts[0][1]);
+		for (const p of pts.slice(1)) c.lineTo(p[0], p[1]);
+		c.closePath();
+		c.fill();
+	}
+
+	/**
+	 * A voxel block standing in the tank: u0–u1 across, z0–z1 deep, from v1 (bottom) up to v0
+	 * (top). Draws the side facing the middle (perspective), the top, then the front.
+	 */
+	function cube(c: CanvasRenderingContext2D, u0: number, u1: number, z0: number, z1: number, v0: number, v1: number, col: string) {
+		const um = (u0 + u1) / 2;
+		if (um < 0.5) quad(c, [P(u1, v0, z1), P(u1, v0, z0), P(u1, v1, z0), P(u1, v1, z1)], shade(col, 0.72));
+		else quad(c, [P(u0, v0, z1), P(u0, v0, z0), P(u0, v1, z0), P(u0, v1, z1)], shade(col, 0.72));
+		quad(c, [P(u0, v0, z0), P(u1, v0, z0), P(u1, v0, z1), P(u0, v0, z1)], shade(col, 1.18));
+		quad(c, [P(u0, v0, z1), P(u1, v0, z1), P(u1, v1, z1), P(u0, v1, z1)], col);
+	}
+
+	/** The front outline of the glass, for clipping and the frame. */
+	function outline(c: CanvasRenderingContext2D, shape: TankLook['shape']) {
+		const W = fx1 - fx0;
+		const bulge = (fy1 - fy0) * 0.05;
+		c.beginPath();
+		if (shape === 'bowfront') {
+			c.moveTo(fx0, fy0);
+			c.quadraticCurveTo(fx0 + W / 2, fy0 + bulge * 2, fx1, fy0);
+			c.lineTo(fx1, fy1);
+			c.quadraticCurveTo(fx0 + W / 2, fy1 + bulge * 2, fx0, fy1);
+		} else if (shape === 'cylinder') {
+			c.ellipse(fx0 + W / 2, fy0, W / 2, bulge * 1.6, 0, Math.PI, 0, true);
+			c.lineTo(fx1, fy1);
+			c.ellipse(fx0 + W / 2, fy1, W / 2, bulge * 1.6, 0, 0, Math.PI);
+		} else if (shape === 'hex') {
+			c.moveTo(fx0, fy0);
+			c.lineTo(fx0 + W * 0.22, fy0 + bulge);
+			c.lineTo(fx1 - W * 0.22, fy0 + bulge);
+			c.lineTo(fx1, fy0);
+			c.lineTo(fx1, fy1);
+			c.lineTo(fx1 - W * 0.22, fy1 + bulge);
+			c.lineTo(fx0 + W * 0.22, fy1 + bulge);
+			c.lineTo(fx0, fy1);
+		} else c.rect(fx0, fy0, W, fy1 - fy0);
+		c.closePath();
+	}
+
+	// Seeded randomness, so the scenery stays put from frame to frame.
+	function rng(seed: number) {
+		let h = seed * 2654435761;
+		return () => {
+			h = Math.imul(h ^ (h >>> 15), 2246822507);
+			h = Math.imul(h ^ (h >>> 13), 3266489909);
+			return ((h ^= h >>> 16) >>> 0) / 4294967296;
+		};
+	}
+
+	function draw(t: number, dt: number) {
+		if (!canvas || !wrap) return;
+		const W = wrap.clientWidth;
+		const H = height || wrap.clientHeight || 220;
+		if (W < 10 || H < 10) return;
+		const dpr = Math.min(2, window.devicePixelRatio || 1);
+		if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+			canvas.width = Math.round(W * dpr);
+			canvas.height = Math.round(H * dpr);
+		}
+		const c = canvas.getContext('2d')!;
+		c.setTransform(dpr, 0, 0, dpr, 0, 0);
+		c.imageSmoothingEnabled = false;
+		c.clearRect(0, 0, W, H);
+		const L = { ...DEFAULT_LOOK, ...look };
+		const trim = TANK_TRIMS.find((x) => x.id === L.trim)?.color ?? '#1e2630';
+		const standCol = TANK_STANDS.find((x) => x.id === L.stand)?.color ?? '#4a2e1c';
+		const tint = TANK_LIGHTS.find((x) => x.id === L.light)?.tint ?? 'rgba(0,0,0,0)';
+		const rimless = L.shape === 'panorama';
+
+		// Layout: hood/rim on top, the glass, the base rail and (optionally) the stand.
+		const standH = stand ? Math.round(H * 0.17) : 0;
+		const rimH = rimless ? 4 : Math.max(8, Math.round(H * 0.045));
+		const baseH = rimless ? 4 : Math.max(6, Math.round(H * 0.035));
+		const side = rimless ? 3 : Math.max(4, Math.round(W * 0.008));
+		fx0 = side;
+		fx1 = W - side;
+		fy0 = rimH;
+		fy1 = H - baseH - standH;
+		const iw = fx1 - fx0;
+		const ih = fy1 - fy0;
+		const inset = L.shape === 'cylinder' ? 0.13 : L.shape === 'hex' ? 0.12 : 0.085;
+		bx0 = fx0 + iw * inset;
+		bx1 = fx1 - iw * inset;
+		by0 = fy0 + ih * 0.03;
+		by1 = fy1 - ih * 0.2;
+		const dirty = 1 - clean / 100;
+		const salt = water === 'salt';
+		const top = salt ? '#5ec8f0' : '#6ed0c0';
+		const deep = salt ? '#1a4a98' : '#185a66';
+
+		c.save();
+		outline(c, L.shape);
+		c.clip();
+		// Side walls, back wall and the underside of the surface.
+		c.fillStyle = mix(top, deep, 0.45);
+		c.fillRect(0, 0, W, H);
+		const bw = c.createLinearGradient(0, by0, 0, by1);
+		bw.addColorStop(0, mix(top, deep, 0.25));
+		bw.addColorStop(1, deep);
+		quad(c, [P(0, 0, 0), P(1, 0, 0), P(1, 1, 0), P(0, 1, 0)], bw);
+		const sideG = (x0: number, x1: number) => {
+			const g = c.createLinearGradient(x0, 0, x1, 0);
+			g.addColorStop(0, mix(top, deep, 0.35));
+			g.addColorStop(1, mix(top, deep, 0.6));
+			return g;
+		};
+		quad(c, [P(0, 0, 1), P(0, 0, 0), P(0, 1, 0), P(0, 1, 1)], sideG(fx0, bx0));
+		quad(c, [P(1, 0, 1), P(1, 0, 0), P(1, 1, 0), P(1, 1, 1)], sideG(fx1, bx1));
+		const surf = c.createLinearGradient(0, fy0, 0, by0);
+		surf.addColorStop(0, 'rgba(255,255,255,0.45)');
+		surf.addColorStop(1, 'rgba(255,255,255,0.12)');
+		quad(c, [P(0, 0, 1), P(1, 0, 1), P(1, 0, 0), P(0, 0, 0)], surf);
+		// Ripples on the surface.
+		c.fillStyle = 'rgba(255,255,255,0.35)';
+		for (let i = 0; i < 14; i++) {
+			const u = (i * 0.137 + t * 0.03 * (i % 2 ? 1 : -1) + 10) % 1;
+			const z = (i * 0.29) % 1;
+			const [x, y] = P(u, 0, z);
+			c.fillRect(x, y + 1, 10 * depthScale(z), 1.5);
+		}
+		// The backdrop picture on the back wall.
+		if (decor.includes('backdrop')) {
+			const r = rng(7);
+			for (let i = 0; i < 9; i++) {
+				const u0 = i / 9;
+				const hgt = 0.25 + r() * 0.35;
+				quad(c, [P(u0, 1 - hgt, 0), P(u0 + 0.12, 1 - hgt - 0.05, 0), P(u0 + 0.12, 1, 0), P(u0, 1, 0)], salt ? '#2a4a8a' : '#2a5a5a');
+			}
+		}
+
+		// The floor: substrate surface receding to the back wall, and its cut face behind the front glass.
+		const sub = decor.includes('sand') ? '#e8d8a8' : decor.includes('gravel') ? '#8a8478' : salt ? '#e0d0a0' : '#b8a888';
+		const fg = c.createLinearGradient(0, by1, 0, fy1);
+		fg.addColorStop(0, shade(sub, 0.7));
+		fg.addColorStop(1, sub);
+		quad(c, [P(0, FLOOR, 0), P(1, FLOOR, 0), P(1, FLOOR, 1), P(0, FLOOR, 1)], fg);
+		quad(c, [P(0, 1, 0), P(1, 1, 0), P(1, FLOOR, 0), P(0, FLOOR, 0)], shade(sub, 0.6));
+		{
+			const r = rng(3);
+			for (let i = 0; i < 90; i++) {
+				const u = r();
+				const z = r();
+				const [x, y] = P(u, FLOOR, z);
+				const s = depthScale(z) * (2 + r() * 3);
+				c.fillStyle = shade(sub, 0.75 + r() * 0.45);
+				c.fillRect(x, y - s * 0.5, s * 1.4, s * 0.7);
+			}
+		}
+		// The substrate's cut face behind the front glass: layers of sand and pebbles.
+		{
+			const [, ya] = P(0, FLOOR, 1);
+			const sg = c.createLinearGradient(0, ya, 0, fy1);
+			sg.addColorStop(0, shade(sub, 0.95));
+			sg.addColorStop(1, shade(sub, 0.55));
+			quad(c, [P(0, FLOOR, 1), P(1, FLOOR, 1), P(1, 1.02, 1), P(0, 1.02, 1)], sg);
+			const r = rng(9);
+			for (let i = 0; i < 70; i++) {
+				const x = fx0 + r() * (fx1 - fx0);
+				const y = ya + 3 + r() * (fy1 - ya - 4);
+				const sz = 2 + r() * 4;
+				c.fillStyle = shade(sub, 0.6 + r() * 0.5);
+				c.fillRect(x, y, sz * 1.3, sz * 0.8);
+			}
+		}
+		// Light dancing on the floor (caustics).
+		c.fillStyle = 'rgba(255,255,255,0.13)';
+		for (let i = 0; i < 18; i++) {
+			const u = (i * 0.173 + Math.sin(t * 0.5 + i) * 0.03 + 1) % 1;
+			const z = (i * 0.311 + Math.cos(t * 0.4 + i * 2) * 0.03 + 1) % 1;
+			const [x, y] = P(u, FLOOR, z);
+			const s = depthScale(z) * (8 + 4 * Math.sin(t * 1.3 + i));
+			c.fillRect(x, y - s * 0.15, s, s * 0.3);
+		}
+		// Shafts of light from above.
+		const rays = decor.includes('light') ? 5 : 3;
+		c.fillStyle = decor.includes('light') ? 'rgba(255,255,230,0.11)' : 'rgba(255,255,255,0.05)';
+		for (let i = 0; i < rays; i++) {
+			const u = (i + 0.5) / rays + Math.sin(t * 0.3 + i) * 0.04;
+			const [ax, ay] = P(u, 0, 0.6);
+			const [bxx, byy] = P(u + 0.18, FLOOR, 0.3);
+			c.beginPath();
+			c.moveTo(ax, ay);
+			c.lineTo(ax + 22, ay);
+			c.lineTo(bxx + 40, byy);
+			c.lineTo(bxx, byy);
+			c.fill();
+		}
+
+		// Everything in the water, back to front.
+		const items: { z: number; f: () => void }[] = [];
+		scenery(c, t, items);
+		swim(c, t, dt, items, W);
+		items.sort((a, b) => a.z - b.z);
+		for (const it of items) it.f();
+
+		// Bubbles rising (an air stone if there is one).
+		const stone = decor.includes('bubbles');
+		c.fillStyle = 'rgba(255,255,255,0.65)';
+		for (let i = 0; i < (stone ? 26 : 10); i++) {
+			const z = stone ? 0.35 : (i * 0.37) % 1;
+			const v = 1 - ((t * 0.25 + i * 0.137) % 1);
+			const u = stone ? 0.9 + Math.sin(t * 3 + i) * 0.012 : (i * 0.193 + 0.05) % 1;
+			const [x, y] = P(u, v * FLOOR, z);
+			const s = (2 + (i % 3)) * depthScale(z);
+			c.fillRect(Math.round(x), Math.round(y), s, s);
+		}
+		// The light's colour, then dirt: murky water and algae on the glass.
+		c.fillStyle = tint;
+		c.fillRect(0, 0, W, H);
+		if (dirty > 0.2) {
+			c.fillStyle = `rgba(90,110,40,${(dirty - 0.2) * 0.45})`;
+			c.fillRect(0, 0, W, H);
+			c.fillStyle = `rgba(60,110,30,${(dirty - 0.2) * 0.85})`;
+			for (let i = 0; i < dirty * 50; i++) {
+				const ax = fx0 + ((i * 53) % iw);
+				c.fillRect(ax, fy1 - 10 - ((i * 29) % Math.max(1, ih * dirty * 0.8)), 4 + (i % 4), 4 + (i % 3));
+			}
+		}
+		glass(c, L.shape, W);
+		c.restore();
+		frame(c, L.shape, trim, rimless, W, H, rimH, baseH, standH, tint);
+		if (stand) drawStand(c, standCol, W, H, standH);
+	}
+
+	/** Rocks, caves, wood, plants, coral and the rest, each placed somewhere in the tank. */
+	function scenery(c: CanvasRenderingContext2D, t: number, items: { z: number; f: () => void }[]) {
+		const has = (d: DecorTag) => decor.includes(d);
+		const rock = (u: number, z: number, size: number, col: string) => {
+			items.push({
+				z,
+				f: () => {
+					const w = 0.09 * size;
+					cube(c, u - w, u + w, z - 0.12 * size, z, FLOOR - 0.12 * size, FLOOR, col);
+					cube(c, u - w * 0.7, u + w * 0.5, z - 0.1 * size, z - 0.02, FLOOR - 0.22 * size, FLOOR - 0.12 * size, shade(col, 1.06));
+					cube(c, u - w * 0.35, u + w * 0.2, z - 0.07 * size, z - 0.04, FLOOR - 0.29 * size, FLOOR - 0.22 * size, shade(col, 1.12));
+				}
+			});
+		};
+		if (has('rock')) {
+			rock(0.14, 0.32, 1.2, '#a89480');
+			rock(0.83, 0.6, 0.8, '#b8a088');
+		}
+		if (has('cave')) {
+			items.push({
+				z: 0.5,
+				f: () => {
+					const col = '#767680';
+					cube(c, 0.27, 0.3, 0.4, 0.48, FLOOR - 0.13, FLOOR, col);
+					cube(c, 0.37, 0.4, 0.4, 0.48, FLOOR - 0.13, FLOOR, col);
+					cube(c, 0.26, 0.41, 0.39, 0.48, FLOOR - 0.19, FLOOR - 0.13, shade(col, 1.08));
+					cube(c, 0.29, 0.37, 0.41, 0.46, FLOOR - 0.23, FLOOR - 0.19, shade(col, 1.14));
+					const [a, b] = P(0.3, FLOOR - 0.13, 0.48);
+					const [cx, d] = P(0.37, FLOOR, 0.48);
+					c.fillStyle = '#12161e';
+					c.fillRect(a, b, cx - a, d - b);
+				}
+			});
+		}
+		if (has('wood')) {
+			items.push({
+				z: 0.42,
+				f: () => {
+					for (let i = 0; i < 7; i++) cube(c, 0.55 + i * 0.03, 0.59 + i * 0.03, 0.34, 0.42, FLOOR - 0.06 - i * 0.07, FLOOR - i * 0.07, i % 2 ? '#6a4a2a' : '#7a5632');
+					for (let i = 0; i < 4; i++) cube(c, 0.62 - i * 0.03, 0.66 - i * 0.03, 0.36, 0.41, FLOOR - 0.3 - i * 0.06, FLOOR - 0.24 - i * 0.06, '#5a3e22');
+				}
+			});
+		}
+		if (has('plants')) {
+			// Taller as they grow in; past overgrown they reach the surface and spread along it.
+			const g = Math.max(0, Math.min(100, growth));
+			const tall = 0.25 + (g / 100) * 0.75;
+			const r = rng(11);
+			const clumps = 9 + Math.round(g / 12);
+			for (let i = 0; i < clumps; i++) {
+				const u = 0.04 + r() * 0.92;
+				const z = 0.05 + r() * 0.8;
+				const h = (0.35 + r() * 0.45) * tall;
+				const col = ['#2f9a3a', '#4ab84a', '#6acd4a', '#3aa060'][i % 4];
+				const leaf = r() < 0.5;
+				items.push({
+					z,
+					f: () => {
+						const n = Math.max(3, Math.round(h / 0.05));
+						for (let k = 0; k < n; k++) {
+							const sway = Math.sin(t * 1.1 + i + k * 0.35) * 0.006 * k;
+							const w = leaf && k % 3 === 1 ? 0.028 : 0.012;
+							cube(c, u - w + sway, u + w + sway, z - 0.02, z, FLOOR - (k + 1) * (h / n), FLOOR - k * (h / n), k % 2 ? col : shade(col, 1.1));
+						}
+					}
+				});
+			}
+			if (g > 70) {
+				// A tangled mat of leaves along the surface, thicker the longer it's left.
+				const mat = (g - 70) / 30;
+				items.push({
+					z: 0.99,
+					f: () => {
+						const r2 = rng(5);
+						for (let i = 0; i < 40 * mat + 6; i++) {
+							const u = r2();
+							const z = r2();
+							const [x, y] = P(u, 0.02 + r2() * 0.08 * mat, z);
+							const s = depthScale(z) * (6 + r2() * 8);
+							c.fillStyle = i % 2 ? 'rgba(60,150,60,0.85)' : 'rgba(90,180,70,0.85)';
+							c.fillRect(x, y, s, s * 0.5);
+						}
+					}
+				});
+			}
+		}
+		if (has('coral')) {
+			const cols = ['#ff7a8a', '#ffb84a', '#c86af0', '#ff5a5a', '#5ad8c8'];
+			const spots: [number, number][] = [
+				[0.4, 0.3],
+				[0.55, 0.72],
+				[0.7, 0.25],
+				[0.3, 0.75],
+				[0.9, 0.4]
+			];
+			spots.forEach(([u, z], i) => {
+				const col = cols[i % cols.length];
+				items.push({
+					z,
+					f: () => {
+						cube(c, u - 0.012, u + 0.012, z - 0.03, z, FLOOR - 0.16, FLOOR, col);
+						cube(c, u - 0.045, u - 0.012, z - 0.03, z, FLOOR - 0.12, FLOOR - 0.08, col);
+						cube(c, u - 0.045, u - 0.03, z - 0.03, z, FLOOR - 0.22, FLOOR - 0.12, col);
+						cube(c, u + 0.012, u + 0.045, z - 0.03, z, FLOOR - 0.16, FLOOR - 0.12, shade(col, 1.08));
+						cube(c, u + 0.03, u + 0.045, z - 0.03, z, FLOOR - 0.26, FLOOR - 0.16, shade(col, 1.08));
+						cube(c, u - 0.01, u + 0.01, z - 0.03, z, FLOOR - 0.24, FLOOR - 0.16, shade(col, 1.15));
+					}
+				});
+			});
+		}
+		if (has('anemone')) {
+			items.push({
+				z: 0.62,
+				f: () => {
+					cube(c, 0.74, 0.84, 0.54, 0.62, FLOOR - 0.04, FLOOR, '#c86a8a');
+					for (let i = 0; i < 9; i++) {
+						const sway = Math.sin(t * 2 + i) * 0.008;
+						cube(c, 0.745 + i * 0.01 + sway, 0.752 + i * 0.01 + sway, 0.56, 0.6, FLOOR - 0.14 - (i % 3) * 0.02, FLOOR - 0.04, '#f4a8c8');
+					}
+				}
+			});
+		}
+		if (has('ornament')) {
+			items.push({
+				z: 0.78,
+				f: () => {
+					cube(c, 0.44, 0.56, 0.7, 0.78, FLOOR - 0.1, FLOOR, '#8a5a2a');
+					cube(c, 0.44, 0.56, 0.68, 0.76, FLOOR - 0.15, FLOOR - 0.1, '#7a4a22');
+					cube(c, 0.49, 0.51, 0.77, 0.785, FLOOR - 0.12, FLOOR - 0.06, '#f0c040');
+					// Treasure glinting.
+					if (Math.sin(t * 2) > 0.6) {
+						const [x, y] = P(0.47, FLOOR - 0.16, 0.74);
+						c.fillStyle = '#fff6b0';
+						c.fillRect(x, y, 3, 3);
+					}
+				}
+			});
+		}
+		if (has('bubbles')) {
+			items.push({ z: 0.35, f: () => cube(c, 0.88, 0.92, 0.32, 0.36, FLOOR - 0.03, FLOOR, '#5a6a7a') });
+		}
+	}
+
+	/** The fish, swimming in three dimensions. */
+	function swim(c: CanvasRenderingContext2D, t: number, dt: number, items: { z: number; f: () => void }[], W: number) {
+		const live = new Set(fish.map((f) => f.u));
+		for (const u of swimmers.keys()) if (!live.has(u)) swimmers.delete(u);
+		const pxPerCm = (fx1 - fx0) / widthCm;
+		for (const f of fish) {
+			const sp = species(f.s);
+			const isCenter = f.u === center;
+			const base = Math.max(9, Math.min(W * 0.7, sp.cm * pxPerCm)) * (isCenter ? 1.1 : 1);
+			const crawl = sp.shape === 'snail' || sp.shape === 'crab' || sp.shape === 'shrimp';
+			const floor = sp.shape === 'bottom' || sp.shape === 'ray' || crawl;
+			// Keep the whole fish inside the glass.
+			const margin = Math.min(0.4, base / 2 / (fx1 - fx0));
+			const vMin = floor ? FLOOR : 0.08 + Math.min(0.3, (base * 0.25) / (fy1 - fy0));
+			const vMax = floor ? FLOOR : Math.max(vMin + 0.02, FLOOR - 0.06 - Math.min(0.3, (base * 0.2) / (fy1 - fy0)));
+			let s = swimmers.get(f.u);
+			if (!s) {
+				const u = margin + Math.random() * (1 - 2 * margin);
+				const v = vMin + Math.random() * (vMax - vMin);
+				const z = 0.15 + Math.random() * 0.8;
+				s = { u, v, z, tu: u, tv: v, tz: z, dir: Math.random() < 0.5 ? 1 : -1, phase: Math.random() * 10 };
+				swimmers.set(f.u, s);
+			}
+			const mood = isCenter ? happy / 100 : 0.7;
+			if (Math.hypot(s.tu - s.u, (s.tv - s.v) * 0.6, (s.tz - s.z) * 0.5) < 0.02) {
+				s.tu = margin + Math.random() * (1 - 2 * margin);
+				s.tv = isCenter && mood < 0.3 ? vMax - Math.random() * 0.05 : vMin + Math.random() * (vMax - vMin);
+				s.tz = isCenter ? 0.6 + Math.random() * 0.38 : 0.12 + Math.random() * 0.85;
+			}
+			const pxSpeed = sp.shape === 'snail' ? 3 : crawl ? 9 : (20 + 30 * mood) * Math.min(1.6, Math.max(0.6, base / 40));
+			const speed = pxSpeed / (fx1 - fx0);
+			const du = s.tu - s.u;
+			const dv = s.tv - s.v;
+			const dz = s.tz - s.z;
+			const d = Math.hypot(du, dv, dz) || 1;
+			s.u += (du / d) * speed * dt;
+			s.v += (dv / d) * speed * dt * 0.6;
+			s.z += (dz / d) * speed * dt * 0.8;
+			if (Math.abs(du) > 0.01) s.dir = du > 0 ? 1 : -1;
+			const sw = s;
+			items.push({
+				z: sw.z,
+				f: () => {
+					const k = depthScale(sw.z);
+					const len = base * k;
+					// Its shadow on the floor, then the fish (hazier further back).
+					const [shx, shy] = P(sw.u, FLOOR, sw.z);
+					c.fillStyle = `rgba(0,20,30,${floor ? 0.25 : 0.14})`;
+					c.beginPath();
+					c.ellipse(shx, shy, len * 0.4, Math.max(1.5, len * 0.07), 0, 0, Math.PI * 2);
+					c.fill();
+					const [x, y0] = P(sw.u, sw.v, sw.z);
+					const y = floor ? y0 - len * 0.12 : y0;
+					drawFish(c, sp, x, y, len, sw.dir, t * (0.6 + mood) + sw.phase, undefined, 0.72 + 0.28 * sw.z);
+					if (isCenter && happy >= 75 && Math.floor(t * 1.5 + sw.phase) % 4 === 0) {
+						c.fillStyle = '#ff5d8f';
+						c.fillRect(x - 3, y - len * 0.5 - ((t * 20) % 12), 6, 5);
+						c.fillRect(x - 1, y - len * 0.5 - ((t * 20) % 12) + 5, 2, 2);
+					}
+				}
+			});
+		}
+	}
+
+	/** Reflections on the glass, which depend on its shape. */
+	function glass(c: CanvasRenderingContext2D, shape: TankLook['shape'], W: number) {
+		const iw = fx1 - fx0;
+		const g = (x: number, w: number, a: number) => {
+			const gr = c.createLinearGradient(x, 0, x + w, 0);
+			gr.addColorStop(0, 'rgba(255,255,255,0)');
+			gr.addColorStop(0.5, `rgba(255,255,255,${a})`);
+			gr.addColorStop(1, 'rgba(255,255,255,0)');
+			c.fillStyle = gr;
+			c.fillRect(x, fy0 - 20, w, fy1 - fy0 + 40);
+		};
+		if (shape === 'cylinder') {
+			// Round glass: dark at the curving edges, a long highlight down one side.
+			const e = c.createLinearGradient(fx0, 0, fx1, 0);
+			e.addColorStop(0, 'rgba(0,10,30,0.45)');
+			e.addColorStop(0.12, 'rgba(0,10,30,0)');
+			e.addColorStop(0.88, 'rgba(0,10,30,0)');
+			e.addColorStop(1, 'rgba(0,10,30,0.45)');
+			c.fillStyle = e;
+			c.fillRect(fx0, 0, iw, fy1 + 40);
+			g(fx0 + iw * 0.12, iw * 0.06, 0.35);
+			g(fx0 + iw * 0.82, iw * 0.03, 0.2);
+		} else if (shape === 'bowfront') {
+			g(fx0 + iw * 0.04, iw * 0.08, 0.22);
+			g(fx1 - iw * 0.12, iw * 0.08, 0.22);
+		} else if (shape === 'hex') {
+			// Angled corner panes: a touch darker, with a seam where they meet the front pane.
+			c.fillStyle = 'rgba(0,20,40,0.16)';
+			c.fillRect(fx0, 0, iw * 0.22, fy1 + 40);
+			c.fillRect(fx1 - iw * 0.22, 0, iw * 0.22, fy1 + 40);
+			c.fillStyle = 'rgba(255,255,255,0.35)';
+			c.fillRect(fx0 + iw * 0.22 - 1, 0, 2, fy1 + 40);
+			c.fillRect(fx1 - iw * 0.22 - 1, 0, 2, fy1 + 40);
+			g(fx0 + iw * 0.3, iw * 0.05, 0.16);
+		} else {
+			// A diagonal glare across flat glass.
+			c.fillStyle = 'rgba(255,255,255,0.07)';
+			c.beginPath();
+			c.moveTo(fx0 + iw * 0.1, fy0);
+			c.lineTo(fx0 + iw * 0.18, fy0);
+			c.lineTo(fx0 + iw * 0.06, fy1);
+			c.lineTo(fx0 - iw * 0.02, fy1);
+			c.fill();
+			c.fillRect(fx0 + iw * 0.2, fy0, 3, fy1 - fy0);
+		}
+		void W;
+	}
+
+	/** The rim, hood light and base rail, in the trim's colour (rimless tanks: just silicone seams). */
+	function frame(c: CanvasRenderingContext2D, shape: TankLook['shape'], trim: string, rimless: boolean, W: number, H: number, rimH: number, baseH: number, standH: number, tint: string) {
+		const iw = fx1 - fx0;
+		const bulge = (fy1 - fy0) * 0.05;
+		if (rimless) {
+			c.strokeStyle = 'rgba(200,235,255,0.55)';
+			c.lineWidth = 2;
+			c.strokeRect(fx0, fy0, iw, fy1 - fy0);
+			c.strokeStyle = 'rgba(200,235,255,0.25)';
+			c.beginPath();
+			c.moveTo(fx0, fy0);
+			c.lineTo(bx0, by0);
+			c.moveTo(fx1, fy0);
+			c.lineTo(bx1, by0);
+			c.stroke();
+			c.lineWidth = 1;
+			// A slim pendant light above.
+			c.fillStyle = shade(trim, 0.9);
+			c.fillRect(W * 0.3, 0, W * 0.4, 3);
+		} else {
+			c.save();
+			c.lineJoin = 'round';
+			c.strokeStyle = trim;
+			c.lineWidth = Math.max(3, (fx0 + (W - fx1)) / 2) * 1.6;
+			outline(c, shape);
+			c.stroke();
+			c.restore();
+			// Hood on top, base rail at the bottom (curved to follow the shape).
+			const hood = (y: number, h: number, curve: number) => {
+				c.fillStyle = shade(trim, 1.18);
+				c.fillRect(0, y - h * 0.3, W, h * 0.3);
+				c.fillStyle = trim;
+				c.beginPath();
+				c.moveTo(0, y);
+				if (shape === 'hex') {
+					c.lineTo(fx0 + iw * 0.22, y + curve);
+					c.lineTo(fx1 - iw * 0.22, y + curve);
+					c.lineTo(W, y);
+				} else c.quadraticCurveTo(W / 2, y + curve * 2, W, y);
+				c.lineTo(W, y + h);
+				if (shape === 'hex') {
+					c.lineTo(fx1 - iw * 0.22, y + h + curve);
+					c.lineTo(fx0 + iw * 0.22, y + h + curve);
+					c.lineTo(0, y + h);
+				} else c.quadraticCurveTo(W / 2, y + h + curve * 2, 0, y + h);
+				c.closePath();
+				c.fill();
+				c.fillStyle = 'rgba(255,255,255,0.18)';
+				c.fillRect(0, y, W, 1.5);
+			};
+			const curve = shape === 'rect' ? 0 : shape === 'cylinder' ? bulge * 0.8 : bulge * 0.5;
+			hood(fy0 - rimH, rimH, curve);
+			hood(fy1, baseH, curve);
+			// The hood light's glow.
+			const glow = c.createLinearGradient(0, fy0, 0, fy0 + 30);
+			glow.addColorStop(0, tint.replace(/[\d.]+\)$/, '0.5)'));
+			glow.addColorStop(1, 'rgba(255,255,255,0)');
+			c.fillStyle = tint === 'rgba(255,255,240,0)' ? 'rgba(255,255,240,0.18)' : glow;
+			c.fillRect(fx0, fy0, iw, 3);
+		}
+		void H;
+		void standH;
+	}
+
+	function drawStand(c: CanvasRenderingContext2D, col: string, W: number, H: number, standH: number) {
+		const y = H - standH;
+		const marble = col === '#cfc8c0';
+		c.fillStyle = shade(col, 1.2);
+		c.fillRect(0, y, W, 5);
+		c.fillStyle = col;
+		c.fillRect(0, y + 5, W, standH - 5);
+		if (marble) {
+			c.strokeStyle = 'rgba(120,110,100,0.35)';
+			for (let i = 0; i < 6; i++) {
+				c.beginPath();
+				c.moveTo((i * W) / 6, y + 5);
+				c.quadraticCurveTo((i * W) / 6 + 30, y + standH / 2, (i * W) / 6 + 10, H);
+				c.stroke();
+			}
+		}
+		// Cabinet doors with handles.
+		const doors = Math.max(2, Math.round(W / 220));
+		const dw = (W - 16) / doors;
+		for (let i = 0; i < doors; i++) {
+			const x = 8 + i * dw;
+			c.fillStyle = shade(col, 0.85);
+			c.fillRect(x + 3, y + 10, dw - 6, standH - 16);
+			c.fillStyle = shade(col, 0.95);
+			c.fillRect(x + 6, y + 13, dw - 12, standH - 22);
+			c.fillStyle = '#c8c8c0';
+			c.fillRect(i % 2 ? x + 10 : x + dw - 14, y + standH / 2 - 6, 4, 12);
+		}
+		c.fillStyle = 'rgba(0,0,0,0.25)';
+		c.fillRect(0, H - 4, W, 4);
+	}
+
+	function mix(a: string, b: string, f: number) {
+		const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+		const [x, y] = [p(a), p(b)];
+		return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * f).toString(16).padStart(2, '0')).join('');
+	}
+</script>
+
+<div class="tank" class:fill={!height} bind:this={wrap} style={height ? `height: ${height}px` : ''}>
+	<canvas bind:this={canvas} style="width: 100%; height: 100%" aria-hidden="true"></canvas>
+</div>
+
+<style>
+	.tank {
+		position: relative;
+		width: 100%;
+		overflow: hidden;
+		border-radius: 6px;
+	}
+	.tank.fill {
+		height: 100%;
+	}
+	canvas {
+		display: block;
+		image-rendering: pixelated;
+	}
+</style>

@@ -193,6 +193,17 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k.h.k.s.k.h.k.s.'
 	},
+	// iFish: a relaxed, bubbly shop tune in F major (it plays for a long time, so it stays gentle).
+	'ifish-store': {
+		bpm: 92,
+		gain: 0.55,
+		parts: [
+			{ voice: 'pluck', level: 0.06, notes: 'F4 . A4 . C5 . A4 . G4 . Bb4 . D5 . Bb4 . A4 . C5 . F5 . C5 . G4 . E4 . C4 - - - ' },
+			{ voice: 'sine', level: 0.08, notes: 'F2 . . . C3 . . . G2 . . . D3 . . . F2 . . . A2 . . . C2 . . . C2 . . . ' },
+			{ voice: 'bell', level: 0.018, notes: '. . . . . . . . . . . . . . . . . . . . . . . . . . . . A6 . F6 . ' }
+		],
+		drums: 'k...h...k...h..h'
+	},
 	// Pong: one tune that speeds up with each stage (FASTER!, SHRINKED!, DOUBLE TROUBLE!, FASTERR!!!).
 	...Object.fromEntries(
 		[112, 124, 134, 144, 158].map((bpm, stage): [string, Track] => [
@@ -576,6 +587,33 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 			a._tone('square', 1200, 700, 0.25, 0.05);
 			a._tone('square', 1100, 600, 0.25, 0.05, 0.22);
 		}
+	},
+	ifish: {
+		click: (a) => a._tone('square', 880, 880, 0.03, 0.03),
+		coin: (a) => {
+			a._tone('square', 988, 988, 0.06, 0.04);
+			a._tone('square', 1319, 1319, 0.12, 0.04, 0.06);
+		},
+		splash: (a) => {
+			a._fx(0.4, 0.18, 'lowpass', 2600, 300);
+			a._tone('sine', 600, 160, 0.25, 0.06);
+		},
+		crate: (a) => {
+			a._fx(0.25, 0.2, 'lowpass', 1200, 150);
+			a._tone('square', 200, 120, 0.15, 0.06);
+		},
+		reveal: (a) => a._arp([72, 76, 79], 0.07, 'triangle', 0.08, 0.15),
+		rare: (a) => a._arp([72, 76, 79, 84, 88, 91], 0.07, 'triangle', 0.09, 0.25),
+		reel: (a) => a._tone('square', 1500, 1500, 0.02, 0.015),
+		catch: (a) => a._arp([67, 72, 76, 79, 84], 0.08, 'square', 0.05, 0.18),
+		escape: (a) => a._arp([67, 63, 60], 0.1, 'triangle', 0.08, 0.2),
+		bite: (a) => {
+			a._tone('sine', 900, 500, 0.12, 0.08);
+			a._tone('sine', 900, 500, 0.12, 0.08, 0.15);
+		},
+		feed: (a) => a._fx(0.3, 0.08, 'bandpass', 3000, 1200),
+		done: (a) => a._arp([76, 79, 84], 0.08, 'triangle', 0.07, 0.15),
+		error: (a) => a._tone('square', 200, 160, 0.15, 0.05)
 	},
 	pong: {
 		paddle: (a) => a._tone('square', 520, 520, 0.06, 0.07),
