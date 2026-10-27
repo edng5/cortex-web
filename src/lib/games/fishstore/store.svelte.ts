@@ -1,4 +1,4 @@
-// iFish's simulation: the store's state, the rules (water, temperature, space,
+// FishMart's simulation: the store's state, the rules (water, temperature, space,
 // predators, fighting fish), timed tasks run by staff, customers buying from the sale tanks,
 // the show tank and its centrepiece pet, payroll, daily rewards, shipments and saving.
 //

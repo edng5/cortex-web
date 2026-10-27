@@ -1,4 +1,4 @@
-// iFish's data: real fish species (with the conditions they really need), tanks,
+// FishMart's data: real fish species (with the conditions they really need), tanks,
 // decorations, staff and suppliers. Everything the store simulation and its sanity checks use.
 import { FAMILIES } from './catalog';
 

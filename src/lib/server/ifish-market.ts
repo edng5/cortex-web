@@ -1,4 +1,4 @@
-// iFish's fish market: signed-in players list their rare (or rarer) fish for sale at a price in
+// FishMart's fish market: signed-in players list their rare (or rarer) fish for sale at a price in
 // cash or gems, and other players buy them. Listing takes the fish out of the seller's store
 // (the game removes it before posting); a sale hands the fish to the buyer straight away, and the
 // money waits here until the seller next opens the market and collects it. Unsold fish can be

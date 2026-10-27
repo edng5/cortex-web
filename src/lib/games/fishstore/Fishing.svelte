@@ -1,5 +1,5 @@
 <!--
-  iFish's fishing minigame, played like Stardew Valley's: cast (bait costs cash), wait for a bite
+  FishMart's fishing minigame, played like Stardew Valley's: cast (bait costs cash), wait for a bite
   and hook it, then hold (Space, mouse or finger) to lift the green bar and keep the fish inside it.
   The catch meter fills while the fish is in the bar and drains while it isn't. Rarer fish dart
   about faster and more often, and the bar is smaller. Fail, and you can net it with gems.

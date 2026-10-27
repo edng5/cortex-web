@@ -193,7 +193,7 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k.h.k.s.k.h.k.s.'
 	},
-	// iFish: a relaxed, bubbly shop tune in F major (it plays for a long time, so it stays gentle).
+	// FishMart: a relaxed, bubbly shop tune in F major (it plays for a long time, so it stays gentle).
 	'ifish-store': {
 		bpm: 92,
 		gain: 0.55,

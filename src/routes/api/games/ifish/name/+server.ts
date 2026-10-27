@@ -1,5 +1,5 @@
 // POST /api/games/ifish/name { name, kind: 'store' | 'fish' } → { ok, name } or { ok: false, message }
-// Checks a name an iFish player wants to use (their store's name, or their centrepiece fish's),
+// Checks a name an FishMart player wants to use (their store's name, or their centrepiece fish's),
 // with the same guardrails as leaderboard nicknames: no slurs, profanity or sexual terms
 // (including disguised ones), no impersonation. Store and fish names show publicly in the
 // global showcase, so the game only uses names this accepts.

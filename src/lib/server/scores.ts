@@ -13,7 +13,7 @@ export const GAMES = {
 	spaceinvaders: { boards: [1, 2, 3], max: 10_000_000 },
 	frogger: { boards: [1, 2], max: 1_000_000 },
 	pong: { boards: [1, 2], max: 100_000 },
-	// iFish has no high scores; it's listed so its progress can be saved to accounts.
+	// FishMart has no high scores; it's listed so its progress can be saved to accounts.
 	ifish: { boards: [] as number[], max: 0 }
 } as const;
 export type GameId = keyof typeof GAMES;

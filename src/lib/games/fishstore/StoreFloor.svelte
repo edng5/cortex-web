@@ -500,7 +500,7 @@
 
 		// The shop sign with the store's name.
 		{
-			const name = store.s.name || 'iFish';
+			const name = store.s.name || 'FishMart';
 			c.font = `900 ${Math.max(10, Math.round(T * 0.36))}px 'Arial Black', Impact, sans-serif`;
 			const tw = c.measureText(name).width + T * 0.6;
 			const sx = FW / 2 - tw / 2;

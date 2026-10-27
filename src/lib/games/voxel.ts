@@ -1,5 +1,5 @@
 // Voxel models, Crossy Road style: every model is a pile of boxes drawn with a light top face and a
-// darker front face. Shared by Frogger and iFish (which reuses Frogger's Magikarp).
+// darker front face. Shared by Frogger and FishMart (which reuses Frogger's Magikarp).
 //
 // A model is a list of boxes in tile units: (x, y) from the tile's top-left corner on the
 // ground (y grows toward the viewer), z up from the ground; w × d footprint, h tall.

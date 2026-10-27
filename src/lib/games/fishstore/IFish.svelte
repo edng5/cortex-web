@@ -1,5 +1,5 @@
 <!--
-  iFish: run a fish store. Stock sale tanks from daily supplier shipments (a gacha), set up a show
+  FishMart: run a fish store. Stock sale tanks from daily supplier shipments (a gacha), set up a show
   tank with a pet centrepiece to make the store popular, hire staff to build and clean (timed
   tasks that keep running while you're away), go fishing for rare fish, and show off your best
   fish to everyone. Works with touch and mouse; progress is saved (and synced when signed in).
@@ -125,7 +125,7 @@
 	let showcase = $state<{ store: string; species: string; fishName: string | null; bond: number; mine?: boolean }[] | null>(null);
 	let showcaseMsg = $state('');
 
-	/** iFish needs an account (your store lives in it): close the game and open the login. */
+	/** FishMart needs an account (your store lives in it): close the game and open the login. */
 	function login() {
 		onquit();
 		session.loginOpen = true;
@@ -438,7 +438,7 @@
 
 {#if !loggedIn}
 	<div class="gate">
-		<div class="brand big">i<span>Fish</span></div>
+		<div class="brand big">Fish<span>Mart</span></div>
 		<p>Run your own fish store: hundreds of real fish, show tanks, staff, fishing and a market to trade rare fish with other players.</p>
 		<p class="muted">Your store is saved to your account, so log in to play.</p>
 		<div class="row">
@@ -449,7 +449,7 @@
 {:else}
 <div class="ifish">
 	<header class="top">
-		<div class="brand">i<span>Fish</span></div>
+		<div class="brand">Fish<span>Mart</span></div>
 		<button class="storename" onclick={() => (naming = { kind: 'store', value: s.name, error: '', busy: false })} title="Rename your store">{s.name} ✎</button>
 		<div class="stats">
 			<span title="Cash">💵 {money(s.cash)}</span>
@@ -460,7 +460,7 @@
 		<button class="quit" onclick={() => (store.save(), onquit())}>Exit</button>
 	</header>
 
-	<nav class="tabs" aria-label="iFish sections">
+	<nav class="tabs" aria-label="FishMart sections">
 		{#each TABS as t (t.id)}
 			<button class:on={tab === t.id} onclick={() => ((tab = t.id), (note = ''), sfx('click'))}>
 				<span class="ic">{t.icon}</span><span class="lb">{t.label}</span>
@@ -851,7 +851,7 @@
 					submitName();
 				}}
 			>
-				<h3>{naming.kind === 'store' ? (s.named ? 'Rename your store' : 'Welcome to iFish! Name your store') : 'Name your centrepiece'}</h3>
+				<h3>{naming.kind === 'store' ? (s.named ? 'Rename your store' : 'Welcome to FishMart! Name your store') : 'Name your centrepiece'}</h3>
 				<input bind:value={naming.value} maxlength={naming.kind === 'store' ? 24 : 16} placeholder={naming.kind === 'store' ? 'e.g. Reef Haven' : 'e.g. Bubbles'} />
 				{#if naming.error}<p class="err">{naming.error}</p>{:else}<p class="muted small">Shown publicly in the showcase, so keep it friendly. Offensive names are rejected.</p>{/if}
 				<div class="row">

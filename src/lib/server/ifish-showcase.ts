@@ -1,5 +1,5 @@
-// iFish's global showcase: each signed-in player can show off one fish (their best, or their
-// pet centrepiece) under their store's name. There are no high scores in iFish; this is the
+// FishMart's global showcase: each signed-in player can show off one fish (their best, or their
+// pet centrepiece) under their store's name. There are no high scores in FishMart; this is the
 // shared part. Rarer fish (then more bonded ones) are listed first.
 import { getDb } from './db';
 import { checkName } from './player-name';

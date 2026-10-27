@@ -189,7 +189,7 @@ export const GAMES: GameSpec[] = [
 	{
 		id: 'ifish',
 		saveKey: 'ifish-save',
-		title: 'iFish',
+		title: 'FishMart',
 		blurb: 'Run your own fish store: 700+ real fish, daily supplier shipments, a show tank with a pet centrepiece, staff, fishing for legendaries, and a global showcase.',
 		icon: '/games/icons/ifish.png',
 		preview: '/games/previews/ifish.jpg',

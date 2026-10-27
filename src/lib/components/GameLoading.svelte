@@ -1,7 +1,7 @@
 <!--
   The loading screen for one E.Ngine game, themed on the game: Top Gun's jet streaks across the
   sky, Fishy's fish swims through rising bubbles, a Space Invader marches over the stars, Frogger's
-  frog hops across the lanes, Pong's ball rallies between the paddles, and iFish opens up shop.
+  frog hops across the lanes, Pong's ball rallies between the paddles, and FishMart opens up shop.
 -->
 <script lang="ts">
 	import type { GameSpec } from '$lib/games/registry';
@@ -113,7 +113,7 @@
 		image-rendering: pixelated;
 	}
 
-	/* iFish: the shop opens, its sign swinging, a fish swimming past the window. */
+	/* FishMart: the shop opens, its sign swinging, a fish swimming past the window. */
 	.ifish {
 		background: radial-gradient(ellipse at 50% 40%, #134a6a, #07121c 75%);
 	}

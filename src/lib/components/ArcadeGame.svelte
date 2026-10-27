@@ -1,6 +1,6 @@
 <!--
   One E.Ngine game (Edward's high-school games, ported to TypeScript) on a <canvas>, or (for games
-  made of menus and panels, like iFish) the game's own Svelte component.
+  made of menus and panels, like FishMart) the game's own Svelte component.
   Played with the keyboard, menus clicked; on touch screens, with on-screen controls
   (TouchControls) that send the same key presses, and the game sized to fill the width.
   `active` = false pauses the game (pop-up hidden, another game showing, or "Leave the game?").

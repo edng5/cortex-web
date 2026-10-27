@@ -49,7 +49,7 @@ export type NameCheck = { ok: true; name: string } | { ok: false; message: strin
 
 /**
  * Check a public name: a leaderboard nickname by default; `what`/`min`/`max` adapt it for other
- * names players choose (an iFish store's name, a pet fish's name).
+ * names players choose (an FishMart store's name, a pet fish's name).
  */
 export function checkName(raw: unknown, what = 'nickname', min = NAME_MIN, max = NAME_MAX): NameCheck {
 	const What = what[0].toUpperCase() + what.slice(1);
