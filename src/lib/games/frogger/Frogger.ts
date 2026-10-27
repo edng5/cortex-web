@@ -1407,7 +1407,7 @@ export class Frogger implements ArcadeGame {
 			['Railway', 'Red light: a train is coming!'],
 			['River', 'Hop on logs and lily pads'],
 			['Keep up', "Dawdle and a heron gets you"],
-			['Coins', `Spend ${ROLL_COST} on the gumball machine`]
+			['Coins', `Spend ${ROLL_COST} to roll for Characters`]
 		];
 		lines.forEach(([k, v], i) => {
 			const y = 180 + i * 42;
@@ -1426,7 +1426,7 @@ export class Frogger implements ArcadeGame {
 
 	private drawGumball(ctx: CanvasRenderingContext2D, now: number) {
 		this.back(ctx);
-		this.title(ctx, 'GUMBALL MACHINE', GAME_W / 2, 118, 32, '#ff8fc0');
+		this.title(ctx, 'CHARACTERS', GAME_W / 2, 118, 32, '#ff8fc0');
 		const cx = 160;
 		const cy = 230;
 		// Base and stand.
@@ -1581,7 +1581,7 @@ export class Frogger implements ArcadeGame {
 		ctx.strokeStyle = '#ff8fc0';
 		ctx.lineWidth = 3;
 		ctx.strokeRect(90, y0, 340, h);
-		this.title(ctx, 'GUMBALL ODDS', GAME_W / 2, y0 + 40, 24, '#ff8fc0');
+		this.title(ctx, 'CHARACTER ODDS', GAME_W / 2, y0 + 40, 24, '#ff8fc0');
 		ctx.font = `bold 15px ${ARIAL}`;
 		if (!odds.length) {
 			ctx.textAlign = 'center';
@@ -1611,7 +1611,7 @@ export class Frogger implements ArcadeGame {
 const MENU = [
 	{ id: 'classic', label: 'Classic' },
 	{ id: 'endless', label: 'Endless' },
-	{ id: 'gumball', label: 'Gumball Machine' },
+	{ id: 'gumball', label: 'Characters' },
 	{ id: 'scores', label: 'High Scores' },
 	{ id: 'controls', label: 'How to Play' },
 	{ id: 'quit', label: 'Quit' }

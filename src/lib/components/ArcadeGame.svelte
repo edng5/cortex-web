@@ -11,6 +11,7 @@
 	import { session } from '$lib/session.svelte';
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import TouchControls from './TouchControls.svelte';
+	import GameLoading from './GameLoading.svelte';
 	import { pullSave, watchSave } from '$lib/games/cloud-save';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
@@ -44,6 +45,7 @@
 		// Signed in: start from the account's progress if it's newer (coins, upgrades, settings…),
 		// and keep sending changes to it while playing.
 		let sync: ReturnType<typeof watchSave> | null = null;
+		const shown = performance.now();
 		(session.user ? pullSave(spec.id, spec.saveKey) : Promise.resolve())
 			.then(() => {
 				// Watch from here on (so taking the account's copy doesn't count as a new change).
@@ -51,6 +53,8 @@
 				syncFlush = sync.flush;
 				return spec.load();
 			})
+			// Show the loading screen for a moment at least, so it doesn't just flash.
+			.then((g) => new Promise<ArcadeGame>((done) => setTimeout(() => done(g), Math.max(0, shown + 900 - performance.now()))))
 			.then((g) => {
 				if (disposed) return;
 				game = g;
@@ -227,7 +231,7 @@
 		{#if status !== 'running'}
 			<div class="cover">
 				{#if status === 'loading'}
-					<p class="msg">Loading {spec.title}…</p>
+					<GameLoading {spec} />
 				{:else}
 					<p class="msg err">The game could not load. Please refresh the page and try again.</p>
 				{/if}

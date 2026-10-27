@@ -127,7 +127,7 @@ export const GAMES: GameSpec[] = [
 		id: 'frogger',
 		saveKey: 'frogger-save',
 		title: 'Frogger',
-		blurb: 'Classic timed lily-pad runs or an endless Crossy Road-style hop. Collect coins and roll the gumball machine for swamp friends.',
+		blurb: 'Classic timed lily-pad runs or an endless Crossy Road-style hop. Collect coins to unlock swamp-animal Characters.',
 		icon: '/games/icons/frogger.png',
 		preview: '/games/previews/frogger.jpg',
 		tagline: 'Classic or Endless · 10 friends',
