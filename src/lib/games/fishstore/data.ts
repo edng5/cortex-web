@@ -450,6 +450,18 @@ export const EVENT_ODDS: [Rarity, number][] = [
 	['ultra', 15],
 	['epic', 7]
 ];
+/** Luck from each limited-edition decoration you own, and again for each one on display in a show tank. */
+export const LUCK_OWNED = 4;
+export const LUCK_SHOWN = 4;
+/**
+ * Crate odds with luck: each rarity's weight grows with luck, the rarer the more (luck 50
+ * doubles rare, and triples epic), then everything is scaled back to 100%.
+ */
+export function luckyOdds(odds: [Rarity, number][], luck: number): [Rarity, number][] {
+	const w = odds.map(([r, p]) => [r, p * (1 + (luck / 100) * RARITIES.indexOf(r))] as [Rarity, number]);
+	const total = w.reduce((a, [, p]) => a + p, 0);
+	return w.map(([r, p]) => [r, Math.round((p / total) * 1000) / 10]);
+}
 /** Chance an event crate holds the event's limited-edition decoration (if you don't have it yet). */
 export const EVENT_DECOR_ODDS = 0.35;
 export const eventDecor = (e: StoreEvent) => TANK_DECOR.find((d) => d.limited === e.id)!;

@@ -7,6 +7,9 @@
 // dirty, the centrepiece gets hungry).
 import {
 	BUILD_TASKS,
+	LUCK_OWNED,
+	LUCK_SHOWN,
+	luckyOdds,
 	LAB_COST,
 	LAB_TIME,
 	EVENT_DECOR_ODDS,
@@ -1169,6 +1172,22 @@ export class FishStore {
 		return spot;
 	}
 
+	// ── Luck: limited-edition event decorations make crates luckier ──────────────────
+	/** Limited editions you own, and how many of those are on display in a show tank. */
+	luckParts() {
+		const owned = this.s.limited.length;
+		const shown = this.s.limited.filter((d) => this.s.show.some((t) => t.decor.includes(d))).length;
+		return { owned, shown };
+	}
+	luck() {
+		const { owned, shown } = this.luckParts();
+		return owned * LUCK_OWNED + shown * LUCK_SHOWN;
+	}
+	/** A crate's odds after your luck. */
+	crateOdds(event: boolean) {
+		return luckyOdds(event ? EVENT_ODDS : CRATE_ODDS, this.luck());
+	}
+
 	// ── Shipments (gacha) ────────────────────────────────────────────────────────────
 	openCrate(supplierId: string): { ok: false; msg: string } | { ok: true; fish: Fish[]; gems: number; free: boolean; decor?: DecorTag } {
 		const ev = supplierId === 'event' ? activeEvent() : null;
@@ -1183,7 +1202,7 @@ export class FishStore {
 		const pool = ev ? eventPool(ev) : SPECIES.filter((s) => s.water === (sup as (typeof SUPPLIERS)[number]).water && s.temp === (sup as (typeof SUPPLIERS)[number]).temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('epic'));
 		const fish: Fish[] = [];
 		for (let i = 0; i < CRATE_FISH; i++) {
-			let r = RARITIES.indexOf(roll(ev ? EVENT_ODDS : CRATE_ODDS));
+			let r = RARITIES.indexOf(roll(this.crateOdds(!!ev)));
 			// Not every supplier ships every rarity: fall back to the next one down.
 			while (r > 0 && !pool.some((s) => s.rarity === RARITIES[r])) r--;
 			const sp = pick(pool.filter((s) => s.rarity === RARITIES[r]));

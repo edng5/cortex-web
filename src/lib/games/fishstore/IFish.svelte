@@ -11,14 +11,14 @@
 		COMBINE_COST,
 		CRATE_COST,
 		CRATE_FISH,
-		CRATE_ODDS,
 		FLOORS,
 		FOOD_COST,
 		LAB_COST,
 		LAB_TIME,
 		EVENT_CRATE_COST,
 		EVENT_DECOR_ODDS,
-		EVENT_ODDS,
+		LUCK_OWNED,
+		LUCK_SHOWN,
 		activeEvent,
 		eventDecor,
 		GIFT_HOURS,
@@ -651,6 +651,7 @@
 			<span title="Cash">💵 {money(s.cash)}</span>
 			<span title="Gems">💎 {s.gems}</span>
 			<span title="Popularity">⭐ {pop}</span>
+			<button class="luck" title="Luck: rarer fish in crates. Each limited-edition event decoration adds {LUCK_OWNED}, and {LUCK_SHOWN} more while it's on display in a show tank." onclick={() => (tab = 'ship')}>🍀 {store.luck()}</button>
 			{#if giftsReady.length}
 				<button class="free" onclick={openGift} title="Three gifts a day: morning ({GIFT_HOURS[0]}:00), afternoon ({GIFT_HOURS[1]}:00) and evening ({GIFT_HOURS[2]}:00)">🎁 {GIFT_NAMES[giftsReady[0]]} gift!</button>
 			{:else}
@@ -964,14 +965,15 @@
 		{:else if tab === 'ship'}
 			<section class="card">
 				<h3>Daily shipments</h3>
-				<p class="muted small">Each crate holds {CRATE_FISH} fish for {money(CRATE_COST)}. Your three daily gifts (morning, afternoon and evening) often hold a free crate: {s.freeCrates} waiting. Some crates hide 💎 gems. Odds: {CRATE_ODDS.map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Legendary and Mythic fish can only be caught.</p>
+				<p class="muted small">Each crate holds {CRATE_FISH} fish for {money(CRATE_COST)}. Your three daily gifts (morning, afternoon and evening) often hold a free crate: {s.freeCrates} waiting. Some crates hide 💎 gems. Odds{store.luck() ? ' with your luck' : ''}: {store.crateOdds(false).map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Legendary and Mythic fish can only be caught.</p>
+				<p class="luckline">🍀 <b>Luck {store.luck()}</b>: makes rarer fish more likely in every crate. Collect limited-edition decorations from holiday event crates: each adds {LUCK_OWNED} luck, and {LUCK_SHOWN} more while it's on display in a show tank. {store.luckParts().owned ? `You have ${store.luckParts().owned} (${store.luckParts().shown} on display).` : "You don't have any yet."}</p>
 				{#if event}
 					{@const ld = eventDecor(event)}
 					<div class="event">
 						<span class="eicon">{event.icon}</span>
 						<div class="fi">
 							<b>{event.name} event · {event.crate}</b>
-							<span class="small">{event.blurb} Fish from every water, with much better odds than a regular crate: {EVENT_ODDS.map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Always a few 💎 gems.</span>
+							<span class="small">{event.blurb} Fish from every water, with much better odds than a regular crate{store.luck() ? ', plus your luck' : ''}: {store.crateOdds(true).map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Always a few 💎 gems.</span>
 							<span class="small">✨ Limited edition: a {Math.round(EVENT_DECOR_ODDS * 100)}% chance of the <b>{ld.name}</b> tank decoration{s.limited.includes(ld.id) ? ' (you have it!)' : ''}. Only until {endsOn(event.to)}.</span>
 						</div>
 						<button class="primary" onclick={() => openCrate('event')}>{s.freeCrates ? '🎁 Open free crate' : `Open (${money(EVENT_CRATE_COST)})`}</button>
@@ -1249,7 +1251,7 @@
 				</div>
 				{#if c.open >= c.fish.length}
 					{#if c.gems}<p class="gemline">+{c.gems} 💎 gems were packed in the crate!</p>{/if}
-					{#if c.decor}<p class="gemline limited">✨ Limited edition: a {decorName(c.decor)}! Add it to any show tank from Decorate.</p>{/if}
+					{#if c.decor}<p class="gemline limited">✨ Limited edition: a {decorName(c.decor)}! +{LUCK_OWNED} 🍀 luck, and +{LUCK_SHOWN} more once it's on display in a show tank (Decorate).</p>{/if}
 					<button class="primary" onclick={() => (crate = null)}>To the backroom</button>
 				{:else}
 					<button onclick={revealNext}>Open next</button>
@@ -1337,7 +1339,7 @@
 							<button class="pick" class:on disabled={wrong || (!on && full)} onclick={() => toggleDraft(d.id as DecorTag)}>
 								<span class="tick">{on ? '☑' : '☐'}</span>
 								{d.name} · beauty +{d.beauty}
-								<span class="muted small">{had ? (on ? 'in the tank' : 'will be removed') : wrong ? `${d.water} only` : d.limited ? '✨ limited edition · yours' : money(d.cost)}</span>
+								<span class="muted small">{had ? (on ? 'in the tank' : 'will be removed') : wrong ? `${d.water} only` : d.limited ? `✨ limited edition · yours · +${LUCK_SHOWN} 🍀 on display` : money(d.cost)}</span>
 							</button>
 						</li>
 					{/each}
@@ -1582,6 +1584,17 @@
 		background: rgba(6, 22, 34, 0.92);
 		border: 1px solid #f59e0b;
 		font-size: 0.85rem;
+	}
+	.luck {
+		padding: 2px 8px;
+		font-weight: 700;
+	}
+	.luckline {
+		font-size: 0.82rem;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(74, 222, 128, 0.1);
+		border: 1px solid rgba(74, 222, 128, 0.35);
 	}
 	.crates {
 		background: #2563eb !important;
