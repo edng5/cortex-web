@@ -466,6 +466,157 @@
 		if (has('bubbles')) {
 			items.push({ z: 0.35, f: () => cube(c, 0.88, 0.92, 0.32, 0.36, FLOOR - 0.03, FLOOR, '#5a6a7a') });
 		}
+		limitedEditions(c, t, items, has);
+	}
+
+	/** The holiday limited editions, each with its own spot so they can all share a tank. */
+	function limitedEditions(c: CanvasRenderingContext2D, t: number, items: { z: number; f: () => void }[], has: (d: DecorTag) => boolean) {
+		const F = FLOOR;
+		const glow = (u: number, v: number, z: number, col: string, r: number) => {
+			const [x, y] = P(u, v, z);
+			const g = c.createRadialGradient(x, y, 0, x, y, r);
+			g.addColorStop(0, col);
+			g.addColorStop(1, 'rgba(0,0,0,0)');
+			c.fillStyle = g;
+			c.fillRect(x - r, y - r, r * 2, r * 2);
+		};
+		if (has('pumpkin')) {
+			const u = 0.3;
+			const z = 0.8;
+			items.push({
+				z,
+				f: () => {
+					// Ribbed orange body, a stem, and a face that flickers.
+					cube(c, u - 0.07, u + 0.07, z - 0.08, z, F - 0.1, F, '#e8741a');
+					cube(c, u - 0.06, u + 0.06, z - 0.07, z - 0.01, F - 0.13, F - 0.1, '#f08a2a');
+					for (const du of [-0.035, 0.035]) cube(c, u + du - 0.004, u + du + 0.004, z - 0.002, z + 0.002, F - 0.1, F, '#c85a10');
+					cube(c, u - 0.008, u + 0.008, z - 0.05, z - 0.03, F - 0.17, F - 0.13, '#3a7a2a');
+					const lit = 0.75 + Math.sin(t * 9) * 0.12 + Math.sin(t * 23) * 0.08;
+					const eye = lit > 0.8 ? '#ffe070' : lit > 0.65 ? '#ffc040' : '#f09a20';
+					cube(c, u - 0.045, u - 0.02, z, z + 0.003, F - 0.08, F - 0.06, eye);
+					cube(c, u + 0.02, u + 0.045, z, z + 0.003, F - 0.08, F - 0.06, eye);
+					cube(c, u - 0.04, u + 0.04, z, z + 0.003, F - 0.04, F - 0.025, eye);
+					glow(u, F - 0.06, z, `rgba(255,170,40,${0.25 * lit})`, (fx1 - fx0) * 0.06);
+				}
+			});
+		}
+		if (has('xmastree')) {
+			const u = 0.78;
+			const z = 0.74;
+			items.push({
+				z,
+				f: () => {
+					cube(c, u - 0.012, u + 0.012, z - 0.02, z, F - 0.04, F, '#6a4a2a');
+					const tiers = [0.075, 0.06, 0.045, 0.03, 0.016];
+					tiers.forEach((w, i) => cube(c, u - w, u + w, z - 0.04, z, F - 0.04 - (i + 1) * 0.05, F - 0.04 - i * 0.05, i % 2 ? '#2a8a3a' : '#1e7a30'));
+					const balls = ['#e83a3a', '#f0c040', '#4aa8f0', '#f4f4f0'];
+					for (let i = 0; i < 7; i++) {
+						const tier = i % 4;
+						const bu = u + (i % 2 ? 1 : -1) * tiers[tier] * 0.7;
+						const on = Math.sin(t * 3 + i) > -0.3;
+						cube(c, bu - 0.006, bu + 0.006, z - 0.004, z + 0.004, F - 0.06 - tier * 0.05, F - 0.048 - tier * 0.05, on ? balls[i % 4] : shade(balls[i % 4], 0.6));
+					}
+					cube(c, u - 0.01, u + 0.01, z - 0.025, z - 0.015, F - 0.31, F - 0.29, '#ffe060');
+					glow(u, F - 0.3, z, 'rgba(255,230,120,0.35)', (fx1 - fx0) * 0.03);
+				}
+			});
+		}
+		if (has('lantern')) {
+			const u = 0.62;
+			const z = 0.66;
+			const sway = Math.sin(t * 1.2) * 0.006;
+			items.push({
+				z,
+				f: () => {
+					// A red paper lantern on a little anchor, gold caps and a tassel.
+					cube(c, u - 0.004, u + 0.004, z - 0.02, z - 0.012, F - 0.1, F, '#3a2a1a');
+					cube(c, u - 0.03 + sway, u + 0.03 + sway, z - 0.05, z - 0.01, F - 0.2, F - 0.12, '#d8282a');
+					cube(c, u - 0.04 + sway, u + 0.04 + sway, z - 0.045, z - 0.015, F - 0.185, F - 0.135, '#e83a3a');
+					cube(c, u - 0.022 + sway, u + 0.022 + sway, z - 0.04, z - 0.02, F - 0.215, F - 0.2, '#f0c040');
+					cube(c, u - 0.022 + sway, u + 0.022 + sway, z - 0.04, z - 0.02, F - 0.12, F - 0.105, '#f0c040');
+					cube(c, u - 0.004 + sway * 1.5, u + 0.004 + sway * 1.5, z - 0.032, z - 0.028, F - 0.105, F - 0.07, '#f0c040');
+					glow(u + sway, F - 0.16, z - 0.01, 'rgba(255,90,60,0.28)', (fx1 - fx0) * 0.05);
+				}
+			});
+		}
+		if (has('heart')) {
+			const u = 0.15;
+			const z = 0.7;
+			items.push({
+				z,
+				f: () => {
+					// A voxel heart, rows from the point up.
+					const rows: [number, number][] = [
+						[-0.008, 0.008],
+						[-0.024, 0.024],
+						[-0.04, 0.04],
+						[-0.052, 0.052],
+						[-0.056, 0.056],
+						[-0.056, 0.056]
+					];
+					const beat = 1 + Math.max(0, Math.sin(t * 4)) * 0.06;
+					cube(c, u - 0.03, u + 0.03, z - 0.03, z, F - 0.02, F, '#f4a8c8');
+					rows.forEach(([a, b], i) => cube(c, u + a * beat, u + b * beat, z - 0.03, z, F - 0.02 - (i + 1) * 0.022 * beat, F - 0.02 - i * 0.022 * beat, '#e8406a'));
+					cube(c, u - 0.054 * beat, u - 0.006, z - 0.03, z, F - 0.02 - 7 * 0.022 * beat, F - 0.02 - 6 * 0.022 * beat, '#e8406a');
+					cube(c, u + 0.006, u + 0.054 * beat, z - 0.03, z, F - 0.02 - 7 * 0.022 * beat, F - 0.02 - 6 * 0.022 * beat, '#e8406a');
+					cube(c, u - 0.04, u - 0.025, z, z + 0.002, F - 0.15, F - 0.13, '#ffc0d0');
+				}
+			});
+		}
+		if (has('clover')) {
+			const u = 0.68;
+			const z = 0.8;
+			items.push({
+				z,
+				f: () => {
+					// A black pot brimming with gold, a four-leaf clover beside it.
+					cube(c, u - 0.05, u + 0.05, z - 0.06, z, F - 0.07, F, '#2a2a30');
+					cube(c, u - 0.056, u + 0.056, z - 0.064, z + 0.004, F - 0.08, F - 0.07, '#3a3a42');
+					for (let i = 0; i < 5; i++) {
+						const cu = u - 0.04 + i * 0.02;
+						cube(c, cu - 0.009, cu + 0.009, z - 0.05, z - 0.01, F - 0.09 - (i % 2) * 0.01, F - 0.08, Math.sin(t * 3 + i) > 0.7 ? '#fff0a0' : '#f0c040');
+					}
+					const cu = u + 0.09;
+					cube(c, cu - 0.003, cu + 0.003, z - 0.01, z - 0.004, F - 0.08, F, '#3a8a2a');
+					for (const [du, dv] of [[-0.016, 0], [0.016, 0], [0, -0.016], [0, 0.016]])
+						cube(c, cu + du - 0.012, cu + du + 0.012, z - 0.012, z, F - 0.1 + dv - 0.012, F - 0.1 + dv + 0.012, '#4ab84a');
+				}
+			});
+		}
+		if (has('egg')) {
+			const u = 0.46;
+			const z = 0.78;
+			items.push({
+				z,
+				f: () => {
+					// A painted egg in pastel stripes, widest a little below the middle.
+					const rows = [0.03, 0.042, 0.048, 0.046, 0.04, 0.03, 0.016];
+					const cols = ['#f8b8d0', '#fff2a0', '#a8e0f8', '#d0b8f8'];
+					rows.forEach((w, i) => cube(c, u - w, u + w, z - 0.05, z, F - (i + 1) * 0.022, F - i * 0.022, cols[i % 4]));
+					for (let i = 0; i < 3; i++) cube(c, u - 0.03 + i * 0.025, u - 0.022 + i * 0.025, z, z + 0.002, F - 0.075, F - 0.067, '#ffffff');
+				}
+			});
+		}
+		if (has('sandcastle')) {
+			const u = 0.55;
+			const z = 0.82;
+			items.push({
+				z,
+				f: () => {
+					const sand = '#e8cc8a';
+					cube(c, u - 0.08, u + 0.08, z - 0.06, z, F - 0.06, F, sand);
+					for (const du of [-0.06, 0.06]) {
+						cube(c, u + du - 0.022, u + du + 0.022, z - 0.05, z - 0.01, F - 0.13, F - 0.06, shade(sand, 1.04));
+						for (const k of [-1, 1]) cube(c, u + du + k * 0.014 - 0.007, u + du + k * 0.014 + 0.007, z - 0.05, z - 0.01, F - 0.145, F - 0.13, sand);
+					}
+					cube(c, u - 0.028, u + 0.028, z - 0.05, z - 0.01, F - 0.17, F - 0.06, shade(sand, 1.08));
+					cube(c, u - 0.012, u + 0.012, z - 0.003, z + 0.001, F - 0.05, F, '#7a5a3a');
+					cube(c, u - 0.002, u + 0.002, z - 0.03, z - 0.026, F - 0.23, F - 0.17, '#6a4a2a');
+					const flap = Math.sin(t * 5) * 0.004;
+					cube(c, u + 0.002, u + 0.03 + flap, z - 0.03, z - 0.026, F - 0.23, F - 0.205, '#e83a3a');
+				}
+			});
+		}
 	}
 
 	/** The fish, swimming in three dimensions. */

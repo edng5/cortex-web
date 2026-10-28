@@ -105,6 +105,7 @@ export function getDb(): Database.Database {
 			fish_name   TEXT,                   -- its name, if given (checked, public)
 			rank        INTEGER NOT NULL,       -- rarity rank, for sorting
 			bond        INTEGER NOT NULL,       -- how bonded the centrepiece is (0-100)
+			tank        TEXT,                   -- JSON: the favourite show tank being shown off
 			updated_at  INTEGER NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS ifish_market (
@@ -131,6 +132,9 @@ export function getDb(): Database.Database {
 		CREATE INDEX IF NOT EXISTS audit_ts ON audit_log(ts);
 		CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
 	`);
+	// Columns added after a table was first created.
+	const cols = (db.prepare("PRAGMA table_info(ifish_showcase)").all() as { name: string }[]).map((c) => c.name);
+	if (!cols.includes('tank')) db.exec('ALTER TABLE ifish_showcase ADD COLUMN tank TEXT');
 	purgeExpired();
 	setInterval(purgeExpired, 60 * 60 * 1000).unref(); // hourly
 	return db;

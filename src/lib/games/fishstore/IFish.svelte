@@ -14,6 +14,20 @@
 		CRATE_ODDS,
 		FLOORS,
 		FOOD_COST,
+		LAB_COST,
+		LAB_TIME,
+		EVENT_CRATE_COST,
+		EVENT_DECOR_ODDS,
+		EVENT_ODDS,
+		activeEvent,
+		eventDecor,
+		GIFT_HOURS,
+		GIFT_NAMES,
+		RARITIES,
+		RESEARCH_MAX,
+		orderPrice,
+		researchCost,
+		researchTime,
 		HOLDING_COST,
 		HOLDING_MAX,
 		MAX_SHOW_TANKS,
@@ -70,7 +84,7 @@
 	const s = $derived(store.s);
 	const sfx = (n: string) => gameAudio.play('ifish', n);
 
-	type Tab = 'store' | 'show' | 'backroom' | 'ship' | 'fish' | 'staff' | 'showcase';
+	type Tab = 'store' | 'show' | 'backroom' | 'ship' | 'fish' | 'staff' | 'wiki' | 'showcase';
 	const TABS: { id: Tab; icon: string; label: string }[] = [
 		{ id: 'store', icon: '🏪', label: 'Store' },
 		{ id: 'show', icon: '⭐', label: 'Show tank' },
@@ -78,6 +92,7 @@
 		{ id: 'ship', icon: '🚚', label: 'Shipments' },
 		{ id: 'fish', icon: '🎣', label: 'Fishing' },
 		{ id: 'staff', icon: '🧑‍🔧', label: 'Staff' },
+		{ id: 'wiki', icon: '📖', label: 'Fish wiki' },
 		{ id: 'showcase', icon: '🌍', label: 'Market' }
 	];
 	let tab = $state<Tab>('store');
@@ -92,7 +107,7 @@
 	let naming = $state<null | { kind: 'store' | 'fish'; uid?: number; value: string; error: string; busy: boolean }>(null);
 	let moving = $state<null | { uid: number; from: Loc }>(null);
 	let adding = $state<null | Loc>(null);
-	let crate = $state<null | { fish: Fish[]; gems: number; open: number }>(null);
+	let crate = $state<null | { fish: Fish[]; gems: number; open: number; decor?: DecorTag }>(null);
 	let building = $state(false);
 	let decorFor = $state<number | null>(null);
 	let combining = $state(false);
@@ -134,8 +149,8 @@
 	/** Buy everything in the cart, or nothing if it can't all go through. */
 	function checkout() {
 		if (cartCost > s.cash) return act({ ok: false, msg: `That comes to ${money(cartCost)}: you have ${money(s.cash)}.` });
-		const freeStaff = s.staff.length - s.tasks.length;
-		if (cart.tanks.length > freeStaff) return act({ ok: false, msg: `Each new tank needs a free staff member to set it up: you have ${Math.max(0, freeStaff)} free. Hire more or buy fewer tanks.` });
+		const freeStaff = store.freeFor('build');
+		if (cart.tanks.length > freeStaff) return act({ ok: false, msg: `Each new tank needs a free builder or aquarist to set it up: you have ${freeStaff} free. Hire more or buy fewer tanks.` });
 		const failed: string[] = [];
 		if (cart.floor && cart.floor !== s.floor) {
 			const r = store.setFloor(cart.floor);
@@ -184,7 +199,11 @@
 		sfx('click');
 	}
 	const rareFish = (fs: Fish[]) => fs.filter((f) => RARITY_ORDER(f) >= 2);
-	let showcase = $state<{ store: string; species: string; fishName: string | null; bond: number; mine?: boolean }[] | null>(null);
+	type ShowcaseTank = { water: Water; temp: Temp; level: number; seg: number; clean: number; growth: number; decor: DecorTag[]; look: TankLook; fish: { s: string; n?: string }[]; partner: number | null };
+	type ShowcaseEntry = { store: string; species: string; fishName: string | null; bond: number; tank: ShowcaseTank | null; mine?: boolean };
+	let showcase = $state<ShowcaseEntry[] | null>(null);
+	/** A player's tank opened from the showcase. */
+	let viewing = $state<ShowcaseEntry | null>(null);
 	let showcaseMsg = $state('');
 
 	/** FishMart needs an account (your store lives in it): close the game and open the login. */
@@ -235,28 +254,64 @@
 		const t = store.tankAt(loc);
 		if (!t) return '?';
 		if ('tier' in t) return `${tier(t.tier).name} (${t.water === 'salt' ? 'salt' : t.temp === 'cold' ? 'cold fresh' : 'fresh'}) #${t.id}`;
-		return `${t === store.main ? 'Main show tank' : 'Show tank'} #${t.id}`;
+		return `${t === store.main ? 'Main show tank' : 'Show tank'} #${t.id}${t.id === store.favTank.id ? ' ♥' : ''}`;
 	};
 	const locs = $derived<Loc[]>(['hold', ...s.sale.map((t) => `sale:${t.id}` as Loc), ...s.show.map((t) => `show:${t.id}` as Loc)]);
 	const show = $derived(s.show.find((t) => t.id === showId) ?? s.show[0]);
 	const isMain = $derived(show === store.main);
+	/** The partner fish lives in the tank you're looking at. */
+	const isHome = $derived(!!store.centerFish && store.petTank?.id === show.id);
+	const isFav = $derived(store.favTank.id === show.id);
 	const pop = $derived(store.popularity());
 	const center = $derived(store.centerFish);
 
+	/** What's on the floor at this tile. */
+	function hitAt(x: number, y: number): FloorPick {
+		const at = (o: { x: number; y: number }, w: number, h: number) => x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
+		const hitSale = s.sale.find((t) => at(t, tier(t.tier).w, 1));
+		const hitShow = s.show.find((t) => at(t, Math.min(12, 2 * t.seg), 2));
+		const hitDecor = s.decor.find((d) => at(d, 1, 1));
+		const hitShelf = at(s.shelf, 2, 1);
+		const hitLab = !!s.lab && at(s.lab, 2, 2);
+		return hitSale ? { kind: 'sale', id: hitSale.id } : hitShow ? { kind: 'show', id: hitShow.id } : hitDecor ? { kind: 'decor', id: hitDecor.id } : hitShelf ? { kind: 'shelf', id: -1 } : hitLab ? { kind: 'lab', id: -2 } : null;
+	}
+	const samePick = (a: FloorPick, b: FloorPick) => !!a && !!b && a.kind === b.kind && a.id === b.id;
+	/** Move the picked thing so its top-left corner is at (x, y). */
+	function placePicked(x: number, y: number) {
+		if (!picked) return;
+		if (act(picked.kind === 'shelf' ? store.moveShelf(x, y) : picked.kind === 'lab' ? store.moveLab(x, y) : store.moveItem(picked.kind, picked.id, x, y), 'click')) picked = null;
+	}
+	/** Layout mode: pressing on something picks it up (so it can be dragged). */
+	function pressFloor(x: number, y: number): boolean | 'held' {
+		const hit = hitAt(x, y);
+		if (!hit) return false;
+		// Pressing inside what's already picked up: let a tap there move it instead.
+		if (samePick(hit, picked)) return 'held' as const;
+		picked = hit;
+		sfx('click');
+		return true;
+	}
+	/** Layout mode: the picked-up thing was dragged by (dx, dy) tiles. */
+	function dragFloor(dx: number, dy: number) {
+		if (!picked) return;
+		const box =
+			picked.kind === 'shelf' ? s.shelf : picked.kind === 'lab' ? s.lab : picked.kind === 'decor' ? s.decor.find((d) => d.id === picked!.id) : picked.kind === 'sale' ? s.sale.find((t) => t.id === picked!.id) : s.show.find((t) => t.id === picked!.id);
+		if (box) placePicked(box.x + dx, box.y + dy);
+	}
 	function tapFloor(x: number, y: number) {
 		const at = (o: { x: number; y: number }, w: number, h: number) => x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
 		const hitSale = s.sale.find((t) => at(t, tier(t.tier).w, 1));
 		const hitShow = s.show.find((t) => at(t, Math.min(12, 2 * t.seg), 2));
 		const hitDecor = s.decor.find((d) => at(d, 1, 1));
 		const hitShelf = at(s.shelf, 2, 1);
-		const hit: FloorPick = hitSale ? { kind: 'sale', id: hitSale.id } : hitShow ? { kind: 'show', id: hitShow.id } : hitDecor ? { kind: 'decor', id: hitDecor.id } : hitShelf ? { kind: 'shelf', id: -1 } : null;
+		const hitLab = !!s.lab && at(s.lab, 2, 2);
+		const hit: FloorPick = hitSale ? { kind: 'sale', id: hitSale.id } : hitShow ? { kind: 'show', id: hitShow.id } : hitDecor ? { kind: 'decor', id: hitDecor.id } : hitShelf ? { kind: 'shelf', id: -1 } : hitLab ? { kind: 'lab', id: -2 } : null;
 		if (layout) {
-			if (hit) {
+			// Taps on something else pick it; taps on empty floor (or inside the picked thing) move it there.
+			if (hit && !samePick(hit, picked)) {
 				picked = hit;
 				sfx('click');
-			} else if (picked) {
-				act(picked.kind === 'shelf' ? store.moveShelf(x, y) : store.moveItem(picked.kind, picked.id, x, y));
-			}
+			} else if (picked) placePicked(x, y);
 			return;
 		}
 		picked = hit;
@@ -287,7 +342,10 @@
 				sfx('error');
 				return;
 			}
-			if (n.kind === 'store') store.rename(r.name);
+			if (n.kind === 'store') {
+				store.rename(r.name);
+				if (s.shared) shareTank(true);
+			}
 			else if (n.uid) store.setCenter(n.uid, r.name);
 			naming = null;
 			sfx('done');
@@ -301,7 +359,7 @@
 		const r = store.openCrate(id);
 		if (!r.ok) return act(r);
 		sfx('crate');
-		crate = { fish: r.fish, gems: r.gems, open: 0 };
+		crate = { fish: r.fish, gems: r.gems, open: 0, decor: r.decor };
 	}
 	function revealNext() {
 		if (!crate) return;
@@ -431,7 +489,11 @@
 		}
 	}
 	$effect(() => {
-		if (tab === 'showcase' && !showcase) loadShowcase();
+		if (tab === 'showcase' && !showcase) {
+			// Keep your shared tank up to date, then load everyone's.
+			if (s.shared) shareTank(true);
+			else loadShowcase();
+		}
 		if (tab === 'showcase' && !market) loadMarket();
 	});
 	/** Every fish you own, rarest first. */
@@ -440,27 +502,98 @@
 		return ['common', 'uncommon', 'rare', 'ultra', 'epic', 'legendary', 'mythic'].indexOf(species(f.s).rarity);
 	}
 	const sellable = $derived(myFish.filter((f) => RARITY_ORDER(f) >= 2 && f.u !== s.center));
-	let showOffUid = $state<number | null>(null);
-	async function showOff() {
-		const f = myFish.find((x) => x.u === showOffUid) ?? myFish[0];
-		if (!f) return;
-		showcaseMsg = '';
+	/** Post your favourite show tank to the showcase (quiet: just keep it current). */
+	async function shareTank(quiet = false) {
+		const t = store.favTank;
+		if (!t.fish.length) {
+			if (!quiet) showcaseMsg = 'Put some fish in your favourite tank first.';
+			if (quiet) loadShowcase();
+			return;
+		}
+		if (!quiet) showcaseMsg = '';
+		const pi = t.fish.findIndex((f) => f.u === s.center);
+		const tank = { water: t.water, temp: t.temp, level: t.level, seg: t.seg, clean: Math.round(t.clean), growth: Math.round(t.growth ?? 30), decor: t.decor, look: store.lookOf(t), fish: t.fish.map((f) => ({ s: f.s, ...(f.n ? { n: f.n } : {}) })), partner: pi < 0 ? null : pi };
 		try {
 			const r = await fetch('/api/games/ifish/showcase', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ store: s.name, species: f.s, fishName: f.n, bond: f.u === s.center ? s.pet.bond : 0 })
+				body: JSON.stringify({ store: s.name, tank, bond: Math.round(s.pet.bond) })
 			});
-			const j = (await r.json()) as { ok?: boolean; message?: string; entries?: typeof showcase };
-			if (!r.ok || !j.ok) showcaseMsg = j.message ?? 'Could not post that.';
-			else {
+			const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; entries?: ShowcaseEntry[] };
+			if (!r.ok || !j.ok) {
+				if (!quiet) showcaseMsg = j.message ?? 'Could not share that.';
+				if (quiet) loadShowcase();
+			} else {
 				showcase = j.entries ?? showcase;
-				showcaseMsg = `Showing off your ${species(f.s).name}!`;
-				sfx('done');
+				s.shared = true;
+				store.save();
+				if (!quiet) {
+					showcaseMsg = 'Your favourite tank is in the showcase!';
+					sfx('done');
+				}
 			}
 		} catch {
-			showcaseMsg = 'Could not reach the showcase.';
+			if (!quiet) showcaseMsg = 'Could not reach the showcase.';
 		}
+	}
+	/** A shared tank as a ShowTank, so it can be drawn and measured like yours. */
+	function asShowTank(t: ShowcaseTank): ShowTank {
+		return { id: -1, x: 0, y: 0, ready: true, level: t.level, seg: t.seg, water: t.water, temp: t.temp, clean: t.clean, growth: t.growth, decor: t.decor, look: t.look, fish: t.fish.map((f, i) => ({ u: i + 1, s: f.s, c: 0, ...(f.n ? { n: f.n } : {}) })) };
+	}
+	/** Entries from before tanks were shared: just their one fish. */
+	const tankOf = (e: ShowcaseEntry): ShowcaseTank =>
+		e.tank ?? { water: species(e.species).water, temp: species(e.species).temp, level: 3, seg: 1, clean: 100, growth: 30, decor: ['gravel'], look: { shape: 'rect', trim: 'black', stand: 'walnut', light: 'day' } as TankLook, fish: [{ s: e.species, ...(e.fishName ? { n: e.fishName } : {}) }], partner: 0 };
+
+	// ── Partner fish ──
+	/** Move a fish; taking your partner out to the backroom ends the partnership, so ask first. */
+	function moveFish(uid: number, from: Loc, to: Loc) {
+		const f = store.fishAt(from).find((x) => x.u === uid);
+		if (f && uid === s.center && to === 'hold') {
+			moving = null;
+			return ask({
+				title: `Take ${f.n ?? species(f.s).name} out of its tank?`,
+				body: `It goes to the backroom and stops being your partner fish: its bond (${Math.round(s.pet.bond)}) is lost. To keep it as your partner, move it to another show tank instead.`,
+				fish: [],
+				yes: 'Take it out',
+				run: () => act(store.move(uid, from, to), 'splash')
+			});
+		}
+		if (act(store.move(uid, from, to), 'splash')) moving = null;
+	}
+
+	// ── The fish wiki ──
+	type WikiFilter = 'all' | 'found' | 'missing' | 'research';
+	let wikiWater = $state<'all' | 'fresh' | 'cold' | 'salt'>('all');
+	let wikiShow = $state<WikiFilter>('all');
+	let wikiFind = $state('');
+	let wikiLimit = $state(60);
+	let wikiSel = $state<string | null>(null);
+	const found = $derived(new Set(s.found));
+	const wikiList = $derived(
+		SPECIES.filter((sp) => {
+			if (wikiWater === 'salt' && sp.water !== 'salt') return false;
+			if (wikiWater === 'fresh' && (sp.water !== 'fresh' || sp.temp !== 'tropical')) return false;
+			if (wikiWater === 'cold' && (sp.water !== 'fresh' || sp.temp !== 'cold')) return false;
+			const has = found.has(sp.id);
+			if (wikiShow === 'found' && !has) return false;
+			if (wikiShow === 'missing' && has) return false;
+			if (wikiShow === 'research' && !(s.research[sp.id] ?? 0)) return false;
+			const q = wikiFind.trim().toLowerCase();
+			return !q || (has && (sp.name.toLowerCase().includes(q) || sp.sci.toLowerCase().includes(q)));
+		}).sort((a, b) => +found.has(b.id) - +found.has(a.id) || RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity) || a.name.localeCompare(b.name))
+	);
+	const researchTask = (id: string) => s.tasks.find((t) => t.kind === 'research' && t.sp === id);
+
+	// ── Holiday events ──
+	const event = $derived(activeEvent(store.now));
+	const endsOn = (md: string) => new Date(`2000-${md}T12:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	const decorName = (tag: DecorTag) => TANK_DECOR.find((d) => d.id === tag)?.name ?? tag;
+
+	// ── Daily gifts ──
+	const giftsReady = $derived(store.giftsReady());
+	function openGift() {
+		const r = store.openGift();
+		if (act(r, 'rare')) toasts = [...toasts, { id: ++toastSeq, text: r.msg ?? '' }].slice(-4);
 	}
 
 	const tasksFor = (ref: number) => s.tasks.find((t) => t.ref === ref || t.ref2 === ref);
@@ -484,11 +617,12 @@
 				{#if sp.alone}<span class="warn">Alone only</span>{/if}
 				{#if sp.cleaner}<span class="good" title="Grazes algae: the tank gets dirty 15% slower (up to 60% with several)">🧽 Clean-up crew</span>{/if}
 				{#if f.c >= 12}<span class="good">Well kept ★</span>{/if}
+				{#if f.u === s.center}<span class="good">💗 Partner</span>{/if}
 			</span>
 			<span class="price">{money(priceOf(sp))}</span>
 		</div>
 		<div class="fa">
-			{#if f.u !== s.center}<button onclick={() => (moving = { uid: f.u, from })}>Move</button>{/if}
+			<button onclick={() => (moving = { uid: f.u, from })}>Move</button>
 			{#if from === 'hold'}<button onclick={() => act(store.wholesale(f.u), 'coin')}>Wholesale</button>{/if}
 		</div>
 	</li>
@@ -517,7 +651,12 @@
 			<span title="Cash">💵 {money(s.cash)}</span>
 			<span title="Gems">💎 {s.gems}</span>
 			<span title="Popularity">⭐ {pop}</span>
-			{#if s.freeCrates}<button class="free" onclick={() => (tab = 'ship')}>🎁 {s.freeCrates} free</button>{/if}
+			{#if giftsReady.length}
+				<button class="free" onclick={openGift} title="Three gifts a day: morning ({GIFT_HOURS[0]}:00), afternoon ({GIFT_HOURS[1]}:00) and evening ({GIFT_HOURS[2]}:00)">🎁 {GIFT_NAMES[giftsReady[0]]} gift!</button>
+			{:else}
+				<span class="muted small" title="Three gifts a day: morning ({GIFT_HOURS[0]}:00), afternoon ({GIFT_HOURS[1]}:00) and evening ({GIFT_HOURS[2]}:00)">🎁 in {time(store.nextGift())}</span>
+			{/if}
+			{#if s.freeCrates}<button class="crates" onclick={() => (tab = 'ship')}>📦 {s.freeCrates} free</button>{/if}
 		</div>
 		<button class="quit" onclick={() => (store.save(), onquit())}>Exit</button>
 	</header>
@@ -527,6 +666,7 @@
 			<button class:on={tab === t.id} onclick={() => ((tab = t.id), (note = ''), sfx('click'))}>
 				<span class="ic">{t.icon}</span><span class="lb">{t.label}</span>
 				{#if t.id === 'staff' && s.layoff}<i class="dot"></i>{/if}
+				{#if t.id === 'ship' && event}<i class="evt">{event.icon}</i>{/if}
 			</button>
 		{/each}
 	</nav>
@@ -542,14 +682,42 @@
 			<div class="row">
 				<button class="primary" onclick={openBuild}>🔨 Build & buy</button>
 				<button class:on={layout} onclick={() => ((layout = !layout), (picked = null))}>{layout ? '✓ Done arranging' : '↔ Layout mode'}</button>
-				<span class="muted">{layout ? 'Tap something, then tap where it should go.' : 'Tap a tank or the supply shelf to manage it. ★ = show tank.'}</span>
+				<span class="muted">{layout ? 'Drag something to move it, or tap it and then tap where it should go.' : 'Tap a tank, the supply shelf or the lab to manage it. ★ = show tank.'}</span>
 			</div>
-			<div class="floorbox"><StoreFloor {store} {layout} {picked} ontap={tapFloor} /></div>
+			<div class="floorbox"><StoreFloor {store} {layout} {picked} ontap={tapFloor} onpress={pressFloor} ondragby={dragFloor} /></div>
 			<p class="muted small">Popularity {pop}/100 · about {Math.round(store.customersPerHour())} customers an hour · {s.sold} fish sold · {money(s.earned)} earned</p>
-			{#if (picked?.kind === 'shelf' && !layout) || pickedSale}
+			{#if ((picked?.kind === 'shelf' || picked?.kind === 'lab') && !layout) || pickedSale}
 				<div class="pop storepop">
 				<button class="x" aria-label="Close" onclick={() => (picked = null)}>✕</button>
 
+			{#if picked?.kind === 'lab' && !layout && s.lab}
+				{@const jobs = s.tasks.filter((t) => t.kind === 'research')}
+				{@const sci = s.staff.filter((p) => store.role(p.role).does === 'research')}
+				<section class="card">
+					<h3>🔬 Research lab</h3>
+					{#if !s.lab.ready}
+						{@const task = tasksFor(-2)}
+						<p>Being built{task ? `: ${time(task.end - store.now)} left` : '…'}</p>
+					{:else}
+						<p class="muted small">Your Research Scientists work here, one fish each at a time: hire more to research several fish at once. {sci.length} scientist{sci.length === 1 ? '' : 's'} · {jobs.length} researching.</p>
+						<ul class="list">
+							{#each jobs as j (j.id)}
+								<li class="task">
+									<div class="fi">
+										<b>{j.label}</b>
+										<span class="muted small">{s.staff.find((p) => p.id === j.staff)?.name ?? '?'} · {time(j.end - store.now)} left</span>
+										<i class="prog"><em style="width: {Math.min(100, ((store.now - j.start) / (j.end - j.start)) * 100)}%"></em></i>
+									</div>
+								</li>
+							{/each}
+						</ul>
+						<div class="row">
+							<button class="primary" onclick={() => ((tab = 'wiki'), (picked = null))}>📖 Research in the fish wiki</button>
+							{#if !sci.length}<button onclick={() => ((tab = 'staff'), (picked = null))}>Hire a scientist</button>{/if}
+						</div>
+					{/if}
+				</section>
+			{/if}
 			{#if picked?.kind === 'shelf' && !layout}
 				{@const task = tasksFor(SHELF_REF)}
 				<section class="card">
@@ -607,9 +775,9 @@
 			{@const task = tasksFor(show.id)}
 			{@const lk = store.lookOf(show)}
 			{@const plants = show.decor.includes('plants')}
-			<div class="stage" role="presentation" onclick={(e) => panel && !(e.target as Element).closest('.pop, .tools, .hud, .nudge') && ((panel = null), (styleDraft = null))}>
+			<div class="stage" role="presentation" onclick={(e) => panel && !(e.target as Element).closest('.pop, .tools, .hud, .nudge, .giftnote') && ((panel = null), (styleDraft = null))}>
 				{#if show.ready}
-					<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={isMain ? s.center : null} happy={s.pet.happy} height={0} look={panel === 'style' && styleDraft ? styleDraft : lk} growth={show.growth ?? 30} stand />
+					<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={s.center} happy={s.pet.happy} height={0} look={panel === 'style' && styleDraft ? styleDraft : lk} growth={show.growth ?? 30} stand />
 				{:else}
 					<div class="building">
 						<span>🏗️</span>
@@ -621,10 +789,10 @@
 				<div class="hud tl">
 					{#if s.show.length > 1}
 						{#each s.show as t (t.id)}
-							<button class:on={t.id === show.id} onclick={() => ((showId = t.id), (panel = null))} title={t === store.main ? 'Main show tank' : `Show tank #${t.id}`}>{t === store.main ? '★' : '#' + t.id}</button>
+							<button class:on={t.id === show.id} onclick={() => ((showId = t.id), (panel = null))} title={`${t === store.main ? 'Main show tank' : `Show tank #${t.id}`}${t.id === store.favTank.id ? ' (favourite)' : ''}`}>{t === store.main ? '★' : '#' + t.id}{t.id === store.favTank.id ? ' ♥' : ''}</button>
 						{/each}
 					{:else}
-						<span class="tname">★ {isMain ? 'Main show tank' : 'Show tank'} · Lv {show.level}</span>
+						<span class="tname">★ {isMain ? 'Main show tank' : 'Show tank'} · Lv {show.level}{isFav ? ' · ♥' : ''}</span>
 					{/if}
 				</div>
 				{#if show.ready}
@@ -633,15 +801,24 @@
 						<span title="Clean" class:low={show.clean < 40}>🫧 {Math.round(show.clean)}</span>
 						{#if plants}<span title="Plant growth" class:low={store.overgrown(show)}>🌿 {Math.round(show.growth ?? 30)}</span>{/if}
 						<span title="Space used">🐟 {store.used(show)}/{store.capOf(show)}</span>
-						{#if isMain && center}<span title="Centrepiece happiness" class:low={s.pet.happy < 40}>💗 {Math.round(s.pet.happy)}</span>{/if}
+						{#if isHome}<span title="Partner fish happiness" class:low={s.pet.happy < 40}>💗 {Math.round(s.pet.happy)}</span>{/if}
 					</div>
 				{/if}
 				{#if task}<div class="taskpill">⏳ {task.label} · {time(task.end - store.now)}</div>{/if}
+				{#if isMain && s.giftDecor}
+					<div class="giftnote">
+						<span>🎁 Someone left you a free <b>{decorName(s.giftDecor)}</b> in this tank!</span>
+						<div class="row">
+							<button class="primary" onclick={() => (store.keepGiftDecor(), act({ ok: true, msg: `The ${decorName(s.giftDecor!)} stays in your tank.` }, 'done'))}>Keep it</button>
+							<button onclick={() => act(store.sellGiftDecor(), 'coin')}>Sell for {money(store.giftDecorValue())}</button>
+						</div>
+					</div>
+				{/if}
 				{#if show.ready && store.overgrown(show) && !task}<button class="nudge" onclick={() => act(store.trim(show.id))}>✂️ The plants are overgrown: trim them</button>{/if}
 
 				<!-- Icon toolbar: each pops out a panel over the tank. -->
 				<nav class="tools" aria-label="Show tank tools">
-					{#each [['stats', '📊', 'Stats'], ['fish', '🐠', 'Fish'], ...(isMain ? [['pet', '💗', 'Centrepiece']] : []), ['style', '🎨', 'Style'], ['tank', '⬆️', 'Tank'], ['new', '🏗️', 'New show tank']] as [id, ic, label] (id)}
+					{#each [['stats', '📊', 'Stats'], ['fish', '🐠', 'Fish'], ['pet', '💗', 'Partner fish'], ['style', '🎨', 'Style'], ['tank', '⬆️', 'Tank'], ['new', '🏗️', 'New show tank']] as [id, ic, label] (id)}
 						<button class:on={panel === id} title={label} aria-label={label} onclick={() => ((panel = panel === id ? null : (id as Panel)), panel === 'style' ? openStyle() : (styleDraft = null), sfx('click'))}>{ic}</button>
 					{/each}
 					<hr />
@@ -649,14 +826,15 @@
 					<button title="Decorate" aria-label="Decorate" disabled={!show.ready} onclick={() => openDecor(show.id)}>🪸</button>
 					<button title="Clean" aria-label="Clean" disabled={!show.ready || !!task} onclick={() => act(store.clean(`show:${show.id}`))}>🧽</button>
 					{#if plants}<button title="Trim plants" aria-label="Trim plants" disabled={!!task} onclick={() => act(store.trim(show.id))}>✂️</button>{/if}
-					{#if isMain && center}<button title="Feed (uses fish food)" aria-label="Feed" onclick={() => act(store.feed(), 'feed')}>🍤</button>{/if}
+					{#if isHome}<button title="Feed (uses fish food)" aria-label="Feed" onclick={() => act(store.feed(), 'feed')}>🍤</button>{/if}
+					<button class:on={isFav} title={isFav ? 'Your favourite tank (shown in the showcase)' : 'Make this your favourite tank (shown in the showcase)'} aria-label="Favourite tank" disabled={isFav} onclick={() => act(store.setFav(show.id), 'done')}>{isFav ? '♥' : '♡'}</button>
 				</nav>
 
 				{#if panel}
 					<div class="pop">
 						<button class="x" aria-label="Close" onclick={() => ((panel = null), (styleDraft = null))}>✕</button>
 						{#if panel === 'stats'}
-							<h3>{isMain ? 'Main show tank' : `Show tank #${show.id}`}</h3>
+							<h3>{isMain ? 'Main show tank' : `Show tank #${show.id}`}{isFav ? ' ♥' : ''}</h3>
 							<p class="muted small">Level {show.level}{show.seg > 1 ? ` · ${show.seg} tanks combined` : ''} · {show.water === 'salt' ? 'Saltwater' : show.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'} · {TANK_SHAPES.find((x) => x.id === lk.shape)?.name}</p>
 							{@render bar('Niceness', store.niceness(show), '#fbbf24')}
 							{@render bar('Clean', show.clean, '#38bdf8')}
@@ -664,6 +842,7 @@
 							<p class="muted small">
 								Space {store.used(show)}/{store.capOf(show)} · fits up to {SIZE_LABEL[store.maxSizeOf(show)]} fish · decorations {show.decor.length}/{store.decorSlots(show)} (beauty {decorBeauty(show)}) · show fish aren't sold{#if store.cleaners(show.fish)} · 🧽 crew: algae {Math.round((1 - store.dirtRate(show.fish)) * 100)}% slower{/if}
 							</p>
+							{#if isFav}<p class="muted small">♥ Your favourite: this is the tank everyone sees in the showcase.</p>{:else}<button onclick={() => act(store.setFav(show.id), 'done')}>♡ Make this my favourite tank</button>{/if}
 							{#if plants}<p class="muted small">🌿 Live plants grow every hour (faster under a bright light). Lush plants add niceness; past {OVERGROWN}% they're overgrown and look messy until trimmed.</p>{/if}
 						{:else if panel === 'fish'}
 							<h3>Fish · {show.fish.length}</h3>
@@ -671,9 +850,9 @@
 							{#if !show.fish.length}<p class="muted">No fish yet.</p>{/if}
 							<button onclick={() => (adding = `show:${show.id}`)}>➕ Add fish</button>
 						{:else if panel === 'pet'}
-							{#if center}
+							{#if center && isHome}
 								{@const sp = species(center.s)}
-								<h3>{center.n ?? sp.name}{#if center.n}<span class="muted small"> the {sp.name}</span>{/if}</h3>
+								<h3>{center.n ?? sp.name}{#if center.n}<span class="muted small">&nbsp;the {sp.name}</span>{/if}</h3>
 								<button class="link" onclick={() => (naming = { kind: 'fish', uid: center.u, value: center.n ?? '', error: '', busy: false })}>rename</button>
 								{@render bar('Fed', s.pet.hunger, '#4ade80')}
 								{@render bar('Happy', s.pet.happy, '#f472b6')}
@@ -682,12 +861,26 @@
 								<div class="row">
 									<button onclick={() => act(store.feed(), 'feed')}>🍤 Feed (1 fish food)</button>
 									<button onclick={() => act(store.play(), 'splash')}>👆 Play</button>
-									<button onclick={() => (choosingCenter = true)}>Change</button>
+									<button onclick={() => (moving = { uid: center.u, from: `show:${show.id}` })}>↔ Move to another tank</button>
+									<button onclick={() => moveFish(center.u, `show:${show.id}`, 'hold')}>Take out</button>
+									<button onclick={() => (choosingCenter = true)}>Change partner</button>
+								</div>
+							{:else if center && store.petTank}
+								{@const home = store.petTank}
+								{@const sp = species(center.s)}
+								{@const chk = store.check(show, sp, center.u)}
+								<h3>Partner fish</h3>
+								<p class="small">{center.n ?? sp.name} lives in {tankName(`show:${home.id}`)}.</p>
+								{#if !chk.ok}<p class="why">{chk.msg}</p>{/if}
+								<div class="row">
+									<button class="primary" disabled={!chk.ok} onclick={() => act(store.move(center.u, `show:${home.id}`, `show:${show.id}`), 'splash')}>↔ Move it here</button>
+									<button onclick={() => ((showId = home.id), (panel = 'pet'))}>Go to its tank</button>
+									<button disabled={!show.fish.length} onclick={() => (choosingCenter = true)}>Pick one from this tank</button>
 								</div>
 							{:else}
-								<h3>Centrepiece</h3>
-								<p class="small">Pick a fish from this tank to look after like a pet. Keep it fed, its water clean and its favourite decorations in, and its happiness makes the whole store more popular.</p>
-								<button class="primary" disabled={!show.fish.length} onclick={() => (choosingCenter = true)}>Choose centrepiece</button>
+								<h3>Partner fish</h3>
+								<p class="small">Pick a fish from this tank to look after like a pet. Keep it fed, its water clean and its favourite decorations in, and its happiness makes its tank (and your store) shine. You can move it to another show tank any time.</p>
+								<button class="primary" disabled={!show.fish.length} onclick={() => (choosingCenter = true)}>Choose a partner fish</button>
 							{/if}
 						{:else if panel === 'style' && styleDraft}
 							{@const d = styleDraft}
@@ -771,7 +964,19 @@
 		{:else if tab === 'ship'}
 			<section class="card">
 				<h3>Daily shipments</h3>
-				<p class="muted small">Each crate holds {CRATE_FISH} fish for {money(CRATE_COST)} (you get a free crate every day: {s.freeCrates} waiting). Some crates hide 💎 gems. Odds: {CRATE_ODDS.map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Legendary and Mythic fish can only be caught.</p>
+				<p class="muted small">Each crate holds {CRATE_FISH} fish for {money(CRATE_COST)}. Your three daily gifts (morning, afternoon and evening) often hold a free crate: {s.freeCrates} waiting. Some crates hide 💎 gems. Odds: {CRATE_ODDS.map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Legendary and Mythic fish can only be caught.</p>
+				{#if event}
+					{@const ld = eventDecor(event)}
+					<div class="event">
+						<span class="eicon">{event.icon}</span>
+						<div class="fi">
+							<b>{event.name} event · {event.crate}</b>
+							<span class="small">{event.blurb} Fish from every water, with much better odds than a regular crate: {EVENT_ODDS.map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Always a few 💎 gems.</span>
+							<span class="small">✨ Limited edition: a {Math.round(EVENT_DECOR_ODDS * 100)}% chance of the <b>{ld.name}</b> tank decoration{s.limited.includes(ld.id) ? ' (you have it!)' : ''}. Only until {endsOn(event.to)}.</span>
+						</div>
+						<button class="primary" onclick={() => openCrate('event')}>{s.freeCrates ? '🎁 Open free crate' : `Open (${money(EVENT_CRATE_COST)})`}</button>
+					</div>
+				{/if}
 				<div class="suppliers">
 					{#each SUPPLIERS as sup (sup.id)}
 						<div class="sup">
@@ -788,23 +993,27 @@
 		{:else if tab === 'staff'}
 			<section class="card">
 				<h3>Staff · wages {money(store.wages())}/day</h3>
-				<p class="muted small">Each employee works one task at a time (building, upgrading, cleaning); faster staff finish sooner. Wages are paid each day. You always keep at least one employee.</p>
+				<p class="muted small">Each employee works one task at a time; faster staff finish sooner. Builders only build, Research Scientists only research (in the Fish wiki), and Senior Aquarists do chores on their own. Wages are paid each day.</p>
+			{#if s.staff.some((p) => store.role(p.role).auto)}
+				<label class="autotoggle"><input type="checkbox" checked={s.auto} onchange={(e) => store.setAuto(e.currentTarget.checked)} /> Senior Aquarists clean dirty tanks, trim plants and restock the shelf on their own</label>
+			{/if}
 				<ul class="list">
 					{#each s.staff as p (p.id)}
 						{@const r = store.role(p.role)}
 						{@const busy = s.tasks.find((t) => t.staff === p.id)}
 						<li class="staff">
 							<span class="av">{p.name[0]}</span>
-							<div class="fi"><b>{p.name}</b><span class="muted small">{r.name} · speed ×{r.speed} · {money(r.wage)}/day</span>{#if busy}<span class="small">🔧 {busy.label} · {time(busy.end - store.now)}</span>{:else}<span class="small good">Free</span>{/if}</div>
-							<button class="danger" disabled={s.staff.length <= 1} onclick={() => act(store.layoff(p.id))}>Lay off</button>
+							<div class="fi"><b>{p.name}</b><span class="muted small">{r.name} · speed ×{r.speed} · {r.wage ? `${money(r.wage)}/day` : 'unpaid'}{r.auto && s.auto ? ' · 🤖 auto' : ''}</span>{#if busy}<span class="small">🔧 {busy.label} · {time(busy.end - store.now)}</span>{:else}<span class="small good">Free</span>{/if}</div>
+							{#if p.role !== 'owner'}<button class="danger" disabled={s.staff.length <= 1} onclick={() => act(store.layoff(p.id))}>Lay off</button>{/if}
 						</li>
 					{/each}
 				</ul>
-				<div class="row">
-					{#each ROLES as r (r.id)}
-						<button onclick={() => act(store.hire(r.id))}>Hire {r.name} ({money(r.hire)}, {money(r.wage)}/day)</button>
+				<h4>Hire</h4>
+				<ul class="dest">
+					{#each ROLES.filter((r) => r.hire) as r (r.id)}
+						<li><button onclick={() => act(store.hire(r.id))}><b>{r.name}</b> · {money(r.hire)} · {money(r.wage)}/day · speed ×{r.speed}<span class="muted small"> · {r.blurb}</span></button></li>
 					{/each}
-				</div>
+				</ul>
 			</section>
 			<section class="card">
 				<h3>Tasks</h3>
@@ -828,32 +1037,72 @@
 				<ul class="log">{#each s.log as l, i (i)}<li>{l}</li>{/each}</ul>
 				<button class="danger small" onclick={() => confirm('Start a brand new store? Everything will be lost.') && (store.reset(), (showId = store.s.show[0].id))}>Start over</button>
 			</section>
+		{:else if tab === 'wiki'}
+			<section class="card">
+				<h3>📖 Fish wiki · found {s.found.length} of {SPECIES.length}</h3>
+				<p class="muted small">Every fish you've ever had is logged here. Research Scientists study the fish you've found in your research lab, one fish each at a time; at research level {RESEARCH_MAX} you can order that fish straight from the breeders.</p>
+				{#if !s.lab}<p class="small warnline">You need a research lab first: build one from 🔨 Build & buy.</p>{/if}
+				<i class="prog"><em style="width: {(s.found.length / SPECIES.length) * 100}%"></em></i>
+				<div class="row">
+					<select bind:value={wikiWater} onchange={() => (wikiLimit = 60)} aria-label="Water"><option value="all">All waters</option><option value="fresh">Tropical fresh</option><option value="cold">Coldwater</option><option value="salt">Saltwater</option></select>
+					<select bind:value={wikiShow} onchange={() => (wikiLimit = 60)} aria-label="Show"><option value="all">Found and missing</option><option value="found">Found</option><option value="missing">Missing</option><option value="research">Researched</option></select>
+					<input bind:value={wikiFind} oninput={() => (wikiLimit = 60)} placeholder="Search found fish…" aria-label="Search" />
+				</div>
+				<div class="wiki">
+					{#each wikiList.slice(0, wikiLimit) as sp (sp.id)}
+						{@const has = found.has(sp.id)}
+						{@const lvl = s.research[sp.id] ?? 0}
+						{#if has}
+							<button class="wcard" style="--rc: {RARITY_COLOR[sp.rarity]}" onclick={() => (wikiSel = sp.id)}>
+								<FishIcon id={sp.id} size={56} />
+								<b>{sp.name}</b>
+								<span class="pips" title="Research level {lvl}/{RESEARCH_MAX}">{#each Array(RESEARCH_MAX) as _, i (i)}<i class:on={i < lvl}></i>{/each}</span>
+								{#if researchTask(sp.id)}<span class="small">🔬 researching</span>{/if}
+							</button>
+						{:else}
+							<div class="wcard missing" style="--rc: {RARITY_COLOR[sp.rarity]}">
+								<span class="qm">?</span>
+								<b>???</b>
+								<span class="small muted">{RARITY_LABEL[sp.rarity]} · {sp.water === 'salt' ? 'salt' : sp.temp === 'cold' ? 'cold' : 'fresh'}</span>
+							</div>
+						{/if}
+					{/each}
+				</div>
+				{#if !wikiList.length}<p class="muted">Nothing here.</p>{/if}
+				{#if wikiList.length > wikiLimit}<button onclick={() => (wikiLimit += 60)}>Show more ({wikiList.length - wikiLimit} left)</button>{/if}
+			</section>
 		{:else if tab === 'showcase'}
 			<section class="card">
 				<h3>🌍 Global showcase</h3>
-				<p class="muted small">Every store can show off one fish. Rarest first.</p>
+				<p class="muted small">Every store shows off its favourite show tank. Tap one to look inside. Tanks with rarer fish come first.</p>
 				{#if loggedIn}
+					{@const fav = store.favTank}
 					<div class="row">
-						<select bind:value={showOffUid}>
-							<option value={null}>My rarest fish</option>
-							{#each myFish as f (f.u)}<option value={f.u}>{f.n ? `${f.n} (${species(f.s).name})` : species(f.s).name} · {RARITY_LABEL[species(f.s).rarity]}</option>{/each}
-						</select>
-						<button class="primary" disabled={!myFish.length} onclick={showOff}>Show it off</button>
+						<span class="small">♥ Your favourite: <b>{tankName(`show:${fav.id}`)}</b> · {fav.fish.length} fish</span>
+						<button class="primary" disabled={!fav.fish.length} onclick={() => shareTank()}>{s.shared ? 'Update my tank' : 'Share my tank'}</button>
+						<button onclick={() => ((tab = 'show'), (showId = fav.id))}>Change favourite…</button>
 					</div>
+					{#if s.shared}<p class="muted small">Your shared tank updates whenever you open the showcase.</p>{/if}
 				{:else}
-					<p>Log in to show off your fish to everyone.</p>
+					<p>Log in to show off your tank to everyone.</p>
 				{/if}
 				{#if showcaseMsg}<p class="note">{showcaseMsg}</p>{/if}
 				<ul class="list">
 					{#each showcase ?? [] as e, i (i)}
+						{@const t = tankOf(e)}
 						{@const sp = species(e.species)}
 						<li class="fish" class:mine={e.mine} style="--rc: {RARITY_COLOR[sp.rarity]}">
 							<FishIcon id={sp.id} size={58} />
-							<div class="fi"><b>{e.fishName ? `${e.fishName} · ` : ''}{sp.name}</b><span class="rar" class:mythic={sp.rarity === 'mythic'}>{RARITY_LABEL[sp.rarity]}</span><span class="muted small">at {e.store}{e.bond ? ` · bond ${e.bond}` : ''}</span></div>
+							<div class="fi">
+								<b>{e.store}{e.mine ? ' (you)' : ''}</b>
+								<span class="small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look.shape)?.name ?? 'Classic'} {t.water === 'salt' ? 'reef' : t.temp === 'cold' ? 'coldwater' : 'tropical'} tank · level {t.level}</span>
+								<span class="muted small">Star: {e.fishName ? `${e.fishName} the ` : ''}{sp.name} <span class="rar" class:mythic={sp.rarity === 'mythic'}>{RARITY_LABEL[sp.rarity]}</span>{e.bond ? ` · bond ${e.bond}` : ''}</span>
+							</div>
+							<div class="fa"><button onclick={() => ((viewing = e), sfx('click'))}>👀 View</button></div>
 						</li>
 					{/each}
 				</ul>
-				{#if showcase && !showcase.length}<p class="muted">Nobody has shown off a fish yet. Be the first!</p>{/if}
+				{#if showcase && !showcase.length}<p class="muted">Nobody has shared a tank yet. Be the first!</p>{/if}
 			</section>
 			<section class="card">
 				<h3>🛒 Fish market</h3>
@@ -921,7 +1170,7 @@
 					submitName();
 				}}
 			>
-				<h3>{naming.kind === 'store' ? (s.named ? 'Rename your store' : 'Welcome to FishMart! Name your store') : 'Name your centrepiece'}</h3>
+				<h3>{naming.kind === 'store' ? (s.named ? 'Rename your store' : 'Welcome to FishMart! Name your store') : 'Name your partner fish'}</h3>
 				<input bind:value={naming.value} maxlength={naming.kind === 'store' ? 24 : 16} placeholder={naming.kind === 'store' ? 'e.g. Reef Haven' : 'e.g. Bubbles'} />
 				{#if naming.error}<p class="err">{naming.error}</p>{:else}<p class="muted small">Shown publicly in the showcase, so keep it friendly. Offensive names are rejected.</p>{/if}
 				<div class="row">
@@ -937,13 +1186,14 @@
 		{@const f = store.fishAt(m.from).find((x) => x.u === m.uid)}
 		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (moving = null)}>
 			<div class="dlg">
-				<h3>Move {f ? species(f.s).name : 'fish'} to…</h3>
+				<h3>Move {f ? (f.n ?? species(f.s).name) : 'fish'} to…</h3>
+				{#if m.uid === s.center}<p class="muted small">💗 Your partner fish stays your partner in any show tank. Taking it to the backroom ends the partnership.</p>{/if}
 				<ul class="dest">
-					{#each locs.filter((l) => l !== m.from) as l (l)}
+					{#each locs.filter((l) => l !== m.from && !(m.uid === s.center && l.startsWith('sale'))) as l (l)}
 						{@const t = store.tankAt(l)}
 						{@const chk = f && t ? store.check(t, species(f.s)) : null}
 						<li>
-							<button disabled={(chk && !chk.ok) || (l === 'hold' && s.hold.length >= s.holdCap)} onclick={() => act(store.move(m.uid, m.from, l), 'splash') && (moving = null)}>{tankName(l)}{t ? ` · ${store.used(t)}/${store.capOf(t)}` : ` · ${s.hold.length}/${s.holdCap}`}</button>
+							<button disabled={(chk && !chk.ok) || (l === 'hold' && s.hold.length >= s.holdCap)} onclick={() => moveFish(m.uid, m.from, l)}>{tankName(l)}{t ? ` · ${store.used(t)}/${store.capOf(t)}` : ` · ${s.hold.length}/${s.holdCap}`}</button>
 							{#if chk && !chk.ok}<span class="why">{chk.msg}</span>{/if}
 						</li>
 					{/each}
@@ -999,6 +1249,7 @@
 				</div>
 				{#if c.open >= c.fish.length}
 					{#if c.gems}<p class="gemline">+{c.gems} 💎 gems were packed in the crate!</p>{/if}
+					{#if c.decor}<p class="gemline limited">✨ Limited edition: a {decorName(c.decor)}! Add it to any show tank from Decorate.</p>{/if}
 					<button class="primary" onclick={() => (crate = null)}>To the backroom</button>
 				{:else}
 					<button onclick={revealNext}>Open next</button>
@@ -1029,6 +1280,13 @@
 							<li>{tier(ct.tier).name} ({ct.water === 'salt' ? 'salt' : ct.temp === 'cold' ? 'cold fresh' : 'fresh'}) · {money(store.tankCost(ct.tier, ct.water))}<button class="link" onclick={() => (cart.tanks = cart.tanks.filter((_, j) => j !== i))}>remove</button></li>
 						{/each}
 					</ul>
+				{/if}
+				<h4>Research lab</h4>
+				{#if s.lab}
+					<p class="muted small">You have a lab{s.lab.ready ? '' : ' (being built)'}. Every scientist works in it: hire more scientists to research more fish at once.</p>
+				{:else}
+					<button onclick={() => ((building = false), act(store.buildLab(), 'coin'))}>🔬 Build a research lab · 2×2 · {money(LAB_COST)} · {time(LAB_TIME * 1000)}</button>
+					<p class="muted small">Needed for research. One lab is enough for all your scientists.</p>
 				{/if}
 				<h4>Show tanks</h4>
 				<button onclick={() => ((building = false), (tab = 'show'), (panel = 'new'))}>⭐ Build a show tank (choose its shape)…</button>
@@ -1063,15 +1321,15 @@
 		{@const t = s.show.find((x) => x.id === decorFor)!}
 		{@const adds = decorDraft.filter((d) => !t.decor.includes(d))}
 		{@const removes = t.decor.filter((d) => !decorDraft.includes(d))}
-		{@const cost = adds.reduce((a, d) => a + (TANK_DECOR.find((x) => x.id === d)?.cost ?? 0), 0)}
+		{@const cost = adds.reduce((a, d) => a + store.decorPrice(d), 0)}
 		{@const full = decorDraft.length >= store.decorSlots(t)}
 		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (decorFor = null)}>
 			<div class="dlg wide">
 				<button class="x" aria-label="Cancel" onclick={() => (decorFor = null)}>✕</button>
 				<h3>🪸 Decorate · {decorDraft.length}/{store.decorSlots(t)}</h3>
-				<p class="muted small">Tick what you want in the tank, then Apply. Removed decorations aren't refunded.</p>
+				<p class="muted small">Tick what you want in the tank, then Apply. Removed decorations aren't refunded (limited editions stay yours to place again).</p>
 				<ul class="dest">
-					{#each TANK_DECOR as d (d.id)}
+					{#each TANK_DECOR.filter((d) => !d.limited || s.limited.includes(d.id) || t.decor.includes(d.id)) as d (d.id)}
 						{@const on = decorDraft.includes(d.id)}
 						{@const had = t.decor.includes(d.id)}
 						{@const wrong = !!d.water && d.water !== t.water}
@@ -1079,7 +1337,7 @@
 							<button class="pick" class:on disabled={wrong || (!on && full)} onclick={() => toggleDraft(d.id as DecorTag)}>
 								<span class="tick">{on ? '☑' : '☐'}</span>
 								{d.name} · beauty +{d.beauty}
-								<span class="muted small">{had ? (on ? 'in the tank' : 'will be removed') : wrong ? `${d.water} only` : money(d.cost)}</span>
+								<span class="muted small">{had ? (on ? 'in the tank' : 'will be removed') : wrong ? `${d.water} only` : d.limited ? '✨ limited edition · yours' : money(d.cost)}</span>
 							</button>
 						</li>
 					{/each}
@@ -1111,19 +1369,19 @@
 	{#if choosingCenter}
 		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (choosingCenter = false)}>
 			<div class="dlg wide">
-				<h3>Choose your centrepiece</h3>
-				<p class="muted small">Your centrepiece is a pet: feed it, keep its tank clean and decorated the way it likes, and play with it. A happy, bonded centrepiece makes your show tank (and store) shine.</p>
+				<h3>Choose your partner fish</h3>
+				<p class="muted small">Your partner fish is a pet: feed it, keep its tank clean and decorated the way it likes, and play with it. A happy, bonded partner makes its show tank (and your store) shine. Choosing a new one starts a new bond.</p>
 				<ul class="list">
-					{#each store.main.fish as f (f.u)}
+					{#each show.fish as f (f.u)}
 						{@const sp = species(f.s)}
 						<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
 							<FishIcon id={sp.id} size={48} />
 							<div class="fi"><b>{f.n ?? sp.name}</b><span class="small muted">Likes {sp.likes.join(', ')}</span></div>
-							<button onclick={() => (act(store.setCenter(f.u), 'done'), (choosingCenter = false))}>Choose</button>
+							{#if f.u === s.center}<span class="small good">💗 Partner</span>{:else}<button onclick={() => (act(store.setCenter(f.u), 'done'), (choosingCenter = false))}>Choose</button>{/if}
 						</li>
 					{/each}
 				</ul>
-				{#if !store.main.fish.length}<p class="muted">Add fish to your main show tank first.</p>{/if}
+				{#if !show.fish.length}<p class="muted">Add fish to this show tank first.</p>{/if}
 				<button onclick={() => (choosingCenter = false)}>Cancel</button>
 			</div>
 		</div>
@@ -1149,6 +1407,72 @@
 					<button class="primary" onclick={() => (q.run(), (confirmAsk = null))}>{q.yes}</button>
 					<button onclick={() => (confirmAsk = null)}>Cancel</button>
 				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if viewing}
+		{@const v = viewing}
+		{@const t = asShowTank(tankOf(v))}
+		{@const pi = tankOf(v).partner}
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (viewing = null)}>
+			<div class="dlg wide">
+				<button class="x" aria-label="Close" onclick={() => (viewing = null)}>✕</button>
+				<h3>{v.store}'s tank</h3>
+				<p class="muted small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look?.shape)?.name ?? 'Classic'} · level {t.level}{t.seg > 1 ? ` · ${t.seg} tanks combined` : ''} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</p>
+				<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={showWidthCm(store.capOf(t))} center={pi === null ? null : pi + 1} happy={80} height={260} look={store.lookOf(t)} growth={t.growth ?? 30} stand />
+				<ul class="rarelist">
+					{#each t.fish.toSorted((a, b) => RARITIES.indexOf(species(b.s).rarity) - RARITIES.indexOf(species(a.s).rarity)) as f (f.u)}
+						{@const sp = species(f.s)}
+						<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ? `${f.n} the ` : ''}{sp.name}{f.u === (pi ?? -1) + 1 ? ' 💗' : ''}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
+					{/each}
+				</ul>
+			</div>
+		</div>
+	{/if}
+
+	{#if wikiSel}
+		{@const sp = species(wikiSel)}
+		{@const lvl = s.research[sp.id] ?? 0}
+		{@const task = researchTask(sp.id)}
+		{@const ord = orderPrice(sp)}
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (wikiSel = null)}>
+			<div class="dlg wide">
+				<button class="x" aria-label="Close" onclick={() => (wikiSel = null)}>✕</button>
+				<div class="wikihead" style="--rc: {RARITY_COLOR[sp.rarity]}">
+					<FishIcon id={sp.id} size={130} />
+					<div class="fi">
+						<h3>{sp.name}</h3>
+						<i class="small">{sp.sci}</i>
+						<span class="rar" class:mythic={sp.rarity === 'mythic'}>{RARITY_LABEL[sp.rarity]}</span>
+						<span class="chips">
+							<span>{sp.water === 'salt' ? '🌊 Salt' : '💧 Fresh'}</span>
+							<span>{sp.temp === 'cold' ? '❄️ Cold' : '🔥 Tropical'}</span>
+							<span>{SIZE_LABEL[sp.size]} · {sp.cm} cm</span>
+							{#if sp.predator}<span class="warn">Predator</span>{/if}
+							{#if sp.single}<span class="warn">1 per tank</span>{/if}
+							{#if sp.alone}<span class="warn">Alone only</span>{/if}
+							{#if sp.cleaner}<span class="good">🧽 Clean-up crew</span>{/if}
+						</span>
+						<span class="price">Store price {money(priceOf(sp))}</span>
+						<span class="small">Likes: {sp.likes.map((l) => TANK_DECOR.find((d) => d.id === l)?.name).join(', ')}</span>
+					</div>
+				</div>
+				<h4>🔬 Research · level {lvl}/{RESEARCH_MAX}</h4>
+				<span class="pips big">{#each Array(RESEARCH_MAX) as _, i (i)}<i class:on={i < lvl}></i>{/each}</span>
+				{#if task}
+					<p class="small">{s.staff.find((p) => p.id === task.staff)?.name ?? 'A scientist'} is on it: {time(task.end - store.now)} left.</p>
+					<i class="prog"><em style="width: {Math.min(100, ((store.now - task.start) / (task.end - task.start)) * 100)}%"></em></i>
+				{:else if lvl < RESEARCH_MAX}
+					<p class="muted small">Next level: {money(researchCost(sp, lvl))} and about {time((researchTime(sp, lvl) * 1000) / (ROLES.find((r) => r.id === 'scientist')?.speed ?? 1))}. Needs the research lab and a free Research Scientist.</p>
+					<button class="primary" disabled={researchCost(sp, lvl) > s.cash} onclick={() => act(store.research(sp.id))}>Research level {lvl + 1}</button>
+				{/if}
+				{#if lvl >= RESEARCH_MAX}
+					<p class="small good">Fully researched: you can order this fish whenever you like.</p>
+					<button class="primary" disabled={!store.canAfford(ord.price, ord.currency)} onclick={() => act(store.order(sp.id), 'coin')}>Order one ({ord.currency === 'gems' ? `💎 ${ord.price}` : money(ord.price)})</button>
+				{:else}
+					<p class="muted small">At level {RESEARCH_MAX} you can order it for {ord.currency === 'gems' ? `💎 ${ord.price}` : money(ord.price)}.</p>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -1221,6 +1545,117 @@
 		animation: pulse 1.4s infinite;
 		background: #f59e0b !important;
 		color: #1a1000 !important;
+	}
+	.event {
+		display: flex;
+		gap: 12px;
+		align-items: center;
+		flex-wrap: wrap;
+		padding: 12px;
+		margin-bottom: 12px;
+		border-radius: 12px;
+		background: linear-gradient(120deg, rgba(249, 115, 22, 0.25), rgba(124, 58, 237, 0.25));
+		border: 1px solid rgba(251, 191, 36, 0.5);
+	}
+	.eicon {
+		font-size: 2.4rem;
+	}
+	.evt {
+		font-style: normal;
+		font-size: 0.8rem;
+		margin-left: auto;
+	}
+	.limited {
+		color: #fbbf24;
+	}
+	.giftnote {
+		position: absolute;
+		left: 12px;
+		bottom: 12px;
+		z-index: 3;
+		max-width: min(360px, calc(100% - 90px));
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 10px 12px;
+		border-radius: 12px;
+		background: rgba(6, 22, 34, 0.92);
+		border: 1px solid #f59e0b;
+		font-size: 0.85rem;
+	}
+	.crates {
+		background: #2563eb !important;
+	}
+	.autotoggle {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		font-size: 0.85rem;
+		margin: 6px 0;
+	}
+	.wiki {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+		gap: 8px;
+		margin: 10px 0;
+	}
+	.wcard {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 3px;
+		padding: 8px 6px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid transparent;
+		border-bottom: 3px solid var(--rc);
+		color: inherit;
+		font: inherit;
+		font-size: 0.75rem;
+		text-align: center;
+		cursor: pointer;
+	}
+	.wcard:hover {
+		border-color: var(--rc);
+	}
+	.wcard.missing {
+		cursor: default;
+		opacity: 0.55;
+	}
+	.wcard .qm {
+		display: grid;
+		place-items: center;
+		width: 56px;
+		height: 39px;
+		font-size: 1.6rem;
+		font-weight: 900;
+		color: rgba(255, 255, 255, 0.35);
+	}
+	.pips {
+		display: flex;
+		gap: 3px;
+	}
+	.pips i {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.15);
+	}
+	.pips i.on {
+		background: #a78bfa;
+	}
+	.pips.big i {
+		width: 16px;
+		height: 16px;
+	}
+	.wikihead {
+		display: flex;
+		gap: 14px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.wikihead h3 {
+		margin: 0;
 	}
 	@keyframes pulse {
 		50% {

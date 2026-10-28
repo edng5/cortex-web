@@ -8,7 +8,27 @@ export type Size = 'S' | 'M' | 'L' | 'XL' | 'XXL';
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'ultra' | 'epic' | 'legendary' | 'mythic';
 export type Shape = 'magikarp' | 'sprite' | 'fish' | 'tall' | 'disc' | 'long' | 'shark' | 'ray' | 'puffy' | 'betta' | 'eel' | 'lion' | 'guppy' | 'bottom' | 'shrimp' | 'snail' | 'crab';
 export type Pattern = 'none' | 'neon' | 'hstripes' | 'vbands' | 'spots' | 'calico' | 'marble' | 'split' | 'zebra';
-export type DecorTag = 'sand' | 'gravel' | 'plants' | 'wood' | 'cave' | 'rock' | 'coral' | 'anemone' | 'ornament' | 'bubbles' | 'light' | 'backdrop';
+export type DecorTag =
+	| 'sand'
+	| 'gravel'
+	| 'plants'
+	| 'wood'
+	| 'cave'
+	| 'rock'
+	| 'coral'
+	| 'anemone'
+	| 'ornament'
+	| 'bubbles'
+	| 'light'
+	| 'backdrop'
+	// Limited editions, one per holiday event.
+	| 'lantern'
+	| 'heart'
+	| 'clover'
+	| 'egg'
+	| 'sandcastle'
+	| 'pumpkin'
+	| 'xmastree';
 
 export interface Species {
 	id: string;
@@ -277,7 +297,7 @@ export function maxSizeFor(cap: number): Size {
 }
 
 // ── Decorations ──────────────────────────────────────────────────────────────────────
-export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: number; water?: Water }[] = [
+export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: number; water?: Water; limited?: string }[] = [
 	{ id: 'sand', name: 'Sand substrate', cost: 50, beauty: 4 },
 	{ id: 'gravel', name: 'Gravel', cost: 30, beauty: 3, water: 'fresh' },
 	{ id: 'plants', name: 'Live plants', cost: 90, beauty: 9, water: 'fresh' },
@@ -289,7 +309,16 @@ export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: num
 	{ id: 'ornament', name: 'Treasure chest', cost: 40, beauty: 3 },
 	{ id: 'bubbles', name: 'Bubble wall', cost: 35, beauty: 3 },
 	{ id: 'light', name: 'LED lighting', cost: 150, beauty: 8 },
-	{ id: 'backdrop', name: 'Ocean backdrop', cost: 60, beauty: 4 }
+	{ id: 'backdrop', name: 'Ocean backdrop', cost: 60, beauty: 4 },
+	// Limited editions: only from holiday event crates (`limited` is the event). Once you have
+	// one, you can put it in any of your show tanks.
+	{ id: 'lantern', name: 'Lucky Lantern', cost: 400, beauty: 11, limited: 'lunar' },
+	{ id: 'heart', name: 'Sweetheart Arch', cost: 400, beauty: 11, limited: 'valentine' },
+	{ id: 'clover', name: 'Pot of Gold', cost: 400, beauty: 11, limited: 'stpatrick' },
+	{ id: 'egg', name: 'Painted Egg', cost: 400, beauty: 11, limited: 'spring' },
+	{ id: 'sandcastle', name: 'Sandcastle', cost: 400, beauty: 11, limited: 'summer' },
+	{ id: 'pumpkin', name: "Jack-o'-lantern", cost: 400, beauty: 11, limited: 'halloween' },
+	{ id: 'xmastree', name: 'Festive Tree', cost: 400, beauty: 11, limited: 'winter' }
 ];
 export const decor = (id: DecorTag) => TANK_DECOR.find((d) => d.id === id)!;
 
@@ -331,11 +360,46 @@ export const RESTOCK_TIME = 45;
 export const SUPPLY_BUY = 0.55;
 
 // ── Staff ────────────────────────────────────────────────────────────────────────────
-export const ROLES: { id: string; name: string; speed: number; wage: number; hire: number }[] = [
-	{ id: 'trainee', name: 'Trainee', speed: 1, wage: 40, hire: 100 },
-	{ id: 'aquarist', name: 'Aquarist', speed: 1.5, wage: 90, hire: 450 },
-	{ id: 'senior', name: 'Senior Aquarist', speed: 2.2, wage: 180, hire: 1400 }
+/** What each kind of employee can work on. */
+export type Duty = 'all' | 'build' | 'research';
+export interface Role {
+	id: string;
+	name: string;
+	speed: number;
+	wage: number;
+	hire: number;
+	does: Duty;
+	/** Starts chores (cleaning, trimming, restocking) on their own when free. */
+	auto?: boolean;
+	blurb: string;
+}
+export const ROLES: Role[] = [
+	{ id: 'owner', name: 'Owner', speed: 1, wage: 0, hire: 0, does: 'all', blurb: 'You: any job except research. Unpaid.' },
+	{ id: 'builder', name: 'Builder', speed: 1.4, wage: 40, hire: 100, does: 'build', blurb: 'Only builds: new tanks, upgrades and combining.' },
+	{ id: 'aquarist', name: 'Aquarist', speed: 1.5, wage: 90, hire: 450, does: 'all', blurb: 'Builds, cleans, trims plants and restocks.' },
+	{ id: 'senior', name: 'Senior Aquarist', speed: 2.2, wage: 280, hire: 1400, does: 'all', auto: true, blurb: 'Fast, and works on their own: cleans dirty tanks, trims plants and restocks the shelf without being asked.' },
+	{ id: 'scientist', name: 'Research Scientist', speed: 1, wage: 120, hire: 800, does: 'research', blurb: 'Researches fish in your wiki. At level 5 you can order that fish directly.' }
 ];
+/** Tasks a builder can do. */
+export const BUILD_TASKS = ['build', 'upgrade', 'buildShow', 'upgradeShow', 'combine', 'buildLab'];
+
+// ── Research (the fish wiki) ─────────────────────────────────────────────────────────
+export const RESEARCH_MAX = 5;
+/** The research lab: one 2×2 building that all your scientists share (each researches one fish at a time). */
+export const LAB_COST = 1500;
+export const LAB_TIME = 600;
+/** Researching level `lvl` → `lvl + 1`: cash and time grow with rarity and level. */
+export const researchCost = (s: Species, lvl: number) => Math.max(25, Math.round(priceOf(s) * 0.2 * (lvl + 1)));
+export const researchTime = (s: Species, lvl: number) => (60 + 90 * RARITIES.indexOf(s.rarity)) * (lvl + 1);
+/** Ordering a fully researched fish: cash up to epic; legendary and mythic fish cost gems. */
+export const ORDER_GEMS: Partial<Record<Rarity, number>> = { legendary: 120, mythic: 300 };
+export const orderPrice = (s: Species): { price: number; currency: 'cash' | 'gems' } =>
+	ORDER_GEMS[s.rarity] ? { price: ORDER_GEMS[s.rarity]!, currency: 'gems' } : { price: Math.round(priceOf(s) * 1.5), currency: 'cash' };
+
+// ── Daily gifts: three a day, in the morning, afternoon and evening ──────────────────
+export const GIFT_HOURS = [6, 12, 18];
+export const GIFT_NAMES = ['Morning', 'Afternoon', 'Evening'];
+export const FREE_CRATE_MAX = 9;
 export const MAX_STAFF = 8;
 export const STAFF_NAMES = ['Maya', 'Leo', 'Priya', 'Sam', 'Noah', 'Aiko', 'Diego', 'Zara', 'Omar', 'Ivy', 'Kai', 'Nina', 'Ravi', 'Tess', 'Jun', 'Lena'];
 
@@ -355,6 +419,52 @@ export const CRATE_ODDS: [Rarity, number][] = [
 	['ultra', 2.5],
 	['epic', 0.5]
 ];
+// ── Holiday events: a themed crate for a week or two around each holiday ────────────
+export interface StoreEvent {
+	id: string;
+	name: string;
+	icon: string;
+	/** Runs from `from` to `to` (MM-DD, local time, inclusive). */
+	from: string;
+	to: string;
+	crate: string;
+	blurb: string;
+	/** Fish in these colours (body or markings) come in the event crate. */
+	palette: string[];
+}
+export const EVENTS: StoreEvent[] = [
+	{ id: 'lunar', name: 'Lunar New Year', icon: '🧧', from: '01-20', to: '02-15', crate: 'Lucky Red Crate', blurb: 'Red and gold fish for a lucky year.', palette: ['red', 'darkred', 'gold'] },
+	{ id: 'valentine', name: "Valentine's Day", icon: '💘', from: '02-07', to: '02-14', crate: 'Sweetheart Crate', blurb: 'Pink and red fish, for the one you love.', palette: ['pink', 'magenta', 'red'] },
+	{ id: 'stpatrick', name: "St. Patrick's Day", icon: '☘️', from: '03-10', to: '03-17', crate: 'Shamrock Crate', blurb: 'Green fish only. Lucky you.', palette: ['green', 'olive', 'teal'] },
+	{ id: 'spring', name: 'Spring Festival', icon: '🐣', from: '04-01', to: '04-14', crate: 'Pastel Egg Crate', blurb: 'Soft pastel fish, hatched for spring.', palette: ['pink', 'yellow', 'cyan', 'violet'] },
+	{ id: 'summer', name: 'Summer Splash', icon: '🏖️', from: '07-01', to: '07-10', crate: 'Beach Crate', blurb: 'Sunny blues and yellows from the beach.', palette: ['blue', 'cyan', 'yellow'] },
+	{ id: 'halloween', name: 'Halloween', icon: '🎃', from: '10-20', to: '11-01', crate: 'Spooky Crate', blurb: 'Pumpkin-orange and midnight-black fish… and a few treats.', palette: ['orange', 'black'] },
+	{ id: 'winter', name: 'Winter Holidays', icon: '🎄', from: '12-15', to: '12-31', crate: 'Festive Crate', blurb: 'Red, green and snowy-white fish, all wrapped up.', palette: ['red', 'green', 'white'] }
+];
+export const EVENT_CRATE_COST = 250;
+/** Event crates are kinder than the regular ones. */
+export const EVENT_ODDS: [Rarity, number][] = [
+	['common', 10],
+	['uncommon', 35],
+	['rare', 33],
+	['ultra', 15],
+	['epic', 7]
+];
+/** Chance an event crate holds the event's limited-edition decoration (if you don't have it yet). */
+export const EVENT_DECOR_ODDS = 0.35;
+export const eventDecor = (e: StoreEvent) => TANK_DECOR.find((d) => d.limited === e.id)!;
+/** The event that's on today, if any. */
+export function activeEvent(t = Date.now()): StoreEvent | null {
+	const d = new Date(t);
+	const md = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	return EVENTS.find((e) => md >= e.from && md <= e.to) ?? null;
+}
+/** The fish an event crate can hold: its colours, any water, up to epic. */
+export function eventPool(e: StoreEvent): Species[] {
+	const hex = e.palette.map((c) => COLOR[c]);
+	return SPECIES.filter((s) => RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('epic') && (hex.includes(s.colors[0]) || (!!s.pcolor && hex.includes(s.pcolor))));
+}
+
 /** Chance a crate also holds gems. */
 export const GEM_ODDS = { small: 0.25, big: 0.03 };
 

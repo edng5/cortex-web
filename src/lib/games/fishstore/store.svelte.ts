@@ -6,6 +6,23 @@
 // up on whatever happened while the game was closed (tasks finish, customers shop, water gets
 // dirty, the centrepiece gets hungry).
 import {
+	BUILD_TASKS,
+	LAB_COST,
+	LAB_TIME,
+	EVENT_DECOR_ODDS,
+	eventDecor,
+	EVENT_CRATE_COST,
+	EVENT_ODDS,
+	activeEvent,
+	eventPool,
+	FREE_CRATE_MAX,
+	GIFT_HOURS,
+	GIFT_NAMES,
+	RESEARCH_MAX,
+	orderPrice,
+	researchCost,
+	researchTime,
+	type Role,
 	DEFAULT_LOOK,
 	OVERGROWN,
 	PLANT_GROWTH,
@@ -124,9 +141,11 @@ export interface Staff {
 	name: string;
 	role: string;
 }
-export type TaskKind = 'build' | 'upgrade' | 'clean' | 'buildShow' | 'upgradeShow' | 'combine' | 'cleanShow' | 'restock' | 'trim';
+export type TaskKind = 'build' | 'upgrade' | 'clean' | 'buildShow' | 'upgradeShow' | 'combine' | 'cleanShow' | 'restock' | 'trim' | 'research' | 'buildLab';
 /** Task reference for the supply shelf (tanks use their ids). */
 export const SHELF_REF = -1;
+/** Task reference for building the research lab. */
+export const LAB_REF = -2;
 export interface Task {
 	id: number;
 	kind: TaskKind;
@@ -136,6 +155,8 @@ export interface Task {
 	start: number;
 	end: number;
 	staff: number;
+	/** The species being researched. */
+	sp?: string;
 }
 export interface Decoration extends Placed {
 	id: number;
@@ -182,6 +203,25 @@ interface Save {
 	sold: number;
 	earned: number;
 	caught: string[];
+	/** Every species you've ever had (the wiki). */
+	found: string[];
+	/** Research level (0–5) per species. */
+	research: Record<string, number>;
+	/** Senior aquarists start chores on their own. */
+	auto: boolean;
+	/** The show tank you show off in the global showcase. */
+	fav: number | null;
+	/** Shared your favourite tank to the showcase (it's kept up to date). */
+	shared: boolean;
+	/** Today's gifts: which of the morning/afternoon/evening gifts you've opened. */
+	gifts: { day: string; got: number[] };
+	/** The free decoration left in your main show tank: keep it or sell it. */
+	giftDecor: DecorTag | null;
+	decorGiven: boolean;
+	/** Limited-edition decorations you own (from event crates). */
+	limited: DecorTag[];
+	/** The research lab (2×2), once built. */
+	lab: { x: number; y: number; ready: boolean } | null;
 	log: string[];
 }
 
@@ -210,7 +250,7 @@ function fresh(): Save {
 		gems: START_GEMS,
 		day: today(),
 		streak: 1,
-		freeCrates: 1,
+		freeCrates: 0,
 		last: Date.now(),
 		acc: 0,
 		seq: 10,
@@ -227,7 +267,7 @@ function fresh(): Save {
 			{ u: 6, s: 'platy', c: 0 },
 			{ u: 7, s: 'freshwater-angelfish', c: 0 }
 		],
-		staff: [{ id: 8, name: 'You', role: 'trainee' }],
+		staff: [{ id: 8, name: 'You', role: 'owner' }],
 		tasks: [],
 		decor: [],
 		center: null,
@@ -240,6 +280,16 @@ function fresh(): Save {
 		sold: 0,
 		earned: 0,
 		caught: [],
+		found: ['neon-tetra', 'guppy', 'platy', 'freshwater-angelfish'],
+		research: {},
+		auto: true,
+		fav: null,
+		shared: false,
+		gifts: { day: today(), got: [] },
+		giftDecor: null,
+		decorGiven: false,
+		limited: [],
+		lab: null,
 		log: ['Welcome! Stock your sale tank and set up your show tank.']
 	};
 }
@@ -257,6 +307,7 @@ export class FishStore {
 	constructor() {
 		this.load();
 		this.advance(true);
+		this.leaveDecor();
 	}
 
 	// ── Saving ────────────────────────────────────────────────────────────────────────
@@ -265,11 +316,25 @@ export class FishStore {
 			const raw = localStorage.getItem(SAVE_KEY);
 			if (raw) {
 				const d = JSON.parse(raw) as Save;
-				if (d && d.v === 1) this.s = { ...fresh(), ...d, stock: { ...fresh().stock, ...d.stock } };
+				if (d && d.v === 1) {
+					this.s = { ...fresh(), ...d, stock: { ...fresh().stock, ...d.stock } };
+					this.migrate();
+				}
 			}
 		} catch {
 			/* corrupt or blocked: start fresh */
 		}
+	}
+	/** Bring older saves up to date. */
+	private migrate() {
+		const s = this.s;
+		// Trainees are gone: you're the owner, and the rest become builders.
+		for (const p of s.staff) if (p.role === 'trainee') p.role = p.name === 'You' ? 'owner' : 'builder';
+		if (!s.staff.some((p) => p.role === 'owner')) s.staff.unshift({ id: this.nextId(), name: 'You', role: 'owner' });
+		// The wiki starts with everything you've caught or own.
+		const all = [...s.hold, ...s.sale.flatMap((t) => t.fish), ...s.show.flatMap((t) => t.fish)].map((f) => f.s);
+		s.found = [...new Set([...s.found, ...s.caught, ...all])];
+		if (s.center !== null && !s.show.some((t) => t.fish.some((f) => f.u === s.center))) s.center = null;
 	}
 	save() {
 		try {
@@ -287,6 +352,13 @@ export class FishStore {
 	}
 	private nextId() {
 		return ++this.s.seq;
+	}
+	/** Add a species to the wiki. */
+	private discover(id: string) {
+		if (!this.s.found.includes(id)) {
+			this.s.found.push(id);
+			this.toast = [...this.toast, `New in your fish wiki: ${species(id).name}!`];
+		}
 	}
 
 	// ── Tanks: capacity and the rules ─────────────────────────────────────────────────
@@ -351,7 +423,8 @@ export class FishStore {
 		const src = this.fishAt(from);
 		const fish = src.find((f) => f.u === uid);
 		if (!fish) return no('That fish is gone.');
-		if (fish.u === this.s.center && to !== from) return no('That is your centrepiece fish. Choose a different centrepiece first.');
+		const partner = fish.u === this.s.center;
+		if (partner && to.startsWith('sale')) return no("Your partner fish isn't for sale. Move it to another show tank or the backroom.");
 		const sp = species(fish.s);
 		if (to === 'hold') {
 			if (this.s.hold.length >= this.holdCap()) return no('The backroom is full.');
@@ -363,6 +436,10 @@ export class FishStore {
 		}
 		src.splice(src.indexOf(fish), 1);
 		this.fishAt(to).push(fish);
+		if (partner && to === 'hold') {
+			this.s.center = null;
+			this.say(`${fish.n ?? sp.name} left its tank and is no longer your partner fish.`);
+		}
 		this.save();
 		return ok();
 	}
@@ -379,7 +456,7 @@ export class FishStore {
 	}
 	/** Take a fish out of the store to put it up for sale. */
 	takeForSale(uid: number): Result {
-		if (uid === this.s.center) return no("Your centrepiece isn't for sale. Choose another centrepiece first.");
+		if (uid === this.s.center) return no("Your partner fish isn't for sale. Choose another partner first.");
 		const at = this.findFish(uid);
 		if (!at) return no('That fish is gone.');
 		at.list.splice(at.list.indexOf(at.fish), 1);
@@ -390,6 +467,7 @@ export class FishStore {
 	receive(speciesId: string, name: string | null, force = false): Result {
 		if (!force && this.s.hold.length >= this.holdCap()) return no('The backroom is full: make room first.');
 		this.s.hold.push({ u: this.nextId(), s: species(speciesId).id, c: 0, ...(name ? { n: name } : {}) });
+		this.discover(species(speciesId).id);
 		this.save();
 		return ok();
 	}
@@ -418,12 +496,26 @@ export class FishStore {
 	get main(): ShowTank {
 		return this.s.show[0];
 	}
+	/** The show tank your partner fish lives in. */
+	get petTank(): ShowTank | null {
+		return this.s.center === null ? null : (this.s.show.find((t) => t.fish.some((f) => f.u === this.s.center)) ?? null);
+	}
 	get centerFish(): Fish | null {
-		return this.main.fish.find((f) => f.u === this.s.center) ?? null;
+		return this.petTank?.fish.find((f) => f.u === this.s.center) ?? null;
+	}
+	/** The show tank you show off in the showcase (your main one until you pick another). */
+	get favTank(): ShowTank {
+		return this.s.show.find((t) => t.id === this.s.fav) ?? this.main;
+	}
+	setFav(id: number): Result {
+		if (!this.s.show.some((t) => t.id === id)) return no('No such tank.');
+		this.s.fav = id;
+		this.save();
+		return ok('This is now your favourite show tank: the one everyone sees in the showcase.');
 	}
 	setCenter(uid: number, name?: string): Result {
-		const f = this.main.fish.find((x) => x.u === uid);
-		if (!f) return no('Put the fish in your main show tank first.');
+		const f = this.s.show.flatMap((t) => t.fish).find((x) => x.u === uid);
+		if (!f) return no('Put the fish in a show tank first.');
 		if (this.s.center !== uid) this.s.pet = { hunger: 70, happy: 40, bond: 0, play: 0, lastPlay: 0 };
 		this.s.center = uid;
 		if (name) f.n = name;
@@ -431,14 +523,15 @@ export class FishStore {
 		return ok();
 	}
 	feed(): Result {
-		if (!this.centerFish) return no('Choose a centrepiece fish first.');
+		const home = this.petTank;
+		if (!home || !this.centerFish) return no('Choose a partner fish first.');
 		// Feeding takes a tin of fish food from the supply shelf.
 		if (this.s.stock.food < 1) return no('Out of fish food! Restock the supply shelf.');
 		this.s.stock.food--;
 		const p = this.s.pet;
 		if (p.hunger > 85) {
 			// Overfeeding fouls the water.
-			this.main.clean = clamp(this.main.clean - 8);
+			home.clean = clamp(home.clean - 8);
 			p.happy = clamp(p.happy - 3);
 			p.hunger = 100;
 			this.save();
@@ -449,7 +542,7 @@ export class FishStore {
 		return ok('Yum!');
 	}
 	play(): Result {
-		if (!this.centerFish) return no('Choose a centrepiece fish first.');
+		if (!this.centerFish) return no('Choose a partner fish first.');
 		const p = this.s.pet;
 		const wait = p.lastPlay + 30 * 60_000 - Date.now();
 		if (wait > 0) return no(`${this.centerFish.n ?? 'Your fish'} wants a rest. Play again in ${Math.ceil(wait / 60_000)} min.`);
@@ -464,12 +557,14 @@ export class FishStore {
 		const f = this.centerFish;
 		if (!f) return 0;
 		const likes = species(f.s).likes;
-		return likes.filter((l) => this.main.decor.includes(l)).length / likes.length;
+		return likes.filter((l) => this.petTank!.decor.includes(l)).length / likes.length;
 	}
 	petTarget(): number {
 		const p = this.s.pet;
-		const crowd = this.used(this.main) / this.capOf(this.main);
-		return clamp(0.35 * p.hunger + 0.3 * this.main.clean + 20 * this.decorMatch() + 0.1 * p.play + (crowd < 0.85 ? 5 : 0));
+		const home = this.petTank;
+		if (!home) return 0;
+		const crowd = this.used(home) / this.capOf(home);
+		return clamp(0.35 * p.hunger + 0.3 * home.clean + 20 * this.decorMatch() + 0.1 * p.play + (crowd < 0.85 ? 5 : 0));
 	}
 	addDecor(showId: number, tag: DecorTag): Result {
 		const t = this.s.show.find((x) => x.id === showId);
@@ -491,13 +586,53 @@ export class FishStore {
 		const adds = want.filter((d) => !t.decor.includes(d));
 		const wrong = want.map((d) => TANK_DECOR.find((x) => x.id === d)!).find((d) => d.water && d.water !== t.water);
 		if (wrong) return no(`${wrong.name} is for ${wrong.water === 'salt' ? 'saltwater' : 'freshwater'} tanks.`);
+		const notOwned = adds.map((d) => TANK_DECOR.find((x) => x.id === d)!).find((d) => d.limited && !this.s.limited.includes(d.id));
+		if (notOwned) return no(`${notOwned.name} is a limited edition: it only comes in holiday event crates.`);
 		if (want.length > this.decorSlots(t)) return no(`This tank has room for ${this.decorSlots(t)} decorations.`);
-		const cost = adds.reduce((a, d) => a + TANK_DECOR.find((x) => x.id === d)!.cost, 0);
+		const cost = adds.reduce((a, d) => a + this.decorPrice(d), 0);
 		if (this.s.cash < cost) return no(`That comes to $${cost}: not enough cash.`);
 		this.s.cash -= cost;
 		t.decor = [...want];
 		this.save();
 		return ok(cost ? `Decorations updated for $${cost}.` : 'Decorations updated.');
+	}
+	/** What adding a decoration costs: limited editions you own are free to place. */
+	decorPrice(tag: DecorTag) {
+		const d = TANK_DECOR.find((x) => x.id === tag)!;
+		return d.limited ? 0 : d.cost;
+	}
+	/** A one-off present: a decoration left in your main show tank (if there's room for one). */
+	private leaveDecor() {
+		if (this.s.decorGiven) return;
+		const t = this.main;
+		if (!t || t.decor.length >= this.decorSlots(t)) return;
+		const options = TANK_DECOR.filter((d) => !d.limited && !t.decor.includes(d.id) && (!d.water || d.water === t.water) && d.cost >= 50);
+		if (!options.length) return;
+		const d = pick(options);
+		t.decor.push(d.id);
+		this.s.giftDecor = d.id;
+		this.s.decorGiven = true;
+		this.toast = [...this.toast, `🎁 Someone left a free ${d.name} in your main show tank! Keep it or sell it.`];
+		this.save();
+	}
+	/** What selling the free decoration pays. */
+	giftDecorValue() {
+		const d = TANK_DECOR.find((x) => x.id === this.s.giftDecor);
+		return d ? Math.round(d.cost / 2) : 0;
+	}
+	keepGiftDecor() {
+		this.s.giftDecor = null;
+		this.save();
+	}
+	sellGiftDecor(): Result {
+		const tag = this.s.giftDecor;
+		if (!tag) return no('Nothing to sell.');
+		const cash = this.giftDecorValue();
+		this.s.giftDecor = null;
+		for (const t of this.s.show) t.decor = t.decor.filter((d) => d !== tag || t !== this.main);
+		this.s.cash += cash;
+		this.save();
+		return ok(`Sold it for $${cash}.`);
 	}
 	removeDecor(showId: number, tag: DecorTag) {
 		const t = this.s.show.find((x) => x.id === showId);
@@ -531,10 +666,8 @@ export class FishStore {
 		const rarity = Math.min(1, t.fish.reduce((a, f) => a + RARITY_POINTS[species(f.s).rarity], 0) / 40);
 		const shape = TANK_SHAPES.find((x) => x.id === this.lookOf(t).shape)!.beauty;
 		const base = 0.3 * t.clean + 20 * beauty + 15 * rarity + shape + this.plantEffect(t);
-		if (t === this.main) {
-			if (!this.centerFish) return base * 0.6;
-			return clamp(base + 0.25 * this.s.pet.happy + 0.1 * this.s.pet.bond);
-		}
+		if (t === this.petTank) return clamp(base + 0.25 * this.s.pet.happy + 0.1 * this.s.pet.bond);
+		if (t === this.main && !this.centerFish) return base * 0.6;
 		return clamp(base + (t.fish.length ? 0.35 * t.clean : 0));
 	}
 	storeAppeal() {
@@ -552,20 +685,33 @@ export class FishStore {
 	}
 
 	// ── Staff and timed tasks ─────────────────────────────────────────────────────────
-	role(id: string) {
-		return ROLES.find((r) => r.id === id)!;
+	role(id: string): Role {
+		return ROLES.find((r) => r.id === id) ?? ROLES[0];
+	}
+	canDo(p: Staff, kind: TaskKind) {
+		const d = this.role(p.role).does;
+		if (kind === 'research') return d === 'research';
+		return d === 'all' || (d === 'build' && BUILD_TASKS.includes(kind));
+	}
+	/** How many staff are free to do this kind of task right now. */
+	freeFor(kind: TaskKind) {
+		const busy = new Set(this.s.tasks.map((t) => t.staff));
+		return this.s.staff.filter((p) => !busy.has(p.id) && this.canDo(p, kind)).length;
 	}
 	wages() {
 		return this.s.staff.reduce((a, p) => a + this.role(p.role).wage, 0);
 	}
-	freeStaff(): Staff | null {
+	freeStaff(kind?: TaskKind): Staff | null {
 		const busy = new Set(this.s.tasks.map((t) => t.staff));
-		const free = this.s.staff.filter((p) => !busy.has(p.id));
-		free.sort((a, b) => this.role(b.role).speed - this.role(a.role).speed);
+		const free = this.s.staff.filter((p) => !busy.has(p.id) && (!kind || this.canDo(p, kind)));
+		// The specialists first (builders build), then the fastest.
+		const narrow = (p: Staff) => (this.role(p.role).does === 'all' ? 0 : 1);
+		free.sort((a, b) => narrow(b) - narrow(a) || this.role(b.role).speed - this.role(a.role).speed);
 		return free[0] ?? null;
 	}
 	hire(roleId: string): Result {
 		const r = this.role(roleId);
+		if (r.id === 'owner') return no("There's only one of you.");
 		if (this.s.layoff) return no("You can't hire while payroll is short.");
 		if (this.s.staff.length >= MAX_STAFF) return no('The store is fully staffed.');
 		if (this.s.cash < r.hire) return no(`Hiring a ${r.name} costs $${r.hire}.`);
@@ -581,6 +727,7 @@ export class FishStore {
 		if (this.s.staff.length <= 1) return no('You need at least one employee to run the store.');
 		if (this.s.tasks.some((t) => t.staff === id)) return no('They are busy with a task. Lay them off when it finishes.');
 		const p = this.s.staff.find((x) => x.id === id);
+		if (p?.role === 'owner') return no("You can't lay yourself off!");
 		this.s.staff = this.s.staff.filter((x) => x.id !== id);
 		if (p) this.say(`Laid off ${p.name}.`);
 		this.checkPayroll();
@@ -590,12 +737,16 @@ export class FishStore {
 	private checkPayroll() {
 		if (this.s.layoff && (this.wages() <= this.s.cash || this.s.staff.length <= 1)) this.s.layoff = false;
 	}
-	private startTask(kind: TaskKind, label: string, seconds: number, ref: number, ref2?: number): Result {
+	private startTask(kind: TaskKind, label: string, seconds: number, ref: number, ref2?: number, by?: Staff, sp?: string): Result {
 		if (this.s.tasks.some((t) => t.ref === ref || t.ref2 === ref || (ref2 && (t.ref === ref2 || t.ref2 === ref2)))) return no('Someone is already working on that.');
-		const who = this.freeStaff();
-		if (!who) return no('All your staff are busy. Hire more staff or wait for a task to finish.');
+		const who = by ?? this.freeStaff(kind);
+		if (!who) {
+			if (kind === 'research') return no(this.s.staff.some((p) => this.role(p.role).does === 'research') ? 'Your scientists are all busy.' : 'Hire a Research Scientist (Staff tab) to research fish.');
+			if (!this.s.staff.some((p) => this.canDo(p, kind))) return no('Builders only build: hire an Aquarist for that.');
+			return no('Everyone who can do that is busy. Hire more staff or wait for a task to finish.');
+		}
 		const dur = Math.round((seconds * 1000) / this.role(who.role).speed);
-		this.s.tasks.push({ id: this.nextId(), kind, label, ref, ref2, start: Date.now(), end: Date.now() + dur, staff: who.id });
+		this.s.tasks.push({ id: this.nextId(), kind, label, ref, ref2, start: Date.now(), end: Date.now() + dur, staff: who.id, ...(sp ? { sp } : {}) });
 		this.save();
 		return ok(`${who.name} started: ${label}.`);
 	}
@@ -634,6 +785,12 @@ export class FishStore {
 				break;
 			case 'trim':
 				if (show) show.growth = TRIMMED;
+				break;
+			case 'buildLab':
+				if (this.s.lab) this.s.lab.ready = true;
+				break;
+			case 'research':
+				if (t.sp) this.s.research[t.sp] = Math.min(RESEARCH_MAX, (this.s.research[t.sp] ?? 0) + 1);
 				break;
 			case 'restock':
 				for (const x of SUPPLIES) this.s.stock[x.id] = Math.min(this.shelfCap(), this.s.stock[x.id] + (this.s.order[x.id] ?? 0));
@@ -685,6 +842,7 @@ export class FishStore {
 		for (const t of this.s.show) if (t !== skip) mark(t.x, t.y, ...this.footprint('show', t));
 		for (const d of this.s.decor) if (d !== skip) mark(d.x, d.y, 1, 1);
 		if (this.s.shelf !== skip) mark(this.s.shelf.x, this.s.shelf.y, 2, 1);
+		if (this.s.lab && this.s.lab !== skip) mark(this.s.lab.x, this.s.lab.y, 2, 2);
 		return g;
 	}
 	/** Where people can walk on the floor (true = blocked by a tank, decoration or the counter). Rugs can be walked on. */
@@ -698,6 +856,7 @@ export class FishStore {
 		for (const t of this.s.show) mark(t.x, t.y, ...this.footprint('show', t));
 		for (const d of this.s.decor) if (d.item !== 'rug') mark(d.x, d.y, 1, 1);
 		mark(this.s.shelf.x, this.s.shelf.y, 2, 1);
+		if (this.s.lab) mark(this.s.lab.x, this.s.lab.y, 2, 2);
 		return g;
 	}
 	fits(x: number, y: number, w: number, h: number, skip?: object) {
@@ -717,6 +876,28 @@ export class FishStore {
 		this.save();
 		return ok();
 	}
+	moveLab(x: number, y: number): Result {
+		const lab = this.s.lab;
+		if (!lab) return no('No lab yet.');
+		if (!this.fits(x, y, 2, 2, lab)) return no("It doesn't fit there.");
+		lab.x = x;
+		lab.y = y;
+		this.save();
+		return ok();
+	}
+	/** Build the research lab (one per store; every scientist works in it). */
+	buildLab(): Result {
+		if (this.s.lab) return no('You already have a research lab.');
+		if (this.s.cash < LAB_COST) return no(`The lab costs $${LAB_COST}.`);
+		const spot = this.findSpot(2, 2);
+		if (!spot) return no('No free floor space (the lab needs 2×2). Move things around in Layout mode.');
+		const r = this.startTask('buildLab', 'Build the research lab', LAB_TIME, LAB_REF);
+		if (!r.ok) return r;
+		this.s.cash -= LAB_COST;
+		this.s.lab = { ...spot, ready: false };
+		this.save();
+		return r;
+	}
 	shelfCap() {
 		return SHELF_CAP[this.s.shelf.level];
 	}
@@ -725,7 +906,7 @@ export class FishStore {
 		return SUPPLIES.reduce((a, x) => a + Math.max(0, this.shelfCap() - this.s.stock[x.id]) * x.cost, 0);
 	}
 	/** Order supplies to fill the shelf (as much as you can afford); a staff member stocks it. */
-	restock(): Result {
+	restock(by?: Staff): Result {
 		const order: Partial<Record<SupplyId, number>> = {};
 		let cost = 0;
 		for (const x of SUPPLIES) {
@@ -737,7 +918,7 @@ export class FishStore {
 			}
 		}
 		if (!cost) return no(this.restockCost() ? 'Not enough cash to restock.' : 'The shelf is already full.');
-		const r = this.startTask('restock', 'Restock the supply shelf', RESTOCK_TIME, SHELF_REF);
+		const r = this.startTask('restock', 'Restock the supply shelf', RESTOCK_TIME, SHELF_REF, undefined, by);
 		if (!r.ok) return r;
 		this.s.cash -= cost;
 		this.s.order = order;
@@ -865,23 +1046,23 @@ export class FishStore {
 		this.save();
 		return ok();
 	}
-	clean(loc: Loc): Result {
+	clean(loc: Loc, by?: Staff): Result {
 		const t = this.tankAt(loc);
 		if (!t) return no('No such tank.');
 		if (t.clean >= 95) return no('That tank is already sparkling.');
 		if ('tier' in t) {
 			const mins = [1.5, 2, 3, 4, 6][TANK_TIERS.findIndex((x) => x.id === t.tier)];
-			return this.startTask('clean', `Clean the ${tier(t.tier).name.toLowerCase()}`, mins * 60, t.id);
+			return this.startTask('clean', `Clean the ${tier(t.tier).name.toLowerCase()}`, mins * 60, t.id, undefined, by);
 		}
-		return this.startTask('cleanShow', 'Clean the show tank', 240 * t.seg, t.id);
+		return this.startTask('cleanShow', 'Clean the show tank', 240 * t.seg, t.id, undefined, by);
 	}
 	/** Trim the live plants back (a staff task). */
-	trim(id: number): Result {
+	trim(id: number, by?: Staff): Result {
 		const t = this.s.show.find((x) => x.id === id);
 		if (!t) return no('No such tank.');
 		if (!t.decor.includes('plants')) return no('There are no live plants in this tank.');
 		if ((t.growth ?? 0) < 45) return no("The plants don't need trimming yet.");
-		return this.startTask('trim', 'Trim the plants', TRIM_TIME * t.seg, t.id);
+		return this.startTask('trim', 'Trim the plants', TRIM_TIME * t.seg, t.id, undefined, by);
 	}
 	/** What restyling a show tank would cost: the new shape's price, plus a fee per repaint. */
 	restyleCost(t: ShowTank, change: Partial<TankLook>) {
@@ -989,32 +1170,46 @@ export class FishStore {
 	}
 
 	// ── Shipments (gacha) ────────────────────────────────────────────────────────────
-	openCrate(supplierId: string): { ok: false; msg: string } | { ok: true; fish: Fish[]; gems: number; free: boolean } {
-		const sup = SUPPLIERS.find((x) => x.id === supplierId)!;
+	openCrate(supplierId: string): { ok: false; msg: string } | { ok: true; fish: Fish[]; gems: number; free: boolean; decor?: DecorTag } {
+		const ev = supplierId === 'event' ? activeEvent() : null;
+		if (supplierId === 'event' && !ev) return no('That event is over. Watch for the next holiday!');
+		const sup = ev ? { name: ev.crate } : SUPPLIERS.find((x) => x.id === supplierId)!;
+		const cost = ev ? EVENT_CRATE_COST : CRATE_COST;
 		const free = this.s.freeCrates > 0;
-		if (!free && this.s.cash < CRATE_COST) return no(`A crate costs $${CRATE_COST}.`);
+		if (!free && this.s.cash < cost) return no(`A crate costs $${cost}.`);
 		if (this.s.hold.length + CRATE_FISH > this.holdCap()) return no(`Make room in the backroom first (a crate holds ${CRATE_FISH} fish).`);
 		if (free) this.s.freeCrates--;
-		else this.s.cash -= CRATE_COST;
-		const pool = SPECIES.filter((s) => s.water === sup.water && s.temp === sup.temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('epic'));
+		else this.s.cash -= cost;
+		const pool = ev ? eventPool(ev) : SPECIES.filter((s) => s.water === (sup as (typeof SUPPLIERS)[number]).water && s.temp === (sup as (typeof SUPPLIERS)[number]).temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('epic'));
 		const fish: Fish[] = [];
 		for (let i = 0; i < CRATE_FISH; i++) {
-			let r = RARITIES.indexOf(roll(CRATE_ODDS));
+			let r = RARITIES.indexOf(roll(ev ? EVENT_ODDS : CRATE_ODDS));
 			// Not every supplier ships every rarity: fall back to the next one down.
 			while (r > 0 && !pool.some((s) => s.rarity === RARITIES[r])) r--;
 			const sp = pick(pool.filter((s) => s.rarity === RARITIES[r]));
 			const f = { u: this.nextId(), s: sp.id, c: 0 };
 			fish.push(f);
 			this.s.hold.push(f);
+			if (!this.s.found.includes(sp.id)) this.s.found.push(sp.id);
 		}
 		let gems = 0;
 		const g = Math.random();
 		if (g < GEM_ODDS.big) gems = 10;
 		else if (g < GEM_ODDS.big + GEM_ODDS.small) gems = 1 + Math.floor(Math.random() * 3);
+		// Event crates always come with a few treats, and maybe the limited-edition decoration.
+		let decor: DecorTag | undefined;
+		if (ev) {
+			gems += 2 + Math.floor(Math.random() * 4);
+			const d = eventDecor(ev);
+			if (!this.s.limited.includes(d.id) && Math.random() < EVENT_DECOR_ODDS) {
+				this.s.limited.push(d.id);
+				decor = d.id;
+			}
+		}
 		this.s.gems += gems;
-		this.say(`${sup.name} delivered ${fish.map((f) => species(f.s).name).join(', ')}${gems ? ` and ${gems} gems` : ''}.`);
+		this.say(`${sup.name} delivered ${fish.map((f) => species(f.s).name).join(', ')}${gems ? ` and ${gems} gems` : ''}${decor ? `, plus a limited-edition ${TANK_DECOR.find((d) => d.id === decor)!.name}` : ''}.`);
 		this.save();
-		return { ok: true, fish, gems, free };
+		return { ok: true, fish, gems, free, decor };
 	}
 	buyHolding(): Result {
 		if (this.s.holdCap >= HOLDING_MAX) return no('The backroom is as big as it gets.');
@@ -1048,6 +1243,7 @@ export class FishStore {
 		if (this.s.hold.length >= this.holdCap()) return no('The backroom is full.');
 		this.s.hold.push({ u: this.nextId(), s: sp.id, c: 0 });
 		if (!this.s.caught.includes(sp.id)) this.s.caught.push(sp.id);
+		this.discover(sp.id);
 		this.say(`Caught a ${sp.name}!`);
 		this.save();
 		return ok();
@@ -1072,6 +1268,7 @@ export class FishStore {
 			this.finishTask(t);
 		}
 		this.simulate(now);
+		this.automate();
 		if (opening && (s.sold > soldBefore || s.cash !== cashBefore)) {
 			const sold = s.sold - soldBefore;
 			if (sold > 0)
@@ -1149,13 +1346,12 @@ export class FishStore {
 		s.streak = days === 1 ? Math.min(30, s.streak + 1) : 1;
 		const reward = DAILY_BASE + DAILY_STREAK * Math.min(s.streak - 1, 6);
 		s.cash += reward;
-		s.freeCrates = Math.min(3, s.freeCrates + 1);
 		s.day = d;
 		// Payroll for each day since the last visit (up to a week).
 		const due = this.wages() * Math.min(days, 7);
 		if (s.cash >= due) {
 			s.cash -= due;
-			this.toast = [...this.toast, `Daily reward: $${reward} and a free crate! Paid $${due} in wages.`];
+			this.toast = [...this.toast, `Daily reward: $${reward}! Paid $${due} in wages.`];
 		} else {
 			s.cash = 0;
 			s.layoff = s.staff.length > 1;
@@ -1166,6 +1362,111 @@ export class FishStore {
 		}
 		this.say(`New day! Reward $${reward}, wages $${due}.`);
 		this.save();
+	}
+
+	// ── Senior aquarists: chores without being asked ─────────────────────────────────
+	private automate() {
+		if (!this.s.auto || this.s.layoff) return;
+		for (const p of this.s.staff) {
+			if (!this.role(p.role).auto || this.s.tasks.some((t) => t.staff === p.id)) continue;
+			const r = this.chore(p);
+			if (!r) return;
+			if (r.ok) this.say(`${p.name} got on with it: ${this.s.tasks.at(-1)?.label}.`);
+		}
+	}
+	private chore(p: Staff): Result | null {
+		const free = (id: number) => !this.s.tasks.some((t) => t.ref === id || t.ref2 === id);
+		const dirtySale = this.s.sale.find((t) => t.ready && t.fish.length && t.clean < 60 && free(t.id));
+		if (dirtySale) return this.clean(`sale:${dirtySale.id}`, p);
+		const dirtyShow = this.s.show.find((t) => t.ready && t.fish.length && t.clean < 60 && free(t.id));
+		if (dirtyShow) return this.clean(`show:${dirtyShow.id}`, p);
+		const shaggy = this.s.show.find((t) => t.ready && this.overgrown(t) && free(t.id));
+		if (shaggy) return this.trim(shaggy.id, p);
+		const low = SUPPLIES.some((x) => this.s.stock[x.id] < this.shelfCap() * 0.25);
+		// Only restock with money to spare after wages.
+		if (low && free(SHELF_REF) && this.s.cash - this.restockCost() > this.wages()) return this.restock(p);
+		return null;
+	}
+	setAuto(on: boolean) {
+		this.s.auto = on;
+		this.save();
+	}
+
+	// ── The fish wiki and research ───────────────────────────────────────────────────
+	researchOf(id: string) {
+		return this.s.research[id] ?? 0;
+	}
+	research(id: string): Result {
+		const sp = species(id);
+		if (!this.s.found.includes(sp.id)) return no("You haven't found that fish yet.");
+		const lvl = this.researchOf(sp.id);
+		if (lvl >= RESEARCH_MAX) return no('Fully researched.');
+		if (!this.s.lab) return no('Build a research lab first (Build & buy).');
+		if (!this.s.lab.ready) return no('The research lab is still being built.');
+		const cost = researchCost(sp, lvl);
+		if (this.s.cash < cost) return no(`Research costs $${cost}.`);
+		const ref = -1000 - SPECIES.indexOf(sp);
+		const r = this.startTask('research', `Research the ${sp.name} (level ${lvl + 1})`, researchTime(sp, lvl), ref, undefined, undefined, sp.id);
+		if (!r.ok) return r;
+		this.s.cash -= cost;
+		this.save();
+		return r;
+	}
+	/** Order a fully researched fish straight from the breeders. */
+	order(id: string): Result {
+		const sp = species(id);
+		if (this.researchOf(sp.id) < RESEARCH_MAX) return no(`Research the ${sp.name} to level ${RESEARCH_MAX} first.`);
+		const { price, currency } = orderPrice(sp);
+		if (!this.canAfford(price, currency)) return no(`That costs ${currency === 'gems' ? `${price} gems` : `$${price}`}.`);
+		if (this.s.hold.length >= this.holdCap()) return no('The backroom is full: make room first.');
+		this.pay(price, currency);
+		this.s.hold.push({ u: this.nextId(), s: sp.id, c: 0 });
+		this.say(`Ordered a ${sp.name}.`);
+		this.save();
+		return ok(`A ${sp.name} is waiting in your backroom.`);
+	}
+
+	// ── Daily gifts ──────────────────────────────────────────────────────────────────
+	/** Today's gifts that have unlocked and not been opened. */
+	giftsReady(): number[] {
+		const got = this.s.gifts.day === today(this.now) ? this.s.gifts.got : [];
+		const h = new Date(this.now).getHours();
+		return GIFT_HOURS.map((_, i) => i).filter((i) => GIFT_HOURS[i] <= h && !got.includes(i));
+	}
+	/** How long until the next gift unlocks (ms). */
+	nextGift(): number {
+		const d = new Date(this.now);
+		const t = new Date(d);
+		const next = GIFT_HOURS.find((hr) => hr > d.getHours());
+		if (next === undefined) {
+			t.setDate(d.getDate() + 1);
+			t.setHours(GIFT_HOURS[0], 0, 0, 0);
+		} else t.setHours(next, 0, 0, 0);
+		return t.getTime() - this.now;
+	}
+	/** Open a gift: a free crate, some cash or some gems. */
+	openGift(): Result {
+		const i = this.giftsReady()[0];
+		if (i === undefined) return no('No gift ready yet.');
+		if (this.s.gifts.day !== today()) this.s.gifts = { day: today(), got: [] };
+		this.s.gifts.got.push(i);
+		const r = Math.random();
+		let msg: string;
+		if (r < 0.6 && this.s.freeCrates < FREE_CRATE_MAX) {
+			this.s.freeCrates++;
+			msg = 'a free shipment crate';
+		} else if (r < 0.88) {
+			const cash = 100 + Math.floor(Math.random() * 5) * 50;
+			this.s.cash += cash;
+			msg = `$${cash}`;
+		} else {
+			const gems = 3 + Math.floor(Math.random() * 6);
+			this.s.gems += gems;
+			msg = `${gems} gems`;
+		}
+		this.say(`${GIFT_NAMES[i]} gift: ${msg}.`);
+		this.save();
+		return ok(`🎁 ${GIFT_NAMES[i]} gift: ${msg}!`);
 	}
 
 	// ── Naming ───────────────────────────────────────────────────────────────────────

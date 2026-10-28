@@ -7,7 +7,7 @@
   Layout mode, tap something, then tap where it should go.
 -->
 <script lang="ts" module>
-	export type FloorPick = { kind: 'sale' | 'show' | 'decor' | 'shelf'; id: number } | null;
+	export type FloorPick = { kind: 'sale' | 'show' | 'decor' | 'shelf' | 'lab'; id: number } | null;
 </script>
 
 <script lang="ts">
@@ -20,8 +20,19 @@
 		store,
 		layout = false,
 		picked = null,
-		ontap
-	}: { store: FishStore; layout?: boolean; picked?: FloorPick; ontap: (x: number, y: number) => void } = $props();
+		ontap,
+		onpress,
+		ondragby
+	}: {
+		store: FishStore;
+		layout?: boolean;
+		picked?: FloorPick;
+		ontap: (x: number, y: number) => void;
+		/** Layout mode: pressing on something picks it up ('held' if it was already picked up). */
+		onpress?: (x: number, y: number) => boolean | 'held';
+		/** Layout mode: the picked-up thing was dragged this many tiles. */
+		ondragby?: (dx: number, dy: number) => void;
+	} = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let wrap = $state<HTMLDivElement>();
@@ -29,7 +40,26 @@
 	let T = 40;
 	/** Phones: the floor is bigger than the screen, and you drag to look around. */
 	let pan = $state(false);
-	let drag: { x: number; y: number; sl: number; st: number; moved: boolean } | null = null;
+	let drag: { x: number; y: number; sl: number; st: number; moved: boolean; cell: [number, number] | null; item: boolean | 'held' } | null = null;
+	/** While dragging something in layout mode: how far it's been dragged (tiles). */
+	let carry = $state<[number, number] | null>(null);
+	/** Where the picked thing is and how big, with the object itself (for checking it fits). */
+	function pickedBox(): { x: number; y: number; w: number; h: number; obj: object } | null {
+		const s = store.s;
+		if (!picked) return null;
+		if (picked.kind === 'shelf') return { x: s.shelf.x, y: s.shelf.y, w: 2, h: 1, obj: s.shelf };
+		if (picked.kind === 'lab') return s.lab ? { x: s.lab.x, y: s.lab.y, w: 2, h: 2, obj: s.lab } : null;
+		if (picked.kind === 'decor') {
+			const d = s.decor.find((x) => x.id === picked!.id);
+			return d ? { x: d.x, y: d.y, w: 1, h: 1, obj: d } : null;
+		}
+		if (picked.kind === 'sale') {
+			const t = s.sale.find((x) => x.id === picked!.id);
+			return t ? { x: t.x, y: t.y, w: tier(t.tier).w, h: 1, obj: t } : null;
+		}
+		const t = s.show.find((x) => x.id === picked!.id);
+		return t ? { x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, obj: t } : null;
+	}
 	const ZF = 0.72;
 	const wallH = () => Math.round(T * 1.9);
 	const DOOR: [number, number] = [5, GRID_H - 1];
@@ -137,9 +167,12 @@
 		];
 	}
 	function allTanks() {
+		const lab = store.s.lab;
 		return [
 			...store.s.sale.map((t) => ({ x: t.x, y: t.y, w: tier(t.tier).w, h: 1, id: t.id })),
-			...store.s.show.map((t) => ({ x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, id: t.id }))
+			...store.s.show.map((t) => ({ x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, id: t.id })),
+			// The lab counts too, so builders and scientists walk over to it.
+			...(lab ? [{ x: lab.x, y: lab.y, w: 2, h: 2, id: -2 }] : [])
 		];
 	}
 	function nextBrowse(a: Agent) {
@@ -242,7 +275,8 @@
 			} else {
 				const task = a.staffId !== undefined ? busy.get(a.staffId) : undefined;
 				if (task) {
-					const t = allTanks().find((x) => x.id === task.ref || x.id === task.ref2);
+					const ref = task.kind === 'research' ? -2 : task.ref;
+					const t = allTanks().find((x) => x.id === ref || x.id === task.ref2);
 					if (a.goal !== 'work' && t) {
 						a.goal = 'work';
 						goTo(a, beside(grid(), t.x, t.y, t.w, t.h));
@@ -386,6 +420,46 @@
 			for (let i = 0; i < n; i++) b.push(bx(0.15 + i * 0.215, 0.6, z + 0.04, 0.17, 0.12, 0.22, i % 2 ? it.color : shade(it.color, 0.88)));
 		});
 		b.push(bx(0.6, 0.52, 1.35, 0.8, 0.05, 0.2, '#2a7ab0'), bx(0.68, 0.57, 1.41, 0.64, 0.01, 0.08, '#f4f4f4'));
+		return b;
+	}
+	/** The research lab (2×2): lab benches with a microscope, test tubes, specimen tanks and a screen. */
+	function labModel(t: number, ready: boolean): Box[] {
+		if (!ready) {
+			// Under construction: a frame of beams on a slab.
+			const b: Box[] = [bx(0.05, 0.05, 0, 1.9, 1.9, 0.08, '#9aa0a8')];
+			for (const [x, y] of [[0.1, 0.1], [1.8, 0.1], [0.1, 1.8], [1.8, 1.8]]) b.push(bx(x, y, 0.08, 0.1, 0.1, 1.2, '#e0a030'));
+			b.push(bx(0.1, 0.1, 1.2, 1.8, 0.1, 0.08, '#e0a030'), bx(0.1, 1.8, 1.2, 1.8, 0.1, 0.08, '#e0a030'));
+			return b;
+		}
+		const bench = '#d6dde3';
+		const b: Box[] = [
+			// Clean white floor and a glass partition at the back.
+			bx(0.02, 0.02, 0, 1.96, 1.96, 0.04, '#6f8a9c'),
+			bx(0.02, 0.02, 0.04, 1.96, 0.08, 1.3, '#bfe4f4', 0.45),
+			bx(0.02, 0.02, 1.3, 1.96, 0.1, 0.08, '#8a96a2'),
+			// Back bench with specimen tanks.
+			bx(0.1, 0.15, 0.04, 1.8, 0.45, 0.5, bench),
+			bx(0.1, 0.15, 0.54, 1.8, 0.45, 0.04, '#2e3a46'),
+			bx(0.18, 0.2, 0.58, 0.45, 0.3, 0.32, '#4ab8e8', 0.75),
+			bx(0.75, 0.2, 0.58, 0.45, 0.3, 0.32, '#4ab8e8', 0.75),
+			// A screen with a scrolling readout.
+			bx(1.35, 0.25, 0.58, 0.5, 0.06, 0.38, '#2a3440'),
+			bx(1.39, 0.24, 0.62, 0.42, 0.02, 0.3, Math.sin(t * 3) > 0 ? '#4ade80' : '#38bdf8'),
+			// Front bench: microscope and a rack of test tubes.
+			bx(0.25, 1.15, 0.04, 1.5, 0.45, 0.45, bench),
+			bx(0.25, 1.15, 0.49, 1.5, 0.45, 0.04, '#2e3a46'),
+			bx(0.45, 1.3, 0.53, 0.2, 0.2, 0.05, '#3a3a44'),
+			bx(0.52, 1.35, 0.58, 0.06, 0.08, 0.28, '#3a3a44'),
+			bx(0.47, 1.3, 0.8, 0.16, 0.1, 0.06, '#5a5a66'),
+			bx(1.05, 1.3, 0.53, 0.5, 0.15, 0.06, '#8a6a48')
+		];
+		// Specimen fish swimming in the little tanks.
+		for (let i = 0; i < 2; i++) b.push(bx(0.28 + i * 0.57 + Math.sin(t * 1.5 + i * 2) * 0.1, 0.3, 0.7 + i * 0.05, 0.12, 0.06, 0.06, i ? '#f08a1a' : '#e8462a'));
+		// Test tubes in four colours, bubbling.
+		['#4ade80', '#f472b6', '#38bdf8', '#facc15'].forEach((col, i) => {
+			b.push(bx(1.1 + i * 0.11, 1.33, 0.59, 0.06, 0.06, 0.2, '#e8f4ff', 0.6));
+			b.push(bx(1.11 + i * 0.11, 1.34, 0.59, 0.04, 0.04, 0.1 + Math.abs(Math.sin(t * 2 + i)) * 0.06, col));
+		});
 		return b;
 	}
 	/** The counter: till, card reader, a stand of fish bags and a row of betta cups. */
@@ -607,9 +681,17 @@
 			c.strokeStyle = 'rgba(0,0,0,0.15)';
 			for (let x = 0; x <= GRID_W; x++) c.strokeRect(x * T, oy, 0, GRID_H * T);
 			for (let y = 0; y <= GRID_H; y++) c.strokeRect(0, oy + y * T, FW, 0);
-			if (hover && picked) {
-				c.fillStyle = 'rgba(74,222,128,0.35)';
-				c.fillRect(hover[0] * T, oy + hover[1] * T, T, T);
+			// Where the picked thing would land: dragged, or tapped (its top-left corner on the tile).
+			const box = pickedBox();
+			const to = box && (carry ? [box.x + carry[0], box.y + carry[1]] : hover);
+			if (box && to && (to[0] !== box.x || to[1] !== box.y)) {
+				const okay = store.fits(to[0], to[1], box.w, box.h, box.obj);
+				c.fillStyle = okay ? 'rgba(74,222,128,0.35)' : 'rgba(248,113,113,0.35)';
+				c.fillRect(to[0] * T, oy + to[1] * T, box.w * T, box.h * T);
+				c.strokeStyle = okay ? '#4ade80' : '#f87171';
+				c.lineWidth = 2;
+				c.strokeRect(to[0] * T + 1, oy + to[1] * T + 1, box.w * T - 2, box.h * T - 2);
+				c.lineWidth = 1;
 			}
 		}
 
@@ -636,6 +718,25 @@
 					}
 				});
 			}
+		if (store.s.lab) {
+			const lab = store.s.lab;
+			const sel = picked?.kind === 'lab';
+			things.push({
+				y: lab.y + 1.98,
+				f: () => {
+					shadow(c, (lab.x + 1) * T, oy + (lab.y + 1.8) * T, T * 1.1, T * 0.25);
+					// Drawn in the order it's built (back to front), like the counter.
+					drawVoxel(c, labModel(t, lab.ready), lab.x * T, oy + lab.y * T, T, Z);
+					if (lab.ready) {
+						c.font = `bold ${Math.max(9, Math.round(T * 0.26))}px sans-serif`;
+						c.textAlign = 'center';
+						c.fillStyle = '#fff';
+						c.fillText('🔬 LAB', (lab.x + 1) * T, oy + lab.y * T - Z * 1.45);
+					}
+					if (sel) outline(c, lab.x, lab.y, 2, 2, oy, Z);
+				}
+			});
+		}
 		for (const tk of store.s.sale) {
 			const w = tier(tk.tier).w;
 			const sel = picked?.kind === 'sale' && picked.id === tk.id;
@@ -740,13 +841,14 @@
 		c.fillRect(X0 + WW * 0.08, Y0 + HH + 2, 3, T * 0.35);
 	}
 
-	const TASK_ICON: Record<string, string> = { build: '🔨', buildShow: '🔨', upgrade: '⬆️', upgradeShow: '⬆️', clean: '🧽', cleanShow: '🧽', trim: '✂️', restock: '📦', combine: '🔗' };
+	const TASK_ICON: Record<string, string> = { build: '🔨', buildShow: '🔨', upgrade: '⬆️', upgradeShow: '⬆️', clean: '🧽', cleanShow: '🧽', trim: '✂️', restock: '📦', combine: '🔗', research: '🔬', buildLab: '🔨' };
 	/** A progress bar floating over whatever is being built, upgraded, cleaned or restocked. */
 	function progressBars(c: CanvasRenderingContext2D, oy: number, Z: number) {
 		const now = Date.now();
 		for (const task of store.s.tasks) {
 			let box: { x: number; y: number; w: number } | null = null;
 			if (task.ref === -1) box = { x: store.s.shelf.x, y: store.s.shelf.y, w: 2 };
+			else if (task.kind === 'research') continue;
 			else {
 				const t = allTanks().find((x) => x.id === task.ref);
 				if (t) box = t;
@@ -842,28 +944,49 @@
 		bind:this={canvas}
 		class:pan
 		onpointerdown={(e) => {
-			drag = { x: e.clientX, y: e.clientY, sl: wrap!.scrollLeft, st: wrap!.scrollTop, moved: false };
+			const at = cell(e);
+			// In layout mode, pressing on something picks it up so it can be dragged.
+			const item = (layout && at && onpress?.(at[0], at[1])) || false;
+			if (item) canvas!.setPointerCapture(e.pointerId);
+			drag = { x: e.clientX, y: e.clientY, sl: wrap!.scrollLeft, st: wrap!.scrollTop, moved: false, cell: at, item };
 		}}
 		onpointermove={(e) => {
 			hover = cell(e);
-			if (!drag || !pan) return;
+			if (!drag) return;
 			const dx = e.clientX - drag.x;
 			const dy = e.clientY - drag.y;
 			if (Math.hypot(dx, dy) > 6) drag.moved = true;
-			if (drag.moved) {
+			if (!drag.moved) return;
+			if (drag.item) {
+				if (hover && drag.cell) carry = [hover[0] - drag.cell[0], hover[1] - drag.cell[1]];
+			} else if (pan) {
 				wrap!.scrollLeft = drag.sl - dx;
 				wrap!.scrollTop = drag.st - dy;
 			}
 		}}
 		onpointerup={(e) => {
-			const tap = drag && !drag.moved;
+			const d = drag;
+			const by = carry;
 			drag = null;
-			if (!tap) return;
+			carry = null;
+			if (!d) return;
+			if (d.item) {
+				// Dropped somewhere else: move it. (A plain press just picks it up.)
+				if (d.moved && by && (by[0] || by[1])) ondragby?.(by[0], by[1]);
+				// A tap inside the thing already picked up moves it there.
+				else if (!d.moved && d.item === 'held' && d.cell) ontap(d.cell[0], d.cell[1]);
+				return;
+			}
+			if (d.moved) return;
 			const p = cell(e);
 			if (p) ontap(p[0], p[1]);
 		}}
-		onpointercancel={() => (drag = null)}
-		onpointerleave={() => ((hover = null), (drag = null))}
+		onpointercancel={() => ((drag = null), (carry = null))}
+		onpointerleave={() => {
+			hover = null;
+			// A drag in progress keeps going (the pointer is captured).
+			if (!drag?.item) drag = null;
+		}}
 		aria-label="Your store floor"
 	></canvas>
 </div>
