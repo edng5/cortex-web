@@ -1183,6 +1183,10 @@ export class FishStore {
 		const { owned, shown } = this.luckParts();
 		return owned * LUCK_OWNED + shown * LUCK_SHOWN;
 	}
+	/** Fishing odds after your luck. */
+	catchOdds() {
+		return luckyOdds(CATCH_ODDS, this.luck());
+	}
 	/** A crate's odds after your luck. */
 	crateOdds(event: boolean) {
 		return luckyOdds(event ? EVENT_ODDS : CRATE_ODDS, this.luck());
@@ -1245,7 +1249,7 @@ export class FishStore {
 		if (this.s.cash < BAIT_COST) return no(`Bait costs $${BAIT_COST}.`);
 		this.s.cash -= BAIT_COST;
 		const pool = SPECIES.filter((s) => s.water === water && RARITIES.indexOf(s.rarity) >= 2);
-		let r = RARITIES.indexOf(roll(CATCH_ODDS));
+		let r = RARITIES.indexOf(roll(this.catchOdds()));
 		while (r > 2 && !pool.some((s) => s.rarity === RARITIES[r])) r--;
 		let sp = pick(pool.filter((s) => s.rarity === RARITIES[r] && s.id !== 'shiny-magikarp'));
 		// One Magikarp in seven is shiny.

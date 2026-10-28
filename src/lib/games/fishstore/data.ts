@@ -454,14 +454,18 @@ export const EVENT_ODDS: [Rarity, number][] = [
 export const LUCK_OWNED = 4;
 export const LUCK_SHOWN = 4;
 /**
- * Crate odds with luck: each rarity's weight grows with luck, the rarer the more (luck 50
- * doubles rare, and triples epic), then everything is scaled back to 100%.
+ * Odds with luck (crates and fishing): each rarity's weight grows with luck, the rarer the more
+ * (each step up from the table's lowest rarity adds luck%; luck 50 doubles the next tier up and
+ * triples the one after), then everything is scaled back to 100%.
  */
 export function luckyOdds(odds: [Rarity, number][], luck: number): [Rarity, number][] {
-	const w = odds.map(([r, p]) => [r, p * (1 + (luck / 100) * RARITIES.indexOf(r))] as [Rarity, number]);
+	const base = RARITIES.indexOf(odds[0][0]);
+	const w = odds.map(([r, p]) => [r, p * (1 + (luck / 100) * (RARITIES.indexOf(r) - base))] as [Rarity, number]);
 	const total = w.reduce((a, [, p]) => a + p, 0);
-	return w.map(([r, p]) => [r, Math.round((p / total) * 1000) / 10]);
+	return w.map(([r, p]) => [r, (p / total) * 100]);
 }
+/** Odds as text: "Rare 14.4% · Epic 1.2%…". */
+export const oddsText = (odds: [Rarity, number][]) => odds.map(([r, p]) => `${RARITY_LABEL[r]} ${p >= 1 ? p.toFixed(1).replace(/\.0$/, '') : p.toFixed(2)}%`).join(' · ');
 /** Chance an event crate holds the event's limited-edition decoration (if you don't have it yet). */
 export const EVENT_DECOR_ODDS = 0.35;
 export const eventDecor = (e: StoreEvent) => TANK_DECOR.find((d) => d.limited === e.id)!;

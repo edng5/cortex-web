@@ -18,6 +18,7 @@
 		EVENT_CRATE_COST,
 		EVENT_DECOR_ODDS,
 		LUCK_OWNED,
+		oddsText,
 		LUCK_SHOWN,
 		activeEvent,
 		eventDecor,
@@ -651,7 +652,7 @@
 			<span title="Cash">💵 {money(s.cash)}</span>
 			<span title="Gems">💎 {s.gems}</span>
 			<span title="Popularity">⭐ {pop}</span>
-			<button class="luck" title="Luck: rarer fish in crates. Each limited-edition event decoration adds {LUCK_OWNED}, and {LUCK_SHOWN} more while it's on display in a show tank." onclick={() => (tab = 'ship')}>🍀 {store.luck()}</button>
+			<button class="luck" title="Luck: rarer fish in crates and when fishing. Each limited-edition event decoration adds {LUCK_OWNED}, and {LUCK_SHOWN} more while it's on display in a show tank." onclick={() => (tab = 'ship')}>🍀 {store.luck()}</button>
 			{#if giftsReady.length}
 				<button class="free" onclick={openGift} title="Three gifts a day: morning ({GIFT_HOURS[0]}:00), afternoon ({GIFT_HOURS[1]}:00) and evening ({GIFT_HOURS[2]}:00)">🎁 {GIFT_NAMES[giftsReady[0]]} gift!</button>
 			{:else}
@@ -965,15 +966,15 @@
 		{:else if tab === 'ship'}
 			<section class="card">
 				<h3>Daily shipments</h3>
-				<p class="muted small">Each crate holds {CRATE_FISH} fish for {money(CRATE_COST)}. Your three daily gifts (morning, afternoon and evening) often hold a free crate: {s.freeCrates} waiting. Some crates hide 💎 gems. Odds{store.luck() ? ' with your luck' : ''}: {store.crateOdds(false).map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Legendary and Mythic fish can only be caught.</p>
-				<p class="luckline">🍀 <b>Luck {store.luck()}</b>: makes rarer fish more likely in every crate. Collect limited-edition decorations from holiday event crates: each adds {LUCK_OWNED} luck, and {LUCK_SHOWN} more while it's on display in a show tank. {store.luckParts().owned ? `You have ${store.luckParts().owned} (${store.luckParts().shown} on display).` : "You don't have any yet."}</p>
+				<p class="muted small">Each crate holds {CRATE_FISH} fish for {money(CRATE_COST)}. Your three daily gifts (morning, afternoon and evening) often hold a free crate: {s.freeCrates} waiting. Some crates hide 💎 gems. Odds{store.luck() ? ' with your luck' : ''}: {oddsText(store.crateOdds(false))}. Legendary and Mythic fish can only be caught.</p>
+				<p class="luckline">🍀 <b>Luck {store.luck()}</b>: makes rarer fish more likely in every crate and on every cast when fishing. Collect limited-edition decorations from holiday event crates: each adds {LUCK_OWNED} luck, and {LUCK_SHOWN} more while it's on display in a show tank. {store.luckParts().owned ? `You have ${store.luckParts().owned} (${store.luckParts().shown} on display).` : "You don't have any yet."}</p>
 				{#if event}
 					{@const ld = eventDecor(event)}
 					<div class="event">
 						<span class="eicon">{event.icon}</span>
 						<div class="fi">
 							<b>{event.name} event · {event.crate}</b>
-							<span class="small">{event.blurb} Fish from every water, with much better odds than a regular crate{store.luck() ? ', plus your luck' : ''}: {store.crateOdds(true).map(([r, p]) => `${RARITY_LABEL[r]} ${p}%`).join(' · ')}. Always a few 💎 gems.</span>
+							<span class="small">{event.blurb} Fish from every water, with much better odds than a regular crate{store.luck() ? ', plus your luck' : ''}: {oddsText(store.crateOdds(true))}. Always a few 💎 gems.</span>
 							<span class="small">✨ Limited edition: a {Math.round(EVENT_DECOR_ODDS * 100)}% chance of the <b>{ld.name}</b> tank decoration{s.limited.includes(ld.id) ? ' (you have it!)' : ''}. Only until {endsOn(event.to)}.</span>
 						</div>
 						<button class="primary" onclick={() => openCrate('event')}>{s.freeCrates ? '🎁 Open free crate' : `Open (${money(EVENT_CRATE_COST)})`}</button>
@@ -991,7 +992,7 @@
 			</section>
 		{:else if tab === 'fish'}
 			<Fishing {store} {sfx} active={active && tab === 'fish'} />
-			<p class="muted small">Bait {money(BAIT_COST)} a cast. Catches go to your backroom.</p>
+			<p class="muted small">Bait {money(BAIT_COST)} a cast. Catches go to your backroom. Odds{store.luck() ? ` with your 🍀 luck ${store.luck()}` : ''}: {oddsText(store.catchOdds())}. Raise your luck with limited-edition event decorations.</p>
 		{:else if tab === 'staff'}
 			<section class="card">
 				<h3>Staff · wages {money(store.wages())}/day</h3>
