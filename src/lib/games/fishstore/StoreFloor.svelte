@@ -7,7 +7,7 @@
   Layout mode, tap something, then tap where it should go.
 -->
 <script lang="ts" module>
-	export type FloorPick = { kind: 'sale' | 'show' | 'decor' | 'shelf' | 'lab'; id: number } | null;
+	export type FloorPick = { kind: 'sale' | 'show' | 'decor' | 'shelf' | 'lab' | 'breeder'; id: number } | null;
 </script>
 
 <script lang="ts">
@@ -49,6 +49,7 @@
 		if (!picked) return null;
 		if (picked.kind === 'shelf') return { x: s.shelf.x, y: s.shelf.y, w: 2, h: 1, obj: s.shelf };
 		if (picked.kind === 'lab') return s.lab ? { x: s.lab.x, y: s.lab.y, w: 2, h: 2, obj: s.lab } : null;
+		if (picked.kind === 'breeder') return s.breeder ? { x: s.breeder.x, y: s.breeder.y, w: 2, h: 1, obj: s.breeder } : null;
 		if (picked.kind === 'decor') {
 			const d = s.decor.find((x) => x.id === picked!.id);
 			return d ? { x: d.x, y: d.y, w: 1, h: 1, obj: d } : null;
@@ -172,7 +173,8 @@
 			...store.s.sale.map((t) => ({ x: t.x, y: t.y, w: tier(t.tier).w, h: 1, id: t.id })),
 			...store.s.show.map((t) => ({ x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, id: t.id })),
 			// The lab counts too, so builders and scientists walk over to it.
-			...(lab ? [{ x: lab.x, y: lab.y, w: 2, h: 2, id: -2 }] : [])
+			...(lab ? [{ x: lab.x, y: lab.y, w: 2, h: 2, id: -2 }] : []),
+			...(store.s.breeder ? [{ x: store.s.breeder.x, y: store.s.breeder.y, w: 2, h: 1, id: -3 }] : [])
 		];
 	}
 	function nextBrowse(a: Agent) {
@@ -737,6 +739,25 @@
 				}
 			});
 		}
+		if (store.s.breeder) {
+			const br = store.s.breeder;
+			const sel = picked?.kind === 'breeder';
+			things.push({
+				y: br.y + 0.99,
+				f: () => {
+					shadow(c, (br.x + 1) * T, oy + (br.y + 0.9) * T, T, T * 0.2);
+					drawVoxel(c, model(tankModel(2, 1, '#e88ab8', !br.ready, false)), br.x * T, oy + br.y * T, T, Z);
+					if (br.ready) {
+						const pair = br.pair.map((f) => species(f.s).colors);
+						swimmers(c, pair, br.x, br.y, 2, 1, 0.97, t, oy, Z, 100);
+						throughGlass(c, pair, br.x, br.y, 2, 1, 0.62, t, oy, Z, -1);
+						if (pair.length) bubble(c, '💞', (br.x + 1) * T, oy + br.y * T - Z * 1.2);
+						else if (br.eggs?.length) bubble(c, '🥚', (br.x + 1) * T, oy + br.y * T - Z * 1.2);
+					}
+					if (sel) outline(c, br.x, br.y, 2, 1, oy, Z);
+				}
+			});
+		}
 		for (const tk of store.s.sale) {
 			const w = tier(tk.tier).w;
 			const sel = picked?.kind === 'sale' && picked.id === tk.id;
@@ -841,7 +862,7 @@
 		c.fillRect(X0 + WW * 0.08, Y0 + HH + 2, 3, T * 0.35);
 	}
 
-	const TASK_ICON: Record<string, string> = { build: '🔨', buildShow: '🔨', upgrade: '⬆️', upgradeShow: '⬆️', clean: '🧽', cleanShow: '🧽', trim: '✂️', restock: '📦', combine: '🔗', research: '🔬', buildLab: '🔨' };
+	const TASK_ICON: Record<string, string> = { build: '🔨', buildShow: '🔨', upgrade: '⬆️', upgradeShow: '⬆️', clean: '🧽', cleanShow: '🧽', trim: '✂️', restock: '📦', combine: '🔗', research: '🔬', buildLab: '🔨', buildBreeder: '🔨', breed: '💞' };
 	/** A progress bar floating over whatever is being built, upgraded, cleaned or restocked. */
 	function progressBars(c: CanvasRenderingContext2D, oy: number, Z: number) {
 		const now = Date.now();

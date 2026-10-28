@@ -6,6 +6,19 @@
 // up on whatever happened while the game was closed (tasks finish, customers shop, water gets
 // dirty, the centrepiece gets hungry).
 import {
+	ALBINO_OF,
+	ALBINO_ODDS,
+	BREEDER_COST,
+	BREEDER_TIME,
+	BROOD,
+	HYBRID_ODDS,
+	WILD,
+	breedCost,
+	hatchTime,
+	breedTime,
+	canBreed,
+	MYTHIC_CROSS,
+	speciesName,
 	BUILD_TASKS,
 	LUCK_OWNED,
 	LUCK_SHOWN,
@@ -103,9 +116,13 @@ const HOUR = 3600_000;
 /** Customers don't shop for more than this while you're away. */
 const MAX_OFFLINE_SALES = 12 * HOUR;
 
+export type Gender = 'm' | 'f';
+export const randomGender = (): Gender => (Math.random() < 0.5 ? 'm' : 'f');
 export interface Fish {
 	u: number;
 	s: string;
+	/** Male or female (for breeding). */
+	g?: Gender;
 	/** A name (show-tank fish). */
 	n?: string;
 	/** Hours kept in a happy show tank: sold later, well-kept fish earn gems. */
@@ -144,11 +161,13 @@ export interface Staff {
 	name: string;
 	role: string;
 }
-export type TaskKind = 'build' | 'upgrade' | 'clean' | 'buildShow' | 'upgradeShow' | 'combine' | 'cleanShow' | 'restock' | 'trim' | 'research' | 'buildLab';
+export type TaskKind = 'build' | 'upgrade' | 'clean' | 'buildShow' | 'upgradeShow' | 'combine' | 'cleanShow' | 'restock' | 'trim' | 'research' | 'buildLab' | 'buildBreeder' | 'breed';
 /** Task reference for the supply shelf (tanks use their ids). */
 export const SHELF_REF = -1;
 /** Task reference for building the research lab. */
 export const LAB_REF = -2;
+/** Task reference for the breeding tank (building it, and breeding in it). */
+export const BREED_REF = -3;
 export interface Task {
 	id: number;
 	kind: TaskKind;
@@ -225,6 +244,16 @@ interface Save {
 	limited: DecorTag[];
 	/** The research lab (2×2), once built. */
 	lab: { x: number; y: number; ready: boolean } | null;
+	/** The breeding tank (2×1), once built, and the pair in it. */
+	breeder: {
+		x: number;
+		y: number;
+		ready: boolean;
+		pair: Fish[];
+		/** Eggs laid (what's inside isn't known until they hatch), and when they hatch. */
+		eggs?: { s: string; g: Gender }[];
+		hatchAt?: number;
+	} | null;
 	log: string[];
 }
 
@@ -293,6 +322,7 @@ function fresh(): Save {
 		decorGiven: false,
 		limited: [],
 		lab: null,
+		breeder: null,
 		log: ['Welcome! Stock your sale tank and set up your show tank.']
 	};
 }
@@ -309,6 +339,7 @@ export class FishStore {
 
 	constructor() {
 		this.load();
+		this.migrate();
 		this.advance(true);
 		this.leaveDecor();
 	}
@@ -319,10 +350,7 @@ export class FishStore {
 			const raw = localStorage.getItem(SAVE_KEY);
 			if (raw) {
 				const d = JSON.parse(raw) as Save;
-				if (d && d.v === 1) {
-					this.s = { ...fresh(), ...d, stock: { ...fresh().stock, ...d.stock } };
-					this.migrate();
-				}
+				if (d && d.v === 1) this.s = { ...fresh(), ...d, stock: { ...fresh().stock, ...d.stock } };
 			}
 		} catch {
 			/* corrupt or blocked: start fresh */
@@ -338,6 +366,8 @@ export class FishStore {
 		const all = [...s.hold, ...s.sale.flatMap((t) => t.fish), ...s.show.flatMap((t) => t.fish)].map((f) => f.s);
 		s.found = [...new Set([...s.found, ...s.caught, ...all])];
 		if (s.center !== null && !s.show.some((t) => t.fish.some((f) => f.u === s.center))) s.center = null;
+		// Every fish is male or female (older saves: picked at random).
+		for (const f of [...s.hold, ...s.sale.flatMap((t) => t.fish), ...s.show.flatMap((t) => t.fish), ...(s.breeder?.pair ?? [])]) f.g ??= randomGender();
 	}
 	save() {
 		try {
@@ -355,6 +385,10 @@ export class FishStore {
 	}
 	private nextId() {
 		return ++this.s.seq;
+	}
+	/** A new fish (with a gender). */
+	private newFish(s: string, extra: Partial<Fish> = {}): Fish {
+		return { u: this.nextId(), s, c: 0, g: randomGender(), ...extra };
 	}
 	/** Add a species to the wiki. */
 	private discover(id: string) {
@@ -449,7 +483,7 @@ export class FishStore {
 
 	/** Sell a backroom fish to a wholesaler (well under shop price). */
 	// ── The online fish market (the server keeps the listings) ───────────────────────
-	/** Where a fish is, so it can be taken out to sell (not the centrepiece). */
+	/** Where a fish is (backroom or a tank), so it can be taken out. */
 	findFish(uid: number): { list: Fish[]; fish: Fish } | null {
 		for (const list of [this.s.hold, ...this.s.sale.map((t) => t.fish), ...this.s.show.map((t) => t.fish)]) {
 			const fish = list.find((f) => f.u === uid);
@@ -469,7 +503,7 @@ export class FishStore {
 	/** A fish arriving (bought, or an unsold one taken back): into the backroom. */
 	receive(speciesId: string, name: string | null, force = false): Result {
 		if (!force && this.s.hold.length >= this.holdCap()) return no('The backroom is full: make room first.');
-		this.s.hold.push({ u: this.nextId(), s: species(speciesId).id, c: 0, ...(name ? { n: name } : {}) });
+		this.s.hold.push(this.newFish(species(speciesId).id, name ? { n: name } : {}));
 		this.discover(species(speciesId).id);
 		this.save();
 		return ok();
@@ -693,7 +727,7 @@ export class FishStore {
 	}
 	canDo(p: Staff, kind: TaskKind) {
 		const d = this.role(p.role).does;
-		if (kind === 'research') return d === 'research';
+		if (kind === 'research' || kind === 'breed') return d === 'research';
 		return d === 'all' || (d === 'build' && BUILD_TASKS.includes(kind));
 	}
 	/** How many staff are free to do this kind of task right now. */
@@ -744,7 +778,7 @@ export class FishStore {
 		if (this.s.tasks.some((t) => t.ref === ref || t.ref2 === ref || (ref2 && (t.ref === ref2 || t.ref2 === ref2)))) return no('Someone is already working on that.');
 		const who = by ?? this.freeStaff(kind);
 		if (!who) {
-			if (kind === 'research') return no(this.s.staff.some((p) => this.role(p.role).does === 'research') ? 'Your scientists are all busy.' : 'Hire a Research Scientist (Staff tab) to research fish.');
+			if (kind === 'research' || kind === 'breed') return no(this.s.staff.some((p) => this.role(p.role).does === 'research') ? 'Your scientists are all busy.' : `Hire a Research Scientist (Staff tab) to ${kind === 'breed' ? 'breed' : 'research'} fish.`);
 			if (!this.s.staff.some((p) => this.canDo(p, kind))) return no('Builders only build: hire an Aquarist for that.');
 			return no('Everyone who can do that is busy. Hire more staff or wait for a task to finish.');
 		}
@@ -791,6 +825,12 @@ export class FishStore {
 				break;
 			case 'buildLab':
 				if (this.s.lab) this.s.lab.ready = true;
+				break;
+			case 'buildBreeder':
+				if (this.s.breeder) this.s.breeder.ready = true;
+				break;
+			case 'breed':
+				this.layEggs();
 				break;
 			case 'research':
 				if (t.sp) this.s.research[t.sp] = Math.min(RESEARCH_MAX, (this.s.research[t.sp] ?? 0) + 1);
@@ -846,6 +886,7 @@ export class FishStore {
 		for (const d of this.s.decor) if (d !== skip) mark(d.x, d.y, 1, 1);
 		if (this.s.shelf !== skip) mark(this.s.shelf.x, this.s.shelf.y, 2, 1);
 		if (this.s.lab && this.s.lab !== skip) mark(this.s.lab.x, this.s.lab.y, 2, 2);
+		if (this.s.breeder && this.s.breeder !== skip) mark(this.s.breeder.x, this.s.breeder.y, 2, 1);
 		return g;
 	}
 	/** Where people can walk on the floor (true = blocked by a tank, decoration or the counter). Rugs can be walked on. */
@@ -860,6 +901,7 @@ export class FishStore {
 		for (const d of this.s.decor) if (d.item !== 'rug') mark(d.x, d.y, 1, 1);
 		mark(this.s.shelf.x, this.s.shelf.y, 2, 1);
 		if (this.s.lab) mark(this.s.lab.x, this.s.lab.y, 2, 2);
+		if (this.s.breeder) mark(this.s.breeder.x, this.s.breeder.y, 2, 1);
 		return g;
 	}
 	fits(x: number, y: number, w: number, h: number, skip?: object) {
@@ -888,6 +930,140 @@ export class FishStore {
 		this.save();
 		return ok();
 	}
+	moveBreeder(x: number, y: number): Result {
+		const b = this.s.breeder;
+		if (!b) return no('No breeding tank yet.');
+		if (!this.fits(x, y, 2, 1, b)) return no("It doesn't fit there.");
+		b.x = x;
+		b.y = y;
+		this.save();
+		return ok();
+	}
+	/** Build the breeding tank (one per store). */
+	buildBreeder(): Result {
+		if (this.s.breeder) return no('You already have a breeding tank.');
+		if (this.s.cash < BREEDER_COST) return no(`The breeding tank costs $${BREEDER_COST}.`);
+		const spot = this.findSpot(2, 1);
+		if (!spot) return no('No free floor space (the breeding tank needs 2×1). Move things around in Layout mode.');
+		const r = this.startTask('buildBreeder', 'Build the breeding tank', BREEDER_TIME, BREED_REF);
+		if (!r.ok) return r;
+		this.s.cash -= BREEDER_COST;
+		this.s.breeder = { ...spot, ready: false, pair: [] };
+		this.save();
+		return r;
+	}
+
+	// ── Breeding ─────────────────────────────────────────────────────────────────────
+	/** Can these two fish breed right now? */
+	breedCheck(maleUid: number, femaleUid: number): Result {
+		const m = this.findFish(maleUid)?.fish;
+		const f = this.findFish(femaleUid)?.fish;
+		if (!m || !f) return no('Pick a male and a female.');
+		if (m.g !== 'm' || f.g !== 'f') return no('You need one male (♂) and one female (♀).');
+		if (m.u === this.s.center || f.u === this.s.center) return no('Your partner fish is busy being a pet.');
+		const c = canBreed(species(m.s), species(f.s));
+		return c.ok ? ok(c.cross ? 'A crossbreed!' : undefined) : no(c.why);
+	}
+	/** Start breeding a pair: they move into the breeding tank, and a scientist looks after them. */
+	breed(maleUid: number, femaleUid: number): Result {
+		const b = this.s.breeder;
+		if (!b) return no('Build a breeding tank first (Build & buy).');
+		if (!b.ready) return no('The breeding tank is still being built.');
+		if (b.pair.length || this.s.tasks.some((t) => t.ref === BREED_REF)) return no('The breeding tank is busy.');
+		if (b.eggs?.length) return no('Wait for the eggs to hatch first.');
+		const c = this.breedCheck(maleUid, femaleUid);
+		if (!c.ok) return c;
+		const m = this.findFish(maleUid)!;
+		const f = this.findFish(femaleUid)!;
+		const [a, z] = [species(m.fish.s), species(f.fish.s)];
+		// Room in the backroom for the parents and the biggest brood when they're done.
+		const fromHold = [m, f].filter((x) => x.list === this.s.hold).length;
+		const room = this.holdCap() - (this.s.hold.length - fromHold);
+		const need = 2 + Math.max(BROOD[a.size], BROOD[z.size]);
+		if (room < need) return no(`Make room in the backroom first: the parents and babies need ${need} spaces.`);
+		const cost = breedCost(a, z);
+		if (this.s.cash < cost) return no(`Breeding costs $${cost}.`);
+		const label = a.id === z.id ? `Breed ${a.name}s` : `Crossbreed ${a.name} × ${z.name}`;
+		const r = this.startTask('breed', label, breedTime(a, z), BREED_REF);
+		if (!r.ok) return r;
+		this.s.cash -= cost;
+		for (const x of [m, f]) x.list.splice(x.list.indexOf(x.fish), 1);
+		b.pair = [m.fish, f.fish];
+		this.save();
+		return r;
+	}
+	/** The pair has spawned: the parents go back to the backroom and a clutch of eggs stays in the tank. */
+	private layEggs() {
+		const b = this.s.breeder;
+		if (!b || b.pair.length < 2) return;
+		const [a, z] = b.pair.map((f) => species(f.s));
+		const n = 1 + Math.floor(Math.random() * Math.max(BROOD[a.size], BROOD[z.size]));
+		const kids: { s: string; g: Gender }[] = [];
+		const how = canBreed(a, z);
+		const top = Math.max(RARITIES.indexOf(a.rarity), RARITIES.indexOf(z.rarity));
+		for (let i = 0; i < n; i++) {
+			let sp = Math.random() < 0.5 ? a : z;
+			if (how.ok && how.kind === 'legend' && Math.random() < MYTHIC_CROSS.odds * (1 + this.luck() / 100)) {
+				// The legend: two legendary arowanas, and a dragon.
+				sp = species(MYTHIC_CROSS.makes);
+			} else if (how.ok && how.kind === 'strains' && Math.random() < HYBRID_ODDS) {
+				// Mixing strains of one species sometimes brings out another of its strains.
+				const kin = WILD.filter((s) => speciesName(s) === speciesName(a) && RARITIES.indexOf(s.rarity) <= top && s.id !== a.id && s.id !== z.id);
+				if (kin.length) sp = pick(kin);
+			} else if (how.ok && how.kind === 'hybrid' && Math.random() < HYBRID_ODDS) {
+				// Real hybrids: the named ones (Flowerhorn, Alien Betta…) when the group has them.
+				const named = (how.group?.makes ?? []).map((id) => species(id)).filter((s) => s.water === a.water && RARITIES.indexOf(s.rarity) <= top + 1);
+				if (named.length) sp = pick(named);
+			}
+			// Very rarely: an albino (luck helps).
+			const albino = ALBINO_OF[sp.id];
+			if (albino && Math.random() < ALBINO_ODDS * (1 + this.luck() / 100)) sp = species(albino);
+			kids.push({ s: sp.id, g: randomGender() });
+		}
+		this.s.hold.push(...b.pair);
+		b.pair = [];
+		b.eggs = kids;
+		b.hatchAt = Date.now() + hatchTime(a, z) * 1000;
+		this.toast = [...this.toast, `🥚 ${kids.length} egg${kids.length === 1 ? '' : 's'} laid in the breeding tank! The parents are back in the backroom.`];
+		this.say(`${a.name} and ${z.name} laid ${kids.length} egg${kids.length === 1 ? '' : 's'}.`);
+	}
+	/** Gems to hatch the eggs right now. */
+	gemsToHatch() {
+		const at = this.s.breeder?.hatchAt ?? 0;
+		return Math.max(1, Math.ceil((at - this.now) / 1000 / GEM_SECONDS));
+	}
+	hatchNow(): Result {
+		const b = this.s.breeder;
+		if (!b?.eggs?.length) return no('No eggs to hatch.');
+		const g = this.gemsToHatch();
+		if (this.s.gems < g) return no(`That needs ${g} gems.`);
+		this.s.gems -= g;
+		b.hatchAt = Date.now();
+		this.hatchEggs();
+		this.save();
+		return ok();
+	}
+	/** Eggs whose time has come hatch into the backroom (as many as there's room for). */
+	private hatchEggs() {
+		const b = this.s.breeder;
+		if (!b?.eggs?.length || (b.hatchAt ?? 0) > Date.now()) return;
+		const room = this.holdCap() - this.s.hold.length;
+		if (room <= 0) return;
+		const out = b.eggs.slice(0, room);
+		b.eggs = b.eggs.slice(room);
+		const kids = out.map((e) => this.newFish(e.s, { g: e.g }));
+		this.s.hold.push(...kids);
+		for (const k of kids) this.discover(k.s);
+		const names = kids.map((k) => species(k.s).name);
+		const rare = kids.filter((k) => species(k.s).bred);
+		this.toast = [
+			...this.toast,
+			`🐣 ${kids.length} bab${kids.length === 1 ? 'y' : 'ies'} hatched: ${names.join(', ')}!${b.eggs.length ? ` ${b.eggs.length} more waiting for room in the backroom.` : ''}`,
+			...rare.map((k) => (species(k.s).rarity === 'mythic' ? `🐉 The legend is true: a ${species(k.s).name} hatched!` : `✨ A very rare ${species(k.s).name}!`))
+		];
+		this.say(`Hatched ${names.join(', ')}.`);
+	}
+
 	/** Build the research lab (one per store; every scientist works in it). */
 	buildLab(): Result {
 		if (this.s.lab) return no('You already have a research lab.');
@@ -1203,14 +1379,14 @@ export class FishStore {
 		if (this.s.hold.length + CRATE_FISH > this.holdCap()) return no(`Make room in the backroom first (a crate holds ${CRATE_FISH} fish).`);
 		if (free) this.s.freeCrates--;
 		else this.s.cash -= cost;
-		const pool = ev ? eventPool(ev) : SPECIES.filter((s) => s.water === (sup as (typeof SUPPLIERS)[number]).water && s.temp === (sup as (typeof SUPPLIERS)[number]).temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('legendary'));
+		const pool = ev ? eventPool(ev) : WILD.filter((s) => s.water === (sup as (typeof SUPPLIERS)[number]).water && s.temp === (sup as (typeof SUPPLIERS)[number]).temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('legendary'));
 		const fish: Fish[] = [];
 		for (let i = 0; i < CRATE_FISH; i++) {
 			let r = RARITIES.indexOf(roll(this.crateOdds(!!ev)));
 			// Not every supplier ships every rarity: fall back to the next one down.
 			while (r > 0 && !pool.some((s) => s.rarity === RARITIES[r])) r--;
 			const sp = pick(pool.filter((s) => s.rarity === RARITIES[r]));
-			const f = { u: this.nextId(), s: sp.id, c: 0 };
+			const f = this.newFish(sp.id);
 			fish.push(f);
 			this.s.hold.push(f);
 			if (!this.s.found.includes(sp.id)) this.s.found.push(sp.id);
@@ -1248,7 +1424,7 @@ export class FishStore {
 		if (this.s.hold.length >= this.holdCap()) return no('The backroom is full: make room for your catch first.');
 		if (this.s.cash < BAIT_COST) return no(`Bait costs $${BAIT_COST}.`);
 		this.s.cash -= BAIT_COST;
-		const pool = SPECIES.filter((s) => s.water === water && RARITIES.indexOf(s.rarity) >= 2);
+		const pool = WILD.filter((s) => s.water === water && RARITIES.indexOf(s.rarity) >= 2);
 		let r = RARITIES.indexOf(roll(this.catchOdds()));
 		while (r > 2 && !pool.some((s) => s.rarity === RARITIES[r])) r--;
 		let sp = pick(pool.filter((s) => s.rarity === RARITIES[r] && s.id !== 'shiny-magikarp'));
@@ -1264,7 +1440,7 @@ export class FishStore {
 			this.s.gems -= g;
 		}
 		if (this.s.hold.length >= this.holdCap()) return no('The backroom is full.');
-		this.s.hold.push({ u: this.nextId(), s: sp.id, c: 0 });
+		this.s.hold.push(this.newFish(sp.id));
 		if (!this.s.caught.includes(sp.id)) this.s.caught.push(sp.id);
 		this.discover(sp.id);
 		this.say(`Caught a ${sp.name}!`);
@@ -1291,6 +1467,7 @@ export class FishStore {
 			this.finishTask(t);
 		}
 		this.simulate(now);
+		this.hatchEggs();
 		this.automate();
 		if (opening && (s.sold > soldBefore || s.cash !== cashBefore)) {
 			const sold = s.sold - soldBefore;
@@ -1443,7 +1620,7 @@ export class FishStore {
 		if (!this.canAfford(price, currency)) return no(`That costs ${currency === 'gems' ? `${price} gems` : `$${price}`}.`);
 		if (this.s.hold.length >= this.holdCap()) return no('The backroom is full: make room first.');
 		this.pay(price, currency);
-		this.s.hold.push({ u: this.nextId(), s: sp.id, c: 0 });
+		this.s.hold.push(this.newFish(sp.id));
 		this.say(`Ordered a ${sp.name}.`);
 		this.save();
 		return ok(`A ${sp.name} is waiting in your backroom.`);

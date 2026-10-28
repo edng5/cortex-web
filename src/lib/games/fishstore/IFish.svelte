@@ -13,6 +13,15 @@
 		CRATE_FISH,
 		FLOORS,
 		FOOD_COST,
+		ALBINO_OF,
+		BREEDER_COST,
+		BREEDER_TIME,
+		breedCost,
+		breedTime,
+		BROOD,
+		hatchTime,
+		canBreed,
+		speciesName,
 		LAB_COST,
 		LAB_TIME,
 		EVENT_CRATE_COST,
@@ -68,7 +77,7 @@
 		type Temp,
 		type Water
 	} from './data';
-	import { FishStore, SHELF_REF, type Fish, type Loc, type Result, type SaleTank, type ShowTank } from './store.svelte';
+	import { FishStore, BREED_REF, SHELF_REF, type Fish, type Loc, type Result, type SaleTank, type ShowTank } from './store.svelte';
 	import { gameAudio } from '../audio.svelte';
 	import TankCanvas from './TankCanvas.svelte';
 	import StoreFloor, { type FloorPick } from './StoreFloor.svelte';
@@ -276,13 +285,15 @@
 		const hitDecor = s.decor.find((d) => at(d, 1, 1));
 		const hitShelf = at(s.shelf, 2, 1);
 		const hitLab = !!s.lab && at(s.lab, 2, 2);
+		const hitBreeder = !!s.breeder && at(s.breeder, 2, 1);
+		if (!hitSale && !hitShow && !hitDecor && !hitShelf && !hitLab && hitBreeder) return { kind: 'breeder', id: -3 };
 		return hitSale ? { kind: 'sale', id: hitSale.id } : hitShow ? { kind: 'show', id: hitShow.id } : hitDecor ? { kind: 'decor', id: hitDecor.id } : hitShelf ? { kind: 'shelf', id: -1 } : hitLab ? { kind: 'lab', id: -2 } : null;
 	}
 	const samePick = (a: FloorPick, b: FloorPick) => !!a && !!b && a.kind === b.kind && a.id === b.id;
 	/** Move the picked thing so its top-left corner is at (x, y). */
 	function placePicked(x: number, y: number) {
 		if (!picked) return;
-		if (act(picked.kind === 'shelf' ? store.moveShelf(x, y) : picked.kind === 'lab' ? store.moveLab(x, y) : store.moveItem(picked.kind, picked.id, x, y), 'click')) picked = null;
+		if (act(picked.kind === 'shelf' ? store.moveShelf(x, y) : picked.kind === 'lab' ? store.moveLab(x, y) : picked.kind === 'breeder' ? store.moveBreeder(x, y) : store.moveItem(picked.kind, picked.id, x, y), 'click')) picked = null;
 	}
 	/** Layout mode: pressing on something picks it up (so it can be dragged). */
 	function pressFloor(x: number, y: number): boolean | 'held' {
@@ -298,7 +309,7 @@
 	function dragFloor(dx: number, dy: number) {
 		if (!picked) return;
 		const box =
-			picked.kind === 'shelf' ? s.shelf : picked.kind === 'lab' ? s.lab : picked.kind === 'decor' ? s.decor.find((d) => d.id === picked!.id) : picked.kind === 'sale' ? s.sale.find((t) => t.id === picked!.id) : s.show.find((t) => t.id === picked!.id);
+			picked.kind === 'shelf' ? s.shelf : picked.kind === 'lab' ? s.lab : picked.kind === 'breeder' ? s.breeder : picked.kind === 'decor' ? s.decor.find((d) => d.id === picked!.id) : picked.kind === 'sale' ? s.sale.find((t) => t.id === picked!.id) : s.show.find((t) => t.id === picked!.id);
 		if (box) placePicked(box.x + dx, box.y + dy);
 	}
 	function tapFloor(x: number, y: number) {
@@ -308,7 +319,8 @@
 		const hitDecor = s.decor.find((d) => at(d, 1, 1));
 		const hitShelf = at(s.shelf, 2, 1);
 		const hitLab = !!s.lab && at(s.lab, 2, 2);
-		const hit: FloorPick = hitSale ? { kind: 'sale', id: hitSale.id } : hitShow ? { kind: 'show', id: hitShow.id } : hitDecor ? { kind: 'decor', id: hitDecor.id } : hitShelf ? { kind: 'shelf', id: -1 } : hitLab ? { kind: 'lab', id: -2 } : null;
+		const hitBreeder = !!s.breeder && at(s.breeder, 2, 1);
+		const hit: FloorPick = !hitSale && !hitShow && !hitDecor && !hitShelf && !hitLab && hitBreeder ? { kind: 'breeder', id: -3 } : hitSale ? { kind: 'sale', id: hitSale.id } : hitShow ? { kind: 'show', id: hitShow.id } : hitDecor ? { kind: 'decor', id: hitDecor.id } : hitShelf ? { kind: 'shelf', id: -1 } : hitLab ? { kind: 'lab', id: -2 } : null;
 		if (layout) {
 			// Taps on something else pick it; taps on empty floor (or inside the picked thing) move it there.
 			if (hit && !samePick(hit, picked)) {
@@ -587,6 +599,10 @@
 	);
 	const researchTask = (id: string) => s.tasks.find((t) => t.kind === 'research' && t.sp === id);
 
+	// ── Breeding ──
+	let breedM = $state<number | null>(null);
+	let breedF = $state<number | null>(null);
+
 	// ── Holiday events ──
 	const event = $derived(activeEvent(store.now));
 	const endsOn = (md: string) => new Date(`2000-${md}T12:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -609,7 +625,7 @@
 	<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
 		<FishIcon id={sp.id} size={58} />
 		<div class="fi">
-			<b>{f.n ? `${f.n} · ` : ''}{sp.name}</b>
+			<b>{f.n ? `${f.n} · ` : ''}{sp.name} {@render sex(f)}</b>
 			<span class="rar" class:mythic={sp.rarity === 'mythic'}>{RARITY_LABEL[sp.rarity]}</span>
 			<span class="chips">
 				<span>{sp.water === 'salt' ? '🌊 Salt' : '💧 Fresh'}</span>
@@ -629,6 +645,85 @@
 			{#if from === 'hold'}<button onclick={() => act(store.wholesale(f.u), 'coin')}>Wholesale</button>{/if}
 		</div>
 	</li>
+{/snippet}
+
+{#snippet sex(f: Fish)}
+	{#if f.g}<span class="sex {f.g}" title={f.g === 'm' ? 'Male' : 'Female'}>{f.g === 'm' ? '♂' : '♀'}</span>{/if}
+{/snippet}
+
+{#snippet breeding()}
+	{@const br = s.breeder}
+	{@const task = tasksFor(BREED_REF)}
+	<h3>💞 Breeding</h3>
+	{#if !br}
+		<p class="small">Breed a male and a female of the same species for babies, or crossbreed fish that really interbreed in the hobby (platies × swordtails, goldfish × koi, Malawi cichlids…). Every so often a brood holds a very rare albino.</p>
+		<p class="muted small">You need a breeding tank ({money(BREEDER_COST)}, 2×1) and a Research Scientist to look after the fish.</p>
+		<button class="primary" onclick={() => act(store.buildBreeder(), 'coin')}>Build a breeding tank ({money(BREEDER_COST)})</button>
+	{:else if !br.ready}
+		<p>The breeding tank is being built{task ? `: ${time(task.end - store.now)} left` : '…'}</p>
+	{:else if br.eggs?.length}
+		{@const left = (br.hatchAt ?? 0) - store.now}
+		<div class="eggs">{#each br.eggs as _, i (i)}<span>🥚</span>{/each}</div>
+		{#if left > 0}
+			<p class="small">{br.eggs.length} egg{br.eggs.length === 1 ? '' : 's'} in the breeding tank: hatching in {time(left)}. What's inside is a surprise until then.</p>
+			<button class="gem" onclick={() => act(store.hatchNow(), 'rare')}>Hatch now 💎{store.gemsToHatch()}</button>
+		{:else}
+			<p class="small warnline">The eggs are ready to hatch: make room in the backroom for {br.eggs.length} bab{br.eggs.length === 1 ? 'y' : 'ies'}.</p>
+		{/if}
+	{:else if br.pair.length}
+		<div class="pair">
+			{#each br.pair as f (f.u)}
+				{@const sp = species(f.s)}
+				<span><FishIcon id={sp.id} size={48} /><b>{f.n ?? sp.name} {@render sex(f)}</b></span>
+			{/each}
+		</div>
+		{#if task}
+			<p class="small">{task.label} · {s.staff.find((p) => p.id === task.staff)?.name ?? 'A scientist'} is looking after them: {time(task.end - store.now)} left.</p>
+			<i class="prog"><em style="width: {Math.min(100, ((store.now - task.start) / (task.end - task.start)) * 100)}%"></em></i>
+			<button class="gem" onclick={() => act(store.rush(task.id), 'done')}>Finish now 💎{store.gemsToFinish(task)}</button>
+		{/if}
+	{:else}
+		{@const males = myFish.filter((f) => f.g === 'm' && f.u !== s.center && species(f.s).rarity !== 'mythic')}
+		{@const dad = myFish.find((f) => f.u === breedM)}
+		{@const moms = myFish.filter((f) => f.g === 'f' && f.u !== s.center && species(f.s).rarity !== 'mythic').sort((a, b) => (dad ? +canBreed(species(dad.s), species(b.s)).ok - +canBreed(species(dad.s), species(a.s)).ok : 0))}
+		{@const mom = myFish.find((f) => f.u === breedF)}
+		<p class="muted small">Pick a ♂ male and a ♀ female: the same species, or fish that really interbreed (like platies and swordtails, or goldfish and koi). A Research Scientist looks after them. They lay eggs (the parents go back to the backroom), and the eggs hatch a while later.</p>
+		<div class="row">
+			<select bind:value={breedM} aria-label="Male">
+				<option value={null}>♂ Pick a male…</option>
+				{#each males as f (f.u)}<option value={f.u}>{f.n ? `${f.n} (${species(f.s).name})` : species(f.s).name}</option>{/each}
+			</select>
+			<select bind:value={breedF} aria-label="Female">
+				<option value={null}>♀ Pick a female…</option>
+				{#each moms as f (f.u)}
+					{@const okay = !dad || canBreed(species(dad.s), species(f.s)).ok}
+					<option value={f.u} disabled={!okay}>{f.n ? `${f.n} (${species(f.s).name})` : species(f.s).name}{okay ? '' : ' (not a match)'}</option>
+				{/each}
+			</select>
+		</div>
+		{#if dad && mom}
+			{@const a = species(dad.s)}
+			{@const z = species(mom.s)}
+			{@const c = canBreed(a, z)}
+			{#if c.ok}
+				<div class="pair">
+					<span><FishIcon id={a.id} size={44} />♂</span><b>×</b><span><FishIcon id={z.id} size={44} />♀</span>
+				</div>
+				<p class="small">
+					{#if c.kind === 'legend'}✨ An old legend says that when these two legendary arowanas breed, a dragon is sometimes born…
+					{:else if c.kind === 'hybrid'}A real-life hybrid ({c.group?.name} interbreed): the babies take after either parent{c.group?.makes ? `, and now and then come out as a ${c.group.makes.map((id) => species(id).name).join(' or ')}` : ''}.
+					{:else if c.kind === 'strains'}Two strains of {speciesName(a)}: the babies take after either parent, and now and then show another strain.
+					{:else}Babies will be {a.name}s.{/if}
+					{#if ALBINO_OF[a.id] || ALBINO_OF[z.id]}✨ A very rare albino is possible.{/if}
+				</p>
+				<p class="muted small">Costs {money(breedCost(a, z))} · about {time(breedTime(a, z) * 1000)} to spawn, then {time(hatchTime(a, z) * 1000)} for the eggs to hatch · up to {Math.max(BROOD[a.size], BROOD[z.size])} bab{Math.max(BROOD[a.size], BROOD[z.size]) === 1 ? 'y' : 'ies'}</p>
+				<button class="primary" onclick={() => act(store.breed(dad.u, mom.u), 'splash') && ((breedM = null), (breedF = null))}>💞 Start breeding</button>
+			{:else}
+				<p class="why">{c.why}</p>
+			{/if}
+		{/if}
+		{#if !males.length || !moms.length}<p class="muted small">You need at least one male and one female.</p>{/if}
+	{/if}
 {/snippet}
 
 {#snippet bar(label: string, v: number, color = '#4ade80')}
@@ -690,10 +785,13 @@
 			</div>
 			<div class="floorbox"><StoreFloor {store} {layout} {picked} ontap={tapFloor} onpress={pressFloor} ondragby={dragFloor} /></div>
 			<p class="muted small">Popularity {pop}/100 · about {Math.round(store.customersPerHour())} customers an hour · {s.sold} fish sold · {money(s.earned)} earned</p>
-			{#if !layout && (picked?.kind === 'shelf' || picked?.kind === 'lab' || pickedSale)}
+			{#if !layout && (picked?.kind === 'shelf' || picked?.kind === 'lab' || picked?.kind === 'breeder' || pickedSale)}
 				<div class="pop storepop">
 				<button class="x" aria-label="Close" onclick={() => (picked = null)}>✕</button>
 
+			{#if picked?.kind === 'breeder' && !layout}
+				<section class="card">{@render breeding()}</section>
+			{/if}
 			{#if picked?.kind === 'lab' && !layout && s.lab}
 				{@const jobs = s.tasks.filter((t) => t.kind === 'research')}
 				{@const sci = s.staff.filter((p) => store.role(p.role).does === 'research')}
@@ -969,6 +1067,7 @@
 				{/if}
 			</div>
 		{:else if tab === 'backroom'}
+			<section class="card">{@render breeding()}</section>
 			<section class="card">
 				<h3>Backroom · {holdFish.length}/{s.holdCap}</h3>
 				<p class="muted small">New fish wait here. Stock them in sale tanks (customers buy them), show them off in a show tank, or sell to a wholesaler for 40% of their price.</p>
@@ -1308,6 +1407,13 @@
 					<button onclick={() => ((building = false), act(store.buildLab(), 'coin'))}>🔬 Build a research lab · 2×2 · {money(LAB_COST)} · {time(LAB_TIME * 1000)}</button>
 					<p class="muted small">Needed for research. One lab is enough for all your scientists.</p>
 				{/if}
+				<h4>Breeding tank</h4>
+				{#if s.breeder}
+					<p class="muted small">You have a breeding tank{s.breeder.ready ? '' : ' (being built)'}. Breed fish from the Backroom tab, or tap it on the floor.</p>
+				{:else}
+					<button onclick={() => ((building = false), act(store.buildBreeder(), 'coin'))}>💞 Build a breeding tank · 2×1 · {money(BREEDER_COST)} · {time(BREEDER_TIME * 1000)}</button>
+					<p class="muted small">Breed a male and a female of the same species (or fish that really interbreed) for babies, and maybe a very rare albino. A Research Scientist looks after them.</p>
+				{/if}
 				<h4>Show tanks</h4>
 				<button onclick={() => ((building = false), (tab = 'show'), (panel = 'new'))}>⭐ Build a show tank (choose its shape)…</button>
 				<h4>Store decorations (popularity)</h4>
@@ -1479,6 +1585,7 @@
 						</span>
 						<span class="price">Store price {money(priceOf(sp))}</span>
 						<span class="small">Likes: {sp.likes.map((l) => TANK_DECOR.find((d) => d.id === l)?.name).join(', ')}</span>
+						{#if sp.bred}<span class="small limited">✨ Only from breeding: a very rare surprise in a brood.</span>{:else if ALBINO_OF[sp.id]}<span class="small">💞 Breeding these can very rarely give an albino.</span>{/if}
 					</div>
 				</div>
 				<h4>🔬 Research · level {lvl}/{RESEARCH_MAX}</h4>
@@ -1641,6 +1748,37 @@
 	}
 	.toasts p {
 		pointer-events: auto;
+	}
+	.sex {
+		font-weight: 800;
+	}
+	.sex.m {
+		color: #60a5fa;
+	}
+	.sex.f {
+		color: #f472b6;
+	}
+	.eggs {
+		display: flex;
+		gap: 4px;
+		font-size: 1.6rem;
+		animation: wobble 2.4s ease-in-out infinite;
+	}
+	@keyframes wobble {
+		50% {
+			transform: rotate(4deg);
+		}
+	}
+	.pair {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+	.pair span {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 	.crates {
 		background: #2563eb !important;

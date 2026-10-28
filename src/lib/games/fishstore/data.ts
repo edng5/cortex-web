@@ -56,6 +56,8 @@ export interface Species {
 	cm: number;
 	/** Drawn from a picture instead (facing right, facing left). */
 	img?: [string, string];
+	/** Only comes from breeding (the rare albinos): never in crates or on the line. */
+	bred?: boolean;
 }
 
 export const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'ultra', 'epic', 'legendary', 'mythic'];
@@ -205,10 +207,63 @@ function parseCatalog(): Species[] {
 		pattern: 'none',
 		cm: 18
 	});
+	// The legend of the dragon fish: a mythic that only hatches from two legendary arowanas.
+	out.push({
+		...out.find((x) => x.id === 'platinum-arowana')!,
+		id: 'celestial-dragon',
+		name: 'Celestial Dragon Arowana',
+		sci: 'Scleropages draco (legend)',
+		rarity: 'mythic',
+		colors: ['#f4c430', '#fff2c0', '#e8462a'],
+		pcolor: '#ffe680',
+		bred: true
+	});
+	// Albinos: a very rare surprise when breeding certain fish. Some already exist (and ship in
+	// crates); the rest only ever come from breeding.
+	for (const [base, id] of Object.entries(ALBINO_OF)) {
+		const sp = out.find((x) => x.id === base);
+		if (!sp || out.some((x) => x.id === id)) continue;
+		out.push({
+			...sp,
+			id,
+			name: `Albino ${sp.name}`,
+			sci: `${sp.sci.replace(/\s*\(.*\)$/, '')} (albino)`,
+			rarity: RARITIES[Math.min(RARITIES.indexOf('legendary'), RARITIES.indexOf(sp.rarity) + 2)],
+			colors: ['#f6eee2', '#fff8f0', '#f8dcd6'],
+			pcolor: sp.pcolor ? '#f2cfc6' : undefined,
+			bred: true,
+			img: undefined
+		});
+	}
 	return out;
 }
 
+/** Which fish can throw an albino when bred (base species → its albino). */
+export const ALBINO_OF: Record<string, string> = {
+	// Albinos already in the catalogue.
+	'neon-tetra': 'albino-neon-tetra',
+	'tiger-barb': 'albino-tiger-barb',
+	'rainbow-shark': 'albino-rainbow-shark',
+	'full-red-guppy': 'albino-full-red-guppy',
+	discus: 'albino-discus',
+	oscar: 'albino-oscar',
+	'bronze-corydoras': 'albino-corydoras',
+	'bristlenose-pleco': 'albino-bristlenose-pleco',
+	// Breeding-only albinos.
+	...Object.fromEntries(
+		[
+			'guppy', 'platy', 'sailfin-molly', 'betta', 'halfmoon-betta', 'freshwater-angelfish', 'common-goldfish', 'oranda', 'ryukin', 'koi',
+			'cherry-barb', 'zebra-danio', 'convict-cichlid', 'kribensis', 'german-blue-ram', 'ocellaris-clownfish', 'clown-loach', 'pearl-gourami',
+			'dwarf-gourami', 'red-tailed-black-shark', 'bala-shark', 'jack-dempsey', 'firemouth-cichlid', 'blue-acara', 'yellow-lab',
+			'ember-tetra', 'harlequin-rasbora', 'cardinal-tetra', 'pictus-catfish', 'frontosa', 'severum', 'common-pleco', 'paradise-fish',
+			'blue-tang', 'yellow-tang', 'french-angelfish'
+		].map((id) => [id, `albino-${id}`])
+	)
+};
+
 export const SPECIES: Species[] = parseCatalog();
+/** Fish you can find in crates and on the line (not the breeding-only albinos). */
+export const WILD = SPECIES.filter((s) => !s.bred);
 export const SPECIES_BY_ID = new Map(SPECIES.map((s) => [s.id, s]));
 export const species = (id: string) => SPECIES_BY_ID.get(id) ?? SPECIES[0];
 
@@ -378,10 +433,10 @@ export const ROLES: Role[] = [
 	{ id: 'builder', name: 'Builder', speed: 1.4, wage: 40, hire: 100, does: 'build', blurb: 'Only builds: new tanks, upgrades and combining.' },
 	{ id: 'aquarist', name: 'Aquarist', speed: 1.5, wage: 90, hire: 450, does: 'all', blurb: 'Builds, cleans, trims plants and restocks.' },
 	{ id: 'senior', name: 'Senior Aquarist', speed: 2.2, wage: 280, hire: 1400, does: 'all', auto: true, blurb: 'Fast, and works on their own: cleans dirty tanks, trims plants and restocks the shelf without being asked.' },
-	{ id: 'scientist', name: 'Research Scientist', speed: 1, wage: 120, hire: 800, does: 'research', blurb: 'Researches fish in your wiki. At level 5 you can order that fish directly.' }
+	{ id: 'scientist', name: 'Research Scientist', speed: 1, wage: 120, hire: 800, does: 'research', blurb: 'Researches fish in your wiki (at level 5 you can order that fish directly) and breeds fish in the breeding tank.' }
 ];
 /** Tasks a builder can do. */
-export const BUILD_TASKS = ['build', 'upgrade', 'buildShow', 'upgradeShow', 'combine', 'buildLab'];
+export const BUILD_TASKS = ['build', 'upgrade', 'buildShow', 'upgradeShow', 'combine', 'buildLab', 'buildBreeder'];
 
 // ── Research (the fish wiki) ─────────────────────────────────────────────────────────
 export const RESEARCH_MAX = 5;
@@ -391,10 +446,66 @@ export const LAB_TIME = 600;
 /** Researching level `lvl` → `lvl + 1`: cash and time grow with rarity and level. */
 export const researchCost = (s: Species, lvl: number) => Math.max(25, Math.round(priceOf(s) * 0.2 * (lvl + 1)));
 export const researchTime = (s: Species, lvl: number) => (60 + 90 * RARITIES.indexOf(s.rarity)) * (lvl + 1);
-/** Ordering a fully researched fish: cash up to epic; legendary and mythic fish cost gems. */
-export const ORDER_GEMS: Partial<Record<Rarity, number>> = { legendary: 120, mythic: 300 };
-export const orderPrice = (s: Species): { price: number; currency: 'cash' | 'gems' } =>
-	ORDER_GEMS[s.rarity] ? { price: ORDER_GEMS[s.rarity]!, currency: 'gems' } : { price: Math.round(priceOf(s) * 1.5), currency: 'cash' };
+/** Ordering a fully researched fish: half its store price. */
+export const orderPrice = (s: Species): { price: number; currency: 'cash' | 'gems' } => ({ price: Math.round(priceOf(s) * 0.5), currency: 'cash' });
+
+// ── Breeding ─────────────────────────────────────────────────────────────────────────
+/** The breeding tank (2×1): one pair at a time, looked after by a Research Scientist. */
+export const BREEDER_COST = 900;
+export const BREEDER_TIME = 300;
+/** Chance a baby comes out albino (when its kind has one), before luck. */
+export const ALBINO_ODDS = 0.03;
+/** Chance a crossbreed throws a different species of the same genus. */
+export const HYBRID_ODDS = 0.1;
+/** The species a fish belongs to (its scientific name without the variety): "Poecilia reticulata". */
+export const speciesName = (s: Species) => s.sci.replace(/\s*\(.*\)$/, '');
+/**
+ * Crosses that really happen in the hobby (scientific-name prefixes that interbreed), and the
+ * named hybrids they can throw. Anything else only breeds with its own species.
+ */
+export const HYBRID_GROUPS: { name: string; members: string[]; makes?: string[] }[] = [
+	{ name: 'platies and swordtails', members: ['Xiphophorus'] },
+	{ name: 'guppies and Endlers', members: ['Poecilia reticulata', 'Poecilia wingei'] },
+	{ name: 'mollies', members: ['Poecilia sphenops', 'Poecilia latipinna', 'Poecilia velifera', 'Poecilia mexicana'] },
+	{ name: 'bettas', members: ['Betta splendens', 'Betta imbellis', 'Betta smaragdina', 'Betta mahachaiensis', 'Betta siamorientalis', 'Betta hybrid'], makes: ['alien-betta'] },
+	{ name: 'angelfish', members: ['Pterophyllum'] },
+	{ name: 'discus', members: ['Symphysodon'] },
+	{ name: 'goldfish and koi', members: ['Carassius', 'Cyprinus'] },
+	{ name: 'Central American cichlids', members: ['Amphilophus', 'Vieja', 'Paraneetroplus', 'Hybrid cichlid'], makes: ['flowerhorn-cichlid', 'blood-parrot-cichlid', 'kamfa-flowerhorn'] },
+	{ name: 'Malawi cichlids', members: ['Labidochromis', 'Maylandia', 'Metriaclima', 'Pseudotropheus', 'Aulonocara', 'Melanochromis', 'Cynotilapia', 'Iodotropheus', 'Labeotropheus', 'Tropheops'] },
+	{ name: 'clownfish', members: ['Amphiprion'] },
+	{ name: 'gouramis', members: ['Trichopodus'] },
+	{ name: 'dwarf angelfish', members: ['Centropyge'] },
+	{ name: 'Holacanthus angelfish', members: ['Holacanthus'] },
+	{ name: 'Pomacanthus angelfish', members: ['Pomacanthus'] },
+	{ name: 'big catfish', members: ['Pseudoplatystoma', 'Phractocephalus', 'Leiarius'] },
+	{ name: 'Hypancistrus plecos', members: ['Hypancistrus'] }
+];
+export const hybridGroup = (s: Species) => HYBRID_GROUPS.find((g) => g.members.some((m) => s.sci === m || s.sci.startsWith(m + ' ')));
+/** The one legendary pair that can hatch a mythic. */
+export const MYTHIC_CROSS = { a: 'platinum-arowana', b: 'albino-silver-arowana', makes: 'celestial-dragon', odds: 0.15 };
+export const isMythicCross = (a: Species, b: Species) => (a.id === MYTHIC_CROSS.a && b.id === MYTHIC_CROSS.b) || (a.id === MYTHIC_CROSS.b && b.id === MYTHIC_CROSS.a);
+export type BreedKind = 'pure' | 'strains' | 'hybrid' | 'legend';
+/**
+ * Can these two breed? The same species always can (varieties mix their strains); different
+ * species only if they really interbreed (see HYBRID_GROUPS) and share water.
+ */
+export function canBreed(a: Species, b: Species): { ok: true; kind: BreedKind; cross: boolean; group?: (typeof HYBRID_GROUPS)[number] } | { ok: false; why: string } {
+	if (a.rarity === 'mythic' || b.rarity === 'mythic') return { ok: false, why: "Mythic fish don't breed in captivity." };
+	if (isMythicCross(a, b)) return { ok: true, kind: 'legend', cross: true };
+	if (a.id === b.id) return { ok: true, kind: 'pure', cross: false };
+	if (a.water !== b.water || a.temp !== b.temp) return { ok: false, why: `${a.name} and ${b.name} need different water, so they'd never meet.` };
+	if (speciesName(a) === speciesName(b) && speciesName(a).includes(' ')) return { ok: true, kind: 'strains', cross: true };
+	const g = hybridGroup(a);
+	if (g && g === hybridGroup(b)) return { ok: true, kind: 'hybrid', cross: true, group: g };
+	return { ok: false, why: `${a.name} (${speciesName(a)}) and ${b.name} (${speciesName(b)}) don't interbreed in real life.` };
+}
+/** Babies per brood: small fish have more. */
+export const BROOD: Record<Size, number> = { S: 3, M: 2, L: 1, XL: 1, XXL: 1 };
+export const breedTime = (a: Species, b: Species) => 240 * (1 + Math.max(RARITIES.indexOf(a.rarity), RARITIES.indexOf(b.rarity)));
+/** Eggs hatch on their own, a while after they're laid. */
+export const hatchTime = (a: Species, b: Species) => Math.round(breedTime(a, b) * 0.75);
+export const breedCost = (a: Species, b: Species) => Math.max(30, Math.round((priceOf(a) + priceOf(b)) * 0.1));
 
 // ── Daily gifts: three a day, in the morning, afternoon and evening ──────────────────
 export const GIFT_HOURS = [6, 12, 18];
@@ -480,7 +591,7 @@ export function activeEvent(t = Date.now()): StoreEvent | null {
 /** The fish an event crate can hold: its colours, any water, up to legendary. */
 export function eventPool(e: StoreEvent): Species[] {
 	const hex = e.palette.map((c) => COLOR[c]);
-	return SPECIES.filter((s) => RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('legendary') && (hex.includes(s.colors[0]) || (!!s.pcolor && hex.includes(s.pcolor))));
+	return WILD.filter((s) => RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('legendary') && (hex.includes(s.colors[0]) || (!!s.pcolor && hex.includes(s.pcolor))));
 }
 
 /** Chance a crate also holds gems. */
