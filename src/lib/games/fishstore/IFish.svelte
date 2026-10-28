@@ -516,7 +516,7 @@
 	function RARITY_ORDER(f: Fish) {
 		return ['common', 'uncommon', 'rare', 'ultra', 'epic', 'legendary', 'mythic'].indexOf(species(f.s).rarity);
 	}
-	const sellable = $derived(myFish.filter((f) => RARITY_ORDER(f) >= 2 && f.u !== s.center));
+	const sellable = $derived(myFish.filter((f) => RARITY_ORDER(f) >= 2 && f.u !== s.center && !f.fav));
 	/** Post your favourite show tank to the showcase (quiet: just keep it current). */
 	async function shareTank(quiet = false) {
 		const t = store.favTank;
@@ -617,7 +617,8 @@
 
 	const tasksFor = (ref: number) => s.tasks.find((t) => t.ref === ref || t.ref2 === ref);
 	const decorBeauty = (t: ShowTank) => t.decor.reduce((a, d) => a + TANK_DECOR.find((x) => x.id === d)!.beauty, 0);
-	const holdFish = $derived(s.hold);
+	/** The backroom, favourites first. */
+	const holdFish = $derived([...s.hold].sort((a, b) => +!!b.fav - +!!a.fav));
 </script>
 
 {#snippet fishRow(f: Fish, from: Loc)}
@@ -642,7 +643,8 @@
 		</div>
 		<div class="fa">
 			<button onclick={() => (moving = { uid: f.u, from })}>Move</button>
-			{#if from === 'hold'}<button onclick={() => act(store.wholesale(f.u), 'coin')}>Wholesale</button>{/if}
+			<button class="star" class:on={f.fav} title={f.fav ? 'Favourite: safe from selling. Tap to unstar.' : 'Favourite: keep it safe from selling'} aria-label={f.fav ? 'Unstar' : 'Mark as favourite'} onclick={() => (store.toggleFav(f.u), sfx('click'))}>{f.fav ? '★' : '☆'}</button>
+			{#if from === 'hold' && !f.fav}<button onclick={() => ask({ title: `Wholesale your ${f.n ?? sp.name}?`, body: `A wholesaler pays ${money(priceOf(sp) * 0.4)} for it. It's gone for good.`, fish: [f], leaving: true, yes: 'Wholesale', run: () => act(store.wholesale(f.u), 'coin') })}>Wholesale</button>{/if}
 		</div>
 	</li>
 {/snippet}
@@ -1308,7 +1310,7 @@
 				<ul class="dest">
 					{#each locs.filter((l) => l !== m.from && !(m.uid === s.center && l.startsWith('sale'))) as l (l)}
 						{@const t = store.tankAt(l)}
-						{@const chk = f && t ? store.check(t, species(f.s)) : null}
+						{@const chk = f?.fav && l.startsWith('sale') ? { ok: false, msg: "★ Favourites can't go in sale tanks (customers would buy them)." } : f && t ? store.check(t, species(f.s)) : null}
 						<li>
 							<button disabled={(chk && !chk.ok) || (l === 'hold' && s.hold.length >= s.holdCap)} onclick={() => moveFish(m.uid, m.from, l)}>{tankName(l)}{t ? ` · ${store.used(t)}/${store.capOf(t)}` : ` · ${s.hold.length}/${s.holdCap}`}</button>
 							{#if chk && !chk.ok}<span class="why">{chk.msg}</span>{/if}
@@ -1331,10 +1333,10 @@
 				<ul class="list">
 					{#each s.hold as f (f.u)}
 						{@const sp = species(f.s)}
-						{@const chk = t ? store.check(t, sp) : null}
+						{@const chk = f.fav && to.startsWith('sale') ? { ok: false, msg: "★ Favourite: it can't go in a sale tank." } : t ? store.check(t, sp) : null}
 						<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
 							<FishIcon id={sp.id} size={48} />
-							<div class="fi"><b>{sp.name}</b><span class="small">{SIZE_LABEL[sp.size]} ({SIZE_UNITS[sp.size]} space) · {sp.water} · {sp.temp}</span>{#if chk && !chk.ok}<span class="why">{chk.msg}</span>{/if}</div>
+							<div class="fi"><b>{f.fav ? '★ ' : ''}{sp.name}</b><span class="small">{SIZE_LABEL[sp.size]} ({SIZE_UNITS[sp.size]} space) · {sp.water} · {sp.temp}</span>{#if chk && !chk.ok}<span class="why">{chk.msg}</span>{/if}</div>
 							<button disabled={!!chk && !chk.ok} onclick={() => act(store.move(f.u, 'hold', to), 'splash')}>Add</button>
 						</li>
 					{/each}
@@ -1748,6 +1750,14 @@
 	}
 	.toasts p {
 		pointer-events: auto;
+	}
+	.star {
+		font-size: 1.05rem;
+		padding: 2px 8px !important;
+		color: #94a3b8;
+	}
+	.star.on {
+		color: #fbbf24;
 	}
 	.sex {
 		font-weight: 800;

@@ -117,12 +117,15 @@ const HOUR = 3600_000;
 const MAX_OFFLINE_SALES = 12 * HOUR;
 
 export type Gender = 'm' | 'f';
+const FAV_SAFE = "★ That's a favourite, so it can't be sold. Unstar it first.";
 export const randomGender = (): Gender => (Math.random() < 0.5 ? 'm' : 'f');
 export interface Fish {
 	u: number;
 	s: string;
 	/** Male or female (for breeding). */
 	g?: Gender;
+	/** A favourite: kept safe from selling (no wholesale, sale tanks or market). */
+	fav?: boolean;
 	/** A name (show-tank fish). */
 	n?: string;
 	/** Hours kept in a happy show tank: sold later, well-kept fish earn gems. */
@@ -461,6 +464,7 @@ export class FishStore {
 		const fish = src.find((f) => f.u === uid);
 		if (!fish) return no('That fish is gone.');
 		const partner = fish.u === this.s.center;
+		if (fish.fav && to.startsWith('sale')) return no(FAV_SAFE);
 		if (partner && to.startsWith('sale')) return no("Your partner fish isn't for sale. Move it to another show tank or the backroom.");
 		const sp = species(fish.s);
 		if (to === 'hold') {
@@ -496,6 +500,7 @@ export class FishStore {
 		if (uid === this.s.center) return no("Your partner fish isn't for sale. Choose another partner first.");
 		const at = this.findFish(uid);
 		if (!at) return no('That fish is gone.');
+		if (at.fish.fav) return no(FAV_SAFE);
 		at.list.splice(at.list.indexOf(at.fish), 1);
 		this.save();
 		return ok();
@@ -517,9 +522,18 @@ export class FishStore {
 		if (sign > 0 && currency === 'cash') this.s.earned += price;
 		this.save();
 	}
+	/** Star (or unstar) a fish as a favourite. */
+	toggleFav(uid: number) {
+		const f = this.findFish(uid)?.fish;
+		if (!f) return;
+		if (f.fav) delete f.fav;
+		else f.fav = true;
+		this.save();
+	}
 	wholesale(uid: number): Result {
 		const i = this.s.hold.findIndex((f) => f.u === uid);
 		if (i < 0) return no('That fish is gone.');
+		if (this.s.hold[i].fav) return no(FAV_SAFE);
 		const sp = species(this.s.hold[i].s);
 		const cash = Math.round(priceOf(sp) * WHOLESALE);
 		this.s.hold.splice(i, 1);
