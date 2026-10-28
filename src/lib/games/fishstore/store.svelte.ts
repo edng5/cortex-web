@@ -1203,7 +1203,7 @@ export class FishStore {
 		if (this.s.hold.length + CRATE_FISH > this.holdCap()) return no(`Make room in the backroom first (a crate holds ${CRATE_FISH} fish).`);
 		if (free) this.s.freeCrates--;
 		else this.s.cash -= cost;
-		const pool = ev ? eventPool(ev) : SPECIES.filter((s) => s.water === (sup as (typeof SUPPLIERS)[number]).water && s.temp === (sup as (typeof SUPPLIERS)[number]).temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('epic'));
+		const pool = ev ? eventPool(ev) : SPECIES.filter((s) => s.water === (sup as (typeof SUPPLIERS)[number]).water && s.temp === (sup as (typeof SUPPLIERS)[number]).temp && RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('legendary'));
 		const fish: Fish[] = [];
 		for (let i = 0; i < CRATE_FISH; i++) {
 			let r = RARITIES.indexOf(roll(this.crateOdds(!!ev)));

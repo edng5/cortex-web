@@ -411,13 +411,14 @@ export const SUPPLIERS: { id: string; name: string; water: Water; temp: Temp; bl
 	{ id: 'cold', name: 'Coldwater Co.', water: 'fresh', temp: 'cold', blurb: 'Goldfish, koi and coldwater minnows.' },
 	{ id: 'reef', name: 'Coral Coast Imports', water: 'salt', temp: 'tropical', blurb: 'Captive-bred and collected reef fish.' }
 ];
-/** Shipment odds (%); legendaries can only be caught, not shipped. */
+/** Shipment odds (%); mythic fish can only be caught, not shipped. */
 export const CRATE_ODDS: [Rarity, number][] = [
 	['common', 58],
 	['uncommon', 30],
 	['rare', 9],
-	['ultra', 2.5],
-	['epic', 0.5]
+	['ultra', 2.4],
+	['epic', 0.5],
+	['legendary', 0.1]
 ];
 // ── Holiday events: a themed crate for a week or two around each holiday ────────────
 export interface StoreEvent {
@@ -447,8 +448,9 @@ export const EVENT_ODDS: [Rarity, number][] = [
 	['common', 10],
 	['uncommon', 35],
 	['rare', 33],
-	['ultra', 15],
-	['epic', 7]
+	['ultra', 14],
+	['epic', 7],
+	['legendary', 1]
 ];
 /** Luck from each limited-edition decoration you own, and again for each one on display in a show tank. */
 export const LUCK_OWNED = 4;
@@ -475,10 +477,10 @@ export function activeEvent(t = Date.now()): StoreEvent | null {
 	const md = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	return EVENTS.find((e) => md >= e.from && md <= e.to) ?? null;
 }
-/** The fish an event crate can hold: its colours, any water, up to epic. */
+/** The fish an event crate can hold: its colours, any water, up to legendary. */
 export function eventPool(e: StoreEvent): Species[] {
 	const hex = e.palette.map((c) => COLOR[c]);
-	return SPECIES.filter((s) => RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('epic') && (hex.includes(s.colors[0]) || (!!s.pcolor && hex.includes(s.pcolor))));
+	return SPECIES.filter((s) => RARITIES.indexOf(s.rarity) <= RARITIES.indexOf('legendary') && (hex.includes(s.colors[0]) || (!!s.pcolor && hex.includes(s.pcolor))));
 }
 
 /** Chance a crate also holds gems. */
