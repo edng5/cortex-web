@@ -597,6 +597,88 @@
 				}
 			});
 		}
+		if (has('invader')) {
+			// The red invader from Space Invaders, block for block from its sprite, bobbing and
+			// marching its legs (two frames, like the game).
+			const A = ['....####....', '.##########.', '############', '###..##..###', '############', '..###..###..'];
+			const legs = [
+				['.##..##..##.', '..##....##..'],
+				['..##.##.##..', '##........##']
+			];
+			const frame = Math.floor(t * 2) % 2;
+			const rows = [...A, ...legs[frame]];
+			const cw = 0.011;
+			const ch = 0.017;
+			const u0 = 0.7;
+			const z = 0.5;
+			const top = F - 0.5 + Math.sin(t * 1.3) * 0.02;
+			items.push({
+				z,
+				f: () => {
+					rows.forEach((row, j) =>
+						[...row].forEach((px, i) => {
+							if (px === '#') cube(c, u0 + i * cw, u0 + (i + 1) * cw, z - 0.025, z, top + j * ch, top + (j + 1) * ch, j % 2 ? '#c8001a' : '#e0102a');
+						})
+					);
+					glow(u0 + 6 * cw, top + 4 * ch, z, 'rgba(255,40,60,0.22)', (fx1 - fx0) * 0.07);
+				}
+			});
+		}
+		if (has('jet')) {
+			// The Top Gun jet: Top Gun's own F-14 sprite (seen from behind), pixel for pixel as
+			// voxels, hovering with its afterburners (the red ones) flickering.
+			const rows = [
+				'.......................c........................................',
+				'......................de.................de.....................',
+				'......................if.................fhd....................',
+				'......................if.................fhd....................',
+				'......................hff...............ffhc....................',
+				'.......................hf...............eff.....................',
+				'.......................hfd..............fff.....................',
+				'.......................hff......a......dfff.....................',
+				'.......................hff.....fcc.....dfff.....................',
+				'.......................hfff...efdcf...dffff.....................',
+				'.......................fffe.cdfhhfhdd.cffhc.....................',
+				'.......................dhffcecbhccdaibfffh......................',
+				'.......................dhffdadabfcaebbfffh......................',
+				'...................baaachffdadiaaaehabfffhaaa...................',
+				'................baaaaaachfdbfeaiadbcfcbeffaaaaaabb..............',
+				'..........bbbbaaaaabddcehhaacbaiadcaeaadhhccdcaaaaaabbbb........',
+				'.......aaaceaaaadeedcckiiddbdadbabdaccbchikfcdeeebaaacdaaa......',
+				'....aaaeefeihhhhcccbahiiihfhdaheeeiaaifhiiihbaccchhhhifefebaab..',
+				'.bbbhhhhhhhhbbbaaaaafijjjjiiiheaaacfkiiijjjikaaaaabbbdhhhhhhhdbb',
+				'.ffffff...baaaaaaabbhijjjjifhicbcbbhifhjjjjjkcbaaaaaaa....dffffh',
+				'.........cddddddddfkiijggjihh.cikidcdihjggjjikiddddddddd........',
+				'...................chijjjjif...c.....diijjjik...................',
+				'.....................iiiiih...........diiiiic...................',
+				'......................hhhh.............dhhhc....................'
+			];
+			const PAL: Record<string, string> = { a: '#ffffff', b: '#dfeaf3', c: '#bac3ce', d: '#9b9d9a', e: '#867d74', f: '#6c7781', g: '#7d5c53', h: '#4d5053', i: '#2c2928', j: '#c00000', k: '#000000' };
+			const cw = 0.0055;
+			const ch = 0.009;
+			const u0 = 0.17;
+			const z = 0.56;
+			const top = F - 0.5 + Math.sin(t * 0.9) * 0.012;
+			const burn = Math.sin(t * 17) + Math.sin(t * 29) > 0;
+			items.push({
+				z,
+				f: () => {
+					rows.forEach((row, j) => {
+						for (let i = 0; i < row.length; i++) {
+							const px = row[i];
+							if (px === '.') continue;
+							const col = px === 'j' && burn ? '#ff3a24' : PAL[px];
+							const u = u0 + i * cw;
+							const v = top + j * ch;
+							// A front face, and a top face where nothing sits above (light enough for ~540 blocks).
+							if (j === 0 || rows[j - 1][i] === '.') quad(c, [P(u, v, z - 0.02), P(u + cw, v, z - 0.02), P(u + cw, v, z), P(u, v, z)], shade(col, 1.18));
+							quad(c, [P(u, v, z), P(u + cw, v, z), P(u + cw, v + ch, z), P(u, v + ch, z)], col);
+						}
+					});
+					for (const e of [26, 45]) glow(u0 + e * cw, top + 20 * ch, z, `rgba(255,60,40,${burn ? 0.4 : 0.25})`, (fx1 - fx0) * 0.035);
+				}
+			});
+		}
 		if (has('sandcastle')) {
 			const u = 0.55;
 			const z = 0.82;

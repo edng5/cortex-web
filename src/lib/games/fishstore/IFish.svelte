@@ -13,6 +13,9 @@
 		CRATE_FISH,
 		FLOORS,
 		FOOD_COST,
+		EVENTS,
+		CHEST_ODDS,
+		DECOR_ICON,
 		ALBINO_OF,
 		BREEDER_COST,
 		BREEDER_TIME,
@@ -94,11 +97,12 @@
 	const s = $derived(store.s);
 	const sfx = (n: string) => gameAudio.play('ifish', n);
 
-	type Tab = 'store' | 'show' | 'backroom' | 'ship' | 'fish' | 'staff' | 'wiki' | 'showcase';
+	type Tab = 'store' | 'show' | 'backroom' | 'storage' | 'ship' | 'fish' | 'staff' | 'wiki' | 'showcase';
 	const TABS: { id: Tab; icon: string; label: string }[] = [
 		{ id: 'store', icon: '🏪', label: 'Store' },
 		{ id: 'show', icon: '⭐', label: 'Show tank' },
 		{ id: 'backroom', icon: '📦', label: 'Backroom' },
+		{ id: 'storage', icon: '🎒', label: 'Storage' },
 		{ id: 'ship', icon: '🚚', label: 'Shipments' },
 		{ id: 'fish', icon: '🎣', label: 'Fishing' },
 		{ id: 'staff', icon: '🧑‍🔧', label: 'Staff' },
@@ -599,6 +603,17 @@
 	);
 	const researchTask = (id: string) => s.tasks.find((t) => t.kind === 'research' && t.sp === id);
 
+	// ── Storage ──
+	let chestPrize = $state<null | { icon: string; text: string; decor?: DecorTag; mythic?: boolean }>(null);
+	let placeIn = $state<Record<string, number>>({});
+	function openChest() {
+		const r = store.openChest();
+		if (!r.ok) return act(r);
+		chestPrize = r;
+		sfx(r.mythic ? 'rare' : r.decor ? 'rare' : 'coin');
+	}
+	const specials = $derived(TANK_DECOR.filter((d) => d.limited));
+
 	// ── Breeding ──
 	let breedM = $state<number | null>(null);
 	let breedF = $state<number | null>(null);
@@ -624,6 +639,7 @@
 {#snippet fishRow(f: Fish, from: Loc)}
 	{@const sp = species(f.s)}
 	<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
+		<button class="star" class:on={f.fav} title={f.fav ? 'Favourite: safe from selling. Tap to unstar.' : 'Favourite: keep it safe from selling'} aria-label={f.fav ? 'Unstar' : 'Mark as favourite'} onclick={() => (store.toggleFav(f.u), sfx('click'))}>{f.fav ? '★' : '☆'}</button>
 		<FishIcon id={sp.id} size={58} />
 		<div class="fi">
 			<b>{f.n ? `${f.n} · ` : ''}{sp.name} {@render sex(f)}</b>
@@ -643,8 +659,7 @@
 		</div>
 		<div class="fa">
 			<button onclick={() => (moving = { uid: f.u, from })}>Move</button>
-			<button class="star" class:on={f.fav} title={f.fav ? 'Favourite: safe from selling. Tap to unstar.' : 'Favourite: keep it safe from selling'} aria-label={f.fav ? 'Unstar' : 'Mark as favourite'} onclick={() => (store.toggleFav(f.u), sfx('click'))}>{f.fav ? '★' : '☆'}</button>
-			{#if from === 'hold' && !f.fav}<button onclick={() => ask({ title: `Wholesale your ${f.n ?? sp.name}?`, body: `A wholesaler pays ${money(priceOf(sp) * 0.4)} for it. It's gone for good.`, fish: [f], leaving: true, yes: 'Wholesale', run: () => act(store.wholesale(f.u), 'coin') })}>Wholesale</button>{/if}
+			{#if from === 'hold' && !f.fav}<button class="sellred" onclick={() => ask({ title: `Wholesale your ${f.n ?? sp.name}?`, body: `A wholesaler pays ${money(priceOf(sp) * 0.4)} for it. It's gone for good.`, fish: [f], leaving: true, yes: 'Wholesale', run: () => act(store.wholesale(f.u), 'coin') })}>Wholesale</button>{/if}
 		</div>
 	</li>
 {/snippet}
@@ -768,6 +783,7 @@
 				<span class="ic">{t.icon}</span><span class="lb">{t.label}</span>
 				{#if t.id === 'staff' && s.layoff}<i class="dot"></i>{/if}
 				{#if t.id === 'ship' && event}<i class="evt">{event.icon}</i>{/if}
+				{#if t.id === 'storage' && s.chests}<i class="evt">🧰{s.chests}</i>{/if}
 			</button>
 		{/each}
 	</nav>
@@ -1076,6 +1092,50 @@
 				{#if s.holdCap < HOLDING_MAX}<button onclick={() => act(store.buyHolding())}>More shelving +5 ({money(HOLDING_COST)})</button>{/if}
 				<ul class="list">{#each holdFish as f (f.u)}{@render fishRow(f, 'hold')}{/each}</ul>
 				{#if !holdFish.length}<p class="muted">Empty. Open a shipment or go fishing!</p>{/if}
+			</section>
+		{:else if tab === 'storage'}
+			<section class="card">
+				<h3>🎒 Storage</h3>
+				<p class="muted small">Things you've collected that aren't fish: treasure chests, free crates and special decorations.</p>
+				<div class="stash">
+					<div class="item">
+						<span class="big">🧰</span>
+						<div class="fi">
+							<b>Treasure chests · {s.chests}</b>
+							<span class="muted small">Fished up now and then (about {Math.round(CHEST_ODDS * (1 + store.luck() / 100) * 100)}% of catches with your luck). They can hold gems, cash, free crates, limited editions, or a mythic decoration.</span>
+						</div>
+						<button class="primary" disabled={!s.chests} onclick={openChest}>Open</button>
+					</div>
+					<div class="item">
+						<span class="big">📦</span>
+						<div class="fi"><b>Free crates · {s.freeCrates}</b><span class="muted small">Open them from any supplier in Shipments.</span></div>
+						<button disabled={!s.freeCrates} onclick={() => (tab = 'ship')}>Go</button>
+					</div>
+				</div>
+			</section>
+			<section class="card">
+				<h3>✨ Special decorations · {s.limited.length}/{specials.length}</h3>
+				<p class="muted small">Limited editions come from holiday event crates; mythics only from treasure chests. Each adds 🍀 luck, and more on display. Mythics make any tank as beautiful as it gets.</p>
+				<div class="stash">
+					{#each specials as d (d.id)}
+						{@const have = s.limited.includes(d.id)}
+						{@const shownIn = s.show.filter((t) => t.decor.includes(d.id))}
+						<div class="item" class:missing={!have} class:mythicitem={d.mythic}>
+							<span class="big">{have ? (DECOR_ICON[d.id] ?? '✨') : '?'}</span>
+							<div class="fi">
+								<b>{have ? d.name : '???'}</b>
+								<span class="small {d.mythic ? 'rar mythic' : 'limited'}">{d.mythic ? 'MYTHIC · beauty max' : `Limited edition · ${EVENTS.find((e) => e.id === d.limited)?.name ?? ''}`}</span>
+								{#if have}<span class="muted small">{shownIn.length ? `On display: ${shownIn.map((t) => tankName(`show:${t.id}`)).join(', ')}` : 'In storage'}</span>{/if}
+							</div>
+							{#if have}
+								<select bind:value={placeIn[d.id]} aria-label="Show tank">
+									{#each s.show.filter((t) => !t.decor.includes(d.id)) as t (t.id)}<option value={t.id}>{tankName(`show:${t.id}`)}</option>{/each}
+								</select>
+								<button disabled={shownIn.length === s.show.length} onclick={() => act(store.placeSpecial(d.id, placeIn[d.id] ?? s.show.find((t) => !t.decor.includes(d.id))!.id), 'done')}>Put in tank</button>
+							{/if}
+						</div>
+					{/each}
+				</div>
 			</section>
 		{:else if tab === 'ship'}
 			<section class="card">
@@ -1542,6 +1602,23 @@
 		</div>
 	{/if}
 
+	{#if chestPrize}
+		{@const p = chestPrize}
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (chestPrize = null)}>
+			<div class="dlg chest" class:mythicprize={p.mythic}>
+				<button class="x" type="button" aria-label="Close" onclick={() => (chestPrize = null)}>✕</button>
+				<h3>🧰 Treasure chest</h3>
+				<span class="prize">{p.decor ? (DECOR_ICON[p.decor] ?? '✨') : p.icon}</span>
+				<b class="prizetext">{p.text}</b>
+				{#if p.decor}<p class="muted small">It's in your Storage: put it in any show tank. +{LUCK_OWNED} 🍀 luck, and +{LUCK_SHOWN} more on display.</p>{/if}
+				<div class="row">
+					{#if s.chests}<button class="primary" onclick={openChest}>Open another ({s.chests})</button>{/if}
+					<button onclick={() => (chestPrize = null)}>Done</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	{#if viewing}
 		{@const v = viewing}
 		{@const t = asShowTank(tankOf(v))}
@@ -1751,6 +1828,15 @@
 	.toasts p {
 		pointer-events: auto;
 	}
+	.sellred {
+		background: #dc2626 !important;
+		border-color: #b91c1c !important;
+		color: #fff !important;
+		font-weight: 700;
+	}
+	.sellred:hover {
+		background: #ef4444 !important;
+	}
 	.star {
 		font-size: 1.05rem;
 		padding: 2px 8px !important;
@@ -1758,6 +1844,52 @@
 	}
 	.star.on {
 		color: #fbbf24;
+	}
+	.stash {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.stash .item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.04);
+	}
+	.stash .item.missing {
+		opacity: 0.5;
+	}
+	.stash .item.mythicitem {
+		border: 1px solid rgba(255, 77, 109, 0.5);
+	}
+	.stash .big {
+		font-size: 1.8rem;
+		width: 40px;
+		text-align: center;
+	}
+	.chest {
+		align-items: center;
+		text-align: center;
+	}
+	.prize {
+		font-size: 4rem;
+		animation: pop 0.5s ease-out;
+	}
+	.prizetext {
+		font-size: 1.1rem;
+	}
+	.mythicprize {
+		border-color: #ff4d6d;
+		box-shadow: 0 0 40px -6px #ff4d6d;
+	}
+	@keyframes pop {
+		from {
+			transform: scale(0.2) rotate(-20deg);
+			opacity: 0;
+		}
 	}
 	.sex {
 		font-weight: 800;

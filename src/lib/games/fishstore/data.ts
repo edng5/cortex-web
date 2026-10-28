@@ -28,7 +28,10 @@ export type DecorTag =
 	| 'egg'
 	| 'sandcastle'
 	| 'pumpkin'
-	| 'xmastree';
+	| 'xmastree'
+	// Mythic decorations, only from treasure chests.
+	| 'jet'
+	| 'invader';
 
 export interface Species {
 	id: string;
@@ -352,7 +355,7 @@ export function maxSizeFor(cap: number): Size {
 }
 
 // ── Decorations ──────────────────────────────────────────────────────────────────────
-export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: number; water?: Water; limited?: string }[] = [
+export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: number; water?: Water; limited?: string; mythic?: boolean }[] = [
 	{ id: 'sand', name: 'Sand substrate', cost: 50, beauty: 4 },
 	{ id: 'gravel', name: 'Gravel', cost: 30, beauty: 3, water: 'fresh' },
 	{ id: 'plants', name: 'Live plants', cost: 90, beauty: 9, water: 'fresh' },
@@ -373,8 +376,27 @@ export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: num
 	{ id: 'egg', name: 'Painted Egg', cost: 400, beauty: 11, limited: 'spring' },
 	{ id: 'sandcastle', name: 'Sandcastle', cost: 400, beauty: 11, limited: 'summer' },
 	{ id: 'pumpkin', name: "Jack-o'-lantern", cost: 400, beauty: 11, limited: 'halloween' },
-	{ id: 'xmastree', name: 'Festive Tree', cost: 400, beauty: 11, limited: 'winter' }
+	{ id: 'xmastree', name: 'Festive Tree', cost: 400, beauty: 11, limited: 'winter' },
+	// Mythic: from treasure chests only, and each one alone makes a tank as beautiful as it gets.
+	{ id: 'jet', name: 'Top Gun Jet', cost: 5000, beauty: 45, limited: 'chest', mythic: true },
+	{ id: 'invader', name: 'Red Space Invader', cost: 5000, beauty: 45, limited: 'chest', mythic: true }
 ];
+/** Icons for the special (limited and mythic) decorations, for the storage list. */
+export const DECOR_ICON: Partial<Record<DecorTag, string>> = {
+	lantern: '🏮',
+	heart: '💘',
+	clover: '🍀',
+	egg: '🥚',
+	sandcastle: '🏰',
+	pumpkin: '🎃',
+	xmastree: '🎄',
+	jet: '✈️',
+	invader: '👾'
+};
+
+// ── Treasure chests (sometimes fished up) ────────────────────────────────────────────
+/** Chance a catch comes up with a treasure chest too (before luck). */
+export const CHEST_ODDS = 0.06;
 export const decor = (id: DecorTag) => TANK_DECOR.find((d) => d.id === id)!;
 
 export type StoreItem = 'plant' | 'bench' | 'lamp' | 'poster' | 'rug' | 'sign' | 'statue' | 'fountain' | 'arch';

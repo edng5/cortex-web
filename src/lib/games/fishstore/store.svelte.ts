@@ -6,6 +6,7 @@
 // up on whatever happened while the game was closed (tasks finish, customers shop, water gets
 // dirty, the centrepiece gets hungry).
 import {
+	CHEST_ODDS,
 	ALBINO_OF,
 	ALBINO_ODDS,
 	BREEDER_COST,
@@ -243,8 +244,10 @@ interface Save {
 	/** The free decoration left in your main show tank: keep it or sell it. */
 	giftDecor: DecorTag | null;
 	decorGiven: boolean;
-	/** Limited-edition decorations you own (from event crates). */
+	/** Special decorations you own: limited editions (event crates) and mythics (treasure chests). */
 	limited: DecorTag[];
+	/** Unopened treasure chests in storage. */
+	chests: number;
 	/** The research lab (2×2), once built. */
 	lab: { x: number; y: number; ready: boolean } | null;
 	/** The breeding tank (2×1), once built, and the pair in it. */
@@ -324,6 +327,7 @@ function fresh(): Save {
 		giftDecor: null,
 		decorGiven: false,
 		limited: [],
+		chests: 0,
 		lab: null,
 		breeder: null,
 		log: ['Welcome! Stock your sale tank and set up your show tank.']
@@ -1458,6 +1462,12 @@ export class FishStore {
 		if (!this.s.caught.includes(sp.id)) this.s.caught.push(sp.id);
 		this.discover(sp.id);
 		this.say(`Caught a ${sp.name}!`);
+		// Now and then the line snags a treasure chest too (luck helps).
+		if (Math.random() < CHEST_ODDS * (1 + this.luck() / 100)) {
+			this.s.chests++;
+			this.toast = [...this.toast, '🧰 Your line snagged a treasure chest! Open it in Storage.'];
+			this.say('Fished up a treasure chest.');
+		}
 		this.save();
 		return ok();
 	}
@@ -1638,6 +1648,53 @@ export class FishStore {
 		this.say(`Ordered a ${sp.name}.`);
 		this.save();
 		return ok(`A ${sp.name} is waiting in your backroom.`);
+	}
+
+	// ── Storage: treasure chests and special decorations ─────────────────────────────
+	/** Open a treasure chest: maybe a mythic decoration, a limited edition, gems, cash or a free crate. */
+	openChest(): { ok: false; msg: string } | { ok: true; icon: string; text: string; decor?: DecorTag; mythic?: boolean } {
+		if (this.s.chests < 1) return no('No chests to open.');
+		this.s.chests--;
+		const owned = new Set(this.s.limited);
+		const mythics = TANK_DECOR.filter((d) => d.mythic && !owned.has(d.id));
+		const limited = TANK_DECOR.filter((d) => d.limited && !d.mythic && !owned.has(d.id));
+		type Prize = 'mythic' | 'limited' | 'gems' | 'cash' | 'crate';
+		const prize = roll<Prize>([
+			['mythic', mythics.length ? 5 * (1 + this.luck() / 50) : 0],
+			['limited', limited.length ? 12 : 0],
+			['gems', 23],
+			['cash', 35],
+			['crate', 25]
+		]);
+		let out: { ok: true; icon: string; text: string; decor?: DecorTag; mythic?: boolean };
+		if (prize === 'mythic' || prize === 'limited') {
+			const d = pick(prize === 'mythic' ? mythics : limited);
+			this.s.limited.push(d.id);
+			out = { ok: true, icon: prize === 'mythic' ? '🌟' : '✨', text: `${prize === 'mythic' ? 'MYTHIC' : 'Limited edition'}: the ${d.name}!`, decor: d.id, mythic: prize === 'mythic' };
+		} else if (prize === 'gems') {
+			const g = 5 + Math.floor(Math.random() * 16);
+			this.s.gems += g;
+			out = { ok: true, icon: '💎', text: `${g} gems` };
+		} else if (prize === 'crate' && this.s.freeCrates < FREE_CRATE_MAX) {
+			this.s.freeCrates++;
+			out = { ok: true, icon: '📦', text: 'A free shipment crate' };
+		} else {
+			const cash = 300 + Math.floor(Math.random() * 13) * 100;
+			this.s.cash += cash;
+			out = { ok: true, icon: '💵', text: `$${cash.toLocaleString()}` };
+		}
+		this.say(`Opened a treasure chest: ${out.text}`);
+		this.save();
+		return out;
+	}
+	/** Put one of your special decorations into a show tank (free: you own it). */
+	placeSpecial(tag: DecorTag, showId: number): Result {
+		const t = this.s.show.find((x) => x.id === showId);
+		if (!t) return no('No such tank.');
+		if (!this.s.limited.includes(tag)) return no("You don't have that yet.");
+		if (t.decor.includes(tag)) return no("It's already in that tank.");
+		if (t.decor.length >= this.decorSlots(t)) return no('That tank has no room for another decoration. Take one out (Decorate) first.');
+		return this.setDecor(t.id, [...t.decor, tag]);
 	}
 
 	// ── Daily gifts ──────────────────────────────────────────────────────────────────
