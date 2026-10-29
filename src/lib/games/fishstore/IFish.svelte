@@ -10,6 +10,7 @@
 		BAIT_COST,
 		COMBINE_COST,
 		CRATE_COST,
+		SALT_COST,
 		CRATE_FISH,
 		FLOORS,
 		FOOD_COST,
@@ -207,8 +208,8 @@
 		if (!cost) return ((styleDraft = null), (panel = null));
 		if (change.shape !== store.lookOf(t).shape) {
 			const sh = TANK_SHAPES.find((x) => x.id === change.shape)!;
-			ask({ title: `Refit as a ${sh.name.toLowerCase()} tank?`, body: `Costs ${money(cost)} in all. It holds the same number of fish, and all ${t.fish.length} of them stay in the tank.`, fish: t.fish, yes: 'Apply', run: done });
-		} else done();
+			ask({ title: `Refit as a ${sh.name.toLowerCase()} tank?`, body: `Costs ${money(cost)} in all. It holds the same number of fish, and all ${t.fish.length} of them stay in the tank.`, fish: t.fish, yes: `Apply · ${money(cost)}`, run: done });
+		} else buy('Restyle this tank?', cost, done, { yes: 'Apply' });
 	}
 	// The show tank's pop-out panels.
 	type Panel = 'stats' | 'fish' | 'pet' | 'style' | 'tank' | 'new';
@@ -218,6 +219,12 @@
 	function ask(q: NonNullable<typeof confirmAsk>) {
 		confirmAsk = q;
 		sfx('click');
+	}
+	/** Every purchase and upgrade asks first, saying what it costs (and what you have). */
+	function buy(title: string, price: number, run: () => unknown, o: { gems?: boolean; note?: string; yes?: string } = {}) {
+		const cost = o.gems ? `💎 ${price}` : money(price);
+		const have = o.gems ? `💎 ${s.gems}` : money(s.cash);
+		ask({ title, body: `Costs ${cost}.${o.note ? ` ${o.note}` : ''} You have ${have}.`, fish: [], yes: `${o.yes ?? 'Buy'} · ${cost}`, run });
 	}
 	const rareFish = (fs: Fish[]) => fs.filter((f) => RARITY_ORDER(f) >= 2);
 	type ShowcaseTank = { water: Water; temp: Temp; level: number; seg: number; clean: number; growth: number; decor: DecorTag[]; look: TankLook; fish: { s: string; n?: string }[]; partner: number | null };
@@ -231,7 +238,7 @@
 	const viewing = $derived(viewIdx === null ? null : (showcase?.[viewIdx] ?? null));
 	/** Their whole store, to walk around (look only). */
 	const viewStore = $derived(viewing?.layout ? new FishStore(viewing.layout, viewing.store) : null);
-	/** The tank tapped in their store (their favourite until you tap another). */
+	/** The tank tapped in their store (looked at in a pop-up over it). */
 	let viewSel = $state<{ kind: 'sale' | 'show'; id: number } | null>(null);
 	const viewTank = $derived.by((): { t: ShowTank | SaleTank; center: number | null; look?: TankLook } | null => {
 		if (!viewing) return null;
@@ -241,7 +248,8 @@
 			const pi = tankOf(viewing).partner;
 			return { t, center: pi === null ? null : pi + 1, look: t.look };
 		}
-		const t = viewSel?.kind === 'sale' ? vs.s.sale.find((x) => x.id === viewSel!.id) : (vs.s.show.find((x) => x.id === viewSel?.id) ?? vs.favTank);
+		if (!viewSel) return null;
+		const t = viewSel.kind === 'sale' ? vs.s.sale.find((x) => x.id === viewSel!.id) : vs.s.show.find((x) => x.id === viewSel!.id);
 		return t ? { t, center: vs.s.center, look: 'tier' in t ? undefined : vs.lookOf(t) } : null;
 	});
 	/** A tank's width on screen in the viewer: true to its size (wide tanks scroll sideways). */
@@ -569,7 +577,10 @@
 		if (viewIdx === null) return;
 		if (e.key === 'ArrowRight') stepView(1);
 		else if (e.key === 'ArrowLeft') stepView(-1);
-		else if (e.key === 'Escape') viewIdx = null;
+		else if (e.key === 'Escape') {
+			if (viewSel) viewSel = null;
+			else viewIdx = null;
+		}
 	}
 	$effect(() => {
 		if (tab === 'showcase' && !showcase) {
@@ -700,6 +711,35 @@
 
 <svelte:window onkeydown={viewKeys} />
 
+{#snippet tankLook()}
+	{#if viewTank}
+		{@const t = viewTank.t}
+		{@const sale = 'tier' in t}
+		{@const cm = sale ? tier(t.tier).cm : showWidthCm((viewStore ?? store).capOf(t))}
+		<h4>
+			{sale ? `${tier(t.tier).name} (for sale)` : `${viewStore && viewStore.favTank === t ? '♥ Favourite show tank' : 'Show tank'}`}
+			<span class="muted small">· {t.fish.length} fish · {cm} cm wide{sale ? '' : ` · level ${t.level}${t.seg > 1 ? ` · ${t.seg} tanks combined` : ''}`} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</span>
+		</h4>
+		<div class="tankscroll">
+			<div style="width: max(100%, {Math.round(cm * PX_PER_CM)}px)">
+				{#if sale}
+					<TankCanvas fish={t.fish} water={t.water} clean={t.clean} widthCm={cm} height={200} decor={['gravel']} />
+				{:else}
+					<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={cm} center={viewTank.center} happy={80} height={260} look={viewTank.look} growth={t.growth ?? 30} stand />
+				{/if}
+			</div>
+		</div>
+		{#if Math.round(cm * PX_PER_CM) > 600}<p class="muted small">↔ A big tank: scroll sideways to see all of it.</p>{/if}
+		<ul class="rarelist">
+			{#each t.fish.toSorted((a, b) => RARITIES.indexOf(species(b.s).rarity) - RARITIES.indexOf(species(a.s).rarity)) as f (f.u)}
+				{@const sp = species(f.s)}
+				<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ? `${f.n} the ` : ''}{sp.name}{f.u === viewTank.center ? ' 💗' : ''}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
+			{/each}
+		</ul>
+		{#if !t.fish.length}<p class="muted small">No fish in this tank right now.</p>{/if}
+	{/if}
+{/snippet}
+
 {#snippet fishRow(f: Fish, from: Loc)}
 	{@const sp = species(f.s)}
 	<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
@@ -739,7 +779,7 @@
 	{#if !br}
 		<p class="small">Breed a male and a female of the same species for babies, or crossbreed fish that really interbreed in the hobby (platies × swordtails, goldfish × koi, Malawi cichlids…). Every so often a brood holds a very rare albino.</p>
 		<p class="muted small">You need a breeding tank ({money(BREEDER_COST)}, 2×1) and a Research Scientist to look after the fish.</p>
-		<button class="primary" onclick={() => act(store.buildBreeder(), 'coin')}>Build a breeding tank ({money(BREEDER_COST)})</button>
+		<button class="primary" onclick={() => buy('Build a breeding tank?', BREEDER_COST, () => act(store.buildBreeder(), 'coin'), { yes: 'Build' })}>Build a breeding tank ({money(BREEDER_COST)})</button>
 	{:else if !br.ready}
 		<p>The breeding tank is being built{task ? `: ${time(task.end - store.now)} left` : '…'}</p>
 	{:else if br.eggs?.length}
@@ -747,7 +787,7 @@
 		<div class="eggs">{#each br.eggs as _, i (i)}<span>🥚</span>{/each}</div>
 		{#if left > 0}
 			<p class="small">{br.eggs.length} egg{br.eggs.length === 1 ? '' : 's'} in the breeding tank: hatching in {time(left)}. What's inside is a surprise until then.</p>
-			<button class="gem" onclick={() => act(store.hatchNow(), 'rare')}>Hatch now 💎{store.gemsToHatch()}</button>
+			<button class="gem" onclick={() => buy('Hatch the eggs now?', store.gemsToHatch(), () => act(store.hatchNow(), 'rare'), { gems: true, yes: 'Hatch now' })}>Hatch now 💎{store.gemsToHatch()}</button>
 		{:else}
 			<p class="small warnline">The eggs are ready to hatch: make room in the backroom for {br.eggs.length} bab{br.eggs.length === 1 ? 'y' : 'ies'}.</p>
 		{/if}
@@ -761,7 +801,7 @@
 		{#if task}
 			<p class="small">{task.label} · {s.staff.find((p) => p.id === task.staff)?.name ?? 'A scientist'} is looking after them: {time(task.end - store.now)} left.</p>
 			<i class="prog"><em style="width: {Math.min(100, ((store.now - task.start) / (task.end - task.start)) * 100)}%"></em></i>
-			<button class="gem" onclick={() => act(store.rush(task.id), 'done')}>Finish now 💎{store.gemsToFinish(task)}</button>
+			<button class="gem" onclick={() => buy(`Finish ${task.label.toLowerCase()} now?`, store.gemsToFinish(task), () => act(store.rush(task.id), 'done'), { gems: true, yes: 'Finish now' })}>Finish now 💎{store.gemsToFinish(task)}</button>
 		{/if}
 	{:else}
 		{@const males = myFish.filter((f) => f.g === 'm' && f.u !== s.center && species(f.s).rarity !== 'mythic')}
@@ -919,8 +959,8 @@
 						{/each}
 					</ul>
 					<div class="row">
-						<button class="primary" disabled={!!task} onclick={() => act(store.restock(), 'coin')}>📦 Restock ({money(store.restockCost())})</button>
-						{#if s.shelf.level < SHELF_CAP.length - 1}<button onclick={() => act(store.upgradeShelf(), 'coin')}>⬆ Bigger shelf ({money(SHELF_UPGRADE[s.shelf.level])})</button>{/if}
+						<button class="primary" disabled={!!task} onclick={() => buy('Restock the supply shelf?', store.restockCost(), () => act(store.restock(), 'coin'), { yes: 'Restock' })}>📦 Restock ({money(store.restockCost())})</button>
+						{#if s.shelf.level < SHELF_CAP.length - 1}<button onclick={() => buy('Get a bigger shelf?', SHELF_UPGRADE[s.shelf.level], () => act(store.upgradeShelf(), 'coin'), { yes: 'Upgrade' })}>⬆ Bigger shelf ({money(SHELF_UPGRADE[s.shelf.level])})</button>{/if}
 					</div>
 					{#if task}<p class="muted small">{task.label}: {time(task.end - store.now)} left</p>{/if}
 					<p class="muted small">{s.suppliesSold} supplies sold so far.</p>
@@ -942,7 +982,7 @@
 							<button disabled={!!task} onclick={() => act(store.clean(`sale:${t.id}`))}>🧽 Clean</button>
 							{#if t.tier !== 'giant'}<button disabled={!!task} onclick={() => ask({ title: 'Upgrade this sale tank?', body: `Costs ${money(store.upgradeCost(t.id))}. Your fish stay in it while it's upgraded.`, fish: t.fish, yes: 'Upgrade', run: () => act(store.upgradeTank(t.id)) })}>⬆ Upgrade ({money(store.upgradeCost(t.id))})</button>{/if}
 							{#if !t.fish.length}
-								<button onclick={() => ask({ title: `Switch to ${t.water === 'salt' ? 'fresh' : 'salt'}water?`, body: 'Only fish for the new water can be stocked here afterwards.', fish: [], yes: 'Switch', run: () => act(store.setWater(`sale:${t.id}`, t.water === 'salt' ? 'fresh' : 'salt', 'tropical')) })}>Switch to {t.water === 'salt' ? 'fresh' : 'salt'}</button>
+								<button onclick={() => ask({ title: `Switch to ${t.water === 'salt' ? 'fresh' : 'salt'}water?`, body: `Only fish for the new water can be stocked here afterwards.${t.water === 'fresh' ? ` Costs ${money(Math.round(tier(t.tier).cost * (SALT_COST - 1)))} for the saltwater gear. You have ${money(s.cash)}.` : ''}`, fish: [], yes: 'Switch', run: () => act(store.setWater(`sale:${t.id}`, t.water === 'salt' ? 'fresh' : 'salt', 'tropical')) })}>Switch to {t.water === 'salt' ? 'fresh' : 'salt'}</button>
 								{#if t.water === 'fresh'}<button onclick={() => act(store.setWater(`sale:${t.id}`, 'fresh', t.temp === 'cold' ? 'tropical' : 'cold'))}>Make {t.temp === 'cold' ? 'tropical' : 'coldwater'}</button>{/if}
 								<button class="danger" onclick={() => ask({ title: 'Sell this tank?', body: 'You get some of its cost back. It is empty, so no fish are affected.', fish: [], yes: 'Sell', run: () => (act(store.sellTank(t.id), 'coin'), (picked = null)) })}>Sell tank</button>
 							{/if}
@@ -1150,7 +1190,7 @@
 									</button>
 								{/each}
 							</div>
-							<button class="primary" onclick={() => act(store.buildShow(buildWater, buildWater === 'salt' ? 'tropical' : buildTemp, buildShape)) && (panel = null)}>Build ({money(NEW_SHOW_COST + (TANK_SHAPES.find((x) => x.id === buildShape)?.cost ?? 0))})</button>
+							<button class="primary" onclick={() => buy('Build a new show tank?', NEW_SHOW_COST + (TANK_SHAPES.find((x) => x.id === buildShape)?.cost ?? 0), () => act(store.buildShow(buildWater, buildWater === 'salt' ? 'tropical' : buildTemp, buildShape)) && (panel = null), { yes: 'Build' })}>Build ({money(NEW_SHOW_COST + (TANK_SHAPES.find((x) => x.id === buildShape)?.cost ?? 0))})</button>
 						{/if}
 					</div>
 				{/if}
@@ -1160,7 +1200,7 @@
 			<section class="card">
 				<h3>Backroom · {holdFish.length}/{s.holdCap}</h3>
 				<p class="muted small">New fish wait here. Stock them in sale tanks (customers buy them), show them off in a show tank, or sell to a wholesaler for 40% of their price.</p>
-				{#if s.holdCap < holdMax(store.size)}<button onclick={() => act(store.buyHolding())}>More shelving +5 ({money(HOLDING_COST)})</button>
+				{#if s.holdCap < holdMax(store.size)}<button onclick={() => buy('Add more backroom shelving?', HOLDING_COST, () => act(store.buyHolding()), { note: 'Room for 5 more fish.' })}>More shelving +5 ({money(HOLDING_COST)})</button>
 				{:else if store.size < EXPAND_MAX}<p class="muted small">The backroom is full of shelving: expand the store (Build &amp; buy) to fit {HOLD_PER_EXPAND} more.</p>{/if}
 				<ul class="list">{#each holdFish as f (f.u)}{@render fishRow(f, 'hold')}{/each}</ul>
 				{#if !holdFish.length}<p class="muted">Empty. Open a shipment or go fishing!</p>{/if}
@@ -1223,7 +1263,7 @@
 							<span class="small">{event.blurb} Fish from every water, with much better odds than a regular crate{store.luck() ? ', plus your luck' : ''}: {oddsText(store.crateOdds(true))}. Always a few 💎 gems.</span>
 							<span class="small">✨ Limited edition: a {Math.round(EVENT_DECOR_ODDS * 100)}% chance of the <b>{ld.name}</b> tank decoration{s.limited.includes(ld.id) ? ' (you have it!)' : ''}. Only until {endsOn(event.to)}.</span>
 						</div>
-						<button class="primary" onclick={() => openCrate('event')}>{s.freeCrates ? '🎁 Open free crate' : `Open (${money(EVENT_CRATE_COST)})`}</button>
+						<button class="primary" onclick={() => (s.freeCrates ? openCrate('event') : buy(`Open a ${event.name} crate?`, EVENT_CRATE_COST, () => openCrate('event'), { yes: 'Open' }))}>{s.freeCrates ? '🎁 Open free crate' : `Open (${money(EVENT_CRATE_COST)})`}</button>
 					</div>
 				{/if}
 				<div class="suppliers">
@@ -1231,7 +1271,7 @@
 						<div class="sup">
 							<b>{sup.name}</b>
 							<span class="muted small">{sup.blurb}</span>
-							<button class="primary" onclick={() => openCrate(sup.id)}>{s.freeCrates ? '🎁 Open free crate' : `Open crate (${money(CRATE_COST)})`}</button>
+							<button class="primary" onclick={() => (s.freeCrates ? openCrate(sup.id) : buy(`Open a crate from ${sup.name}?`, CRATE_COST, () => openCrate(sup.id), { yes: 'Open' }))}>{s.freeCrates ? '🎁 Open free crate' : `Open crate (${money(CRATE_COST)})`}</button>
 						</div>
 					{/each}
 				</div>
@@ -1260,7 +1300,7 @@
 				<h4>Hire</h4>
 				<ul class="dest">
 					{#each ROLES.filter((r) => r.hire) as r (r.id)}
-						<li><button onclick={() => act(store.hire(r.id))}><b>{r.name}</b> · {money(r.hire)} · {money(r.wage)}/day · speed ×{r.speed}<span class="muted small"> · {r.blurb}</span></button></li>
+						<li><button onclick={() => buy(`Hire a ${r.name}?`, r.hire, () => act(store.hire(r.id)), { note: `Then ${money(r.wage)} a day in wages.`, yes: 'Hire' })}><b>{r.name}</b> · {money(r.hire)} · {money(r.wage)}/day · speed ×{r.speed}<span class="muted small"> · {r.blurb}</span></button></li>
 					{/each}
 				</ul>
 			</section>
@@ -1275,7 +1315,7 @@
 								<span class="muted small">{s.staff.find((p) => p.id === t.staff)?.name ?? '?'} · {time(t.end - store.now)} left</span>
 								<i class="prog"><em style="width: {Math.min(100, ((store.now - t.start) / (t.end - t.start)) * 100)}%"></em></i>
 							</div>
-							<button class="gem" onclick={() => act(store.rush(t.id), 'done')}>Finish now 💎{store.gemsToFinish(t)}</button>
+							<button class="gem" onclick={() => buy(`Finish ${t.label.toLowerCase()} now?`, store.gemsToFinish(t), () => act(store.rush(t.id), 'done'), { gems: true, yes: 'Finish now' })}>Finish now 💎{store.gemsToFinish(t)}</button>
 						</li>
 					{/each}
 				</ul>
@@ -1545,14 +1585,14 @@
 				{#if s.lab}
 					<p class="muted small">You have a lab{s.lab.ready ? '' : ' (being built)'}. Every scientist works in it: hire more scientists to research more fish at once.</p>
 				{:else}
-					<button onclick={() => ((building = false), act(store.buildLab(), 'coin'))}>🔬 Build a research lab · 2×2 · {money(LAB_COST)} · {time(LAB_TIME * 1000)}</button>
+					<button onclick={() => ((building = false), buy('Build a research lab?', LAB_COST, () => act(store.buildLab(), 'coin'), { yes: 'Build' }))}>🔬 Build a research lab · 2×2 · {money(LAB_COST)} · {time(LAB_TIME * 1000)}</button>
 					<p class="muted small">Needed for research. One lab is enough for all your scientists.</p>
 				{/if}
 				<h4>Breeding tank</h4>
 				{#if s.breeder}
 					<p class="muted small">You have a breeding tank{s.breeder.ready ? '' : ' (being built)'}. Breed fish from the Backroom tab, or tap it on the floor.</p>
 				{:else}
-					<button onclick={() => ((building = false), act(store.buildBreeder(), 'coin'))}>💞 Build a breeding tank · 2×1 · {money(BREEDER_COST)} · {time(BREEDER_TIME * 1000)}</button>
+					<button onclick={() => ((building = false), buy('Build a breeding tank?', BREEDER_COST, () => act(store.buildBreeder(), 'coin'), { yes: 'Build' }))}>💞 Build a breeding tank · 2×1 · {money(BREEDER_COST)} · {time(BREEDER_TIME * 1000)}</button>
 					<p class="muted small">Breed a male and a female of the same species (or fish that really interbreed) for babies, and maybe a very rare albino. A Research Scientist looks after them.</p>
 				{/if}
 				<h4>Show tanks</h4>
@@ -1562,7 +1602,7 @@
 					<p class="muted small">🏗️ Expanding: done in {time(tasksFor(EXPAND_REF)!.end - store.now)}.</p>
 				{:else if store.size < EXPAND_MAX}
 					{@const [gw, gh] = gridSize(store.size + 1)}
-					<button onclick={() => ((building = false), act(store.expand(), 'coin'))}>🏗️ Expand to {gw}×{gh} · {money(EXPAND_COST[store.size])} · {time(EXPAND_TIME[store.size] * 1000)}</button>
+					<button onclick={() => ((building = false), buy(`Expand the store to ${gw}×${gh}?`, EXPAND_COST[store.size], () => act(store.expand(), 'coin'), { note: `Takes ${time(EXPAND_TIME[store.size] * 1000)}; nothing in your store moves.`, yes: 'Expand' }))}>🏗️ Expand to {gw}×{gh} · {money(EXPAND_COST[store.size])} · {time(EXPAND_TIME[store.size] * 1000)}</button>
 					<p class="muted small">More floor space, room for {HOLD_PER_EXPAND} more fish of backroom shelving, and one more show tank slot. Everything you've placed stays where it is. A builder does it.</p>
 				{:else}
 					<p class="muted small">Your store is fully expanded ({store.gw()}×{store.gh()}).</p>
@@ -1588,7 +1628,7 @@
 				<div class="applybar">
 					<span>{cartCount ? `${cartCount} item${cartCount === 1 ? '' : 's'} · ${money(cartCost)}` : 'Nothing picked yet'}</span>
 					<button onclick={() => (building = false)}>✕ Cancel</button>
-					<button class="primary" disabled={!cartCount || cartCost > s.cash} onclick={checkout}>Buy</button>
+					<button class="primary" disabled={!cartCount || cartCost > s.cash} onclick={() => buy(`Buy ${cartCount} item${cartCount === 1 ? '' : 's'}?`, cartCost, checkout)}>Buy</button>
 				</div>
 			</div>
 		</div>
@@ -1622,7 +1662,11 @@
 				<div class="applybar">
 					<span>{adds.length || removes.length ? `${adds.length ? `Adding ${adds.length} · ${money(cost)}` : ''}${adds.length && removes.length ? ' · ' : ''}${removes.length ? `removing ${removes.length}` : ''}` : 'No changes yet'}</span>
 					<button onclick={() => (decorFor = null)}>✕ Cancel</button>
-					<button class="primary" disabled={(!adds.length && !removes.length) || cost > s.cash} onclick={() => act(store.setDecor(t.id, decorDraft), 'coin') && (decorFor = null)}>Apply</button>
+					<button class="primary" disabled={(!adds.length && !removes.length) || cost > s.cash} onclick={() => {
+						const apply = () => act(store.setDecor(t.id, decorDraft), 'coin') && (decorFor = null);
+						if (cost) buy(`Add ${adds.length} decoration${adds.length === 1 ? '' : 's'}?`, cost, apply, { yes: 'Apply' });
+						else apply();
+					}}>Apply</button>
 				</div>
 			</div>
 		</div>
@@ -1666,30 +1710,6 @@
 		</div>
 	{/if}
 
-	{#if confirmAsk}
-		{@const q = confirmAsk}
-		{@const rare = rareFish(q.fish)}
-		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (confirmAsk = null)}>
-			<div class="dlg">
-				<button class="x" type="button" aria-label="Close" onclick={() => (confirmAsk = null)}>✕</button>
-				<h3>{q.title}</h3>
-				<p class="small">{q.body}</p>
-				{#if rare.length}
-					{#if q.leaving}<p class="small warnline">Leaving your store:</p>{:else}<p class="small good">Your rare fish are safe: they stay with the tank.</p>{/if}
-					<ul class="rarelist">
-						{#each rare as f (f.u)}
-							{@const sp = species(f.s)}
-							<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ?? sp.name}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
-						{/each}
-					</ul>
-				{/if}
-				<div class="row">
-					<button class="primary" onclick={() => (q.run(), (confirmAsk = null))}>{q.yes}</button>
-					<button onclick={() => (confirmAsk = null)}>Cancel</button>
-				</div>
-			</div>
-		</div>
-	{/if}
 
 	{#if chestPrize}
 		{@const p = chestPrize}
@@ -1711,7 +1731,7 @@
 	{#if viewing}
 		{@const v = viewing}
 		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (viewIdx = null)}>
-			<div class="dlg wide visit">
+			<div class="dlg wide visit" class:store={!!viewStore}>
 				<button class="x" aria-label="Close" onclick={() => (viewIdx = null)}>✕</button>
 				<div class="browse">
 					<button aria-label="Previous store" disabled={!viewIdx} onclick={() => stepView(-1)}>◀</button>
@@ -1726,34 +1746,19 @@
 				{:else}
 					<p class="muted small">This player shared just their favourite tank (before whole stores could be shared).</p>
 				{/if}
-				{#if viewTank}
-					{@const t = viewTank.t}
-					{@const sale = 'tier' in t}
-					{@const cm = sale ? tier(t.tier).cm : showWidthCm((viewStore ?? store).capOf(t))}
-					<h4>
-						{sale ? `${tier(t.tier).name} (for sale)` : `${viewStore && viewStore.favTank === t ? '♥ Favourite show tank' : 'Show tank'}`}
-						<span class="muted small">· {t.fish.length} fish · {cm} cm wide{sale ? '' : ` · level ${t.level}${t.seg > 1 ? ` · ${t.seg} tanks combined` : ''}`} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</span>
-					</h4>
-					<div class="tankscroll">
-						<div style="width: max(100%, {Math.round(cm * PX_PER_CM)}px)">
-							{#if sale}
-								<TankCanvas fish={t.fish} water={t.water} clean={t.clean} widthCm={cm} height={200} decor={['gravel']} />
-							{:else}
-								<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={cm} center={viewTank.center} happy={80} height={260} look={viewTank.look} growth={t.growth ?? 30} stand />
-							{/if}
-						</div>
-					</div>
-					{#if Math.round(cm * PX_PER_CM) > 600}<p class="muted small">↔ A big tank: scroll sideways to see all of it.</p>{/if}
-					<ul class="rarelist">
-						{#each t.fish.toSorted((a, b) => RARITIES.indexOf(species(b.s).rarity) - RARITIES.indexOf(species(a.s).rarity)) as f (f.u)}
-							{@const sp = species(f.s)}
-							<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ? `${f.n} the ` : ''}{sp.name}{f.u === viewTank.center ? ' 💗' : ''}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
-						{/each}
-					</ul>
-					{#if !t.fish.length}<p class="muted small">No fish in this tank right now.</p>{/if}
-				{/if}
+				{#if !viewStore}{@render tankLook()}{/if}
 			</div>
 		</div>
+		{#if viewStore && viewTank}
+			<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (viewSel = null)}>
+				<div class="dlg wide visit">
+					<button class="x" aria-label="Close" onclick={() => (viewSel = null)}>✕</button>
+					<h3>{v.store}</h3>
+					{@render tankLook()}
+					<div class="row"><button onclick={() => (viewSel = null)}>← Back to the store</button></div>
+				</div>
+			</div>
+		{/if}
 	{/if}
 
 	{#if wikiSel}
@@ -1791,11 +1796,11 @@
 					<i class="prog"><em style="width: {Math.min(100, ((store.now - task.start) / (task.end - task.start)) * 100)}%"></em></i>
 				{:else if lvl < RESEARCH_MAX}
 					<p class="muted small">Next level: {money(researchCost(sp, lvl))} and about {time((researchTime(sp, lvl) * 1000) / (ROLES.find((r) => r.id === 'scientist')?.speed ?? 1))}. Needs the research lab and a free Research Scientist.</p>
-					<button class="primary" disabled={researchCost(sp, lvl) > s.cash} onclick={() => act(store.research(sp.id))}>Research level {lvl + 1}</button>
+					<button class="primary" disabled={researchCost(sp, lvl) > s.cash} onclick={() => buy(`Research the ${sp.name} (level ${lvl + 1})?`, researchCost(sp, lvl), () => act(store.research(sp.id)), { yes: 'Research' })}>Research level {lvl + 1}</button>
 				{/if}
 				{#if lvl >= RESEARCH_MAX}
 					<p class="small good">Fully researched: you can order this fish whenever you like.</p>
-					<button class="primary" disabled={!store.canAfford(ord.price, ord.currency)} onclick={() => act(store.order(sp.id), 'coin')}>Order one ({ord.currency === 'gems' ? `💎 ${ord.price}` : money(ord.price)})</button>
+					<button class="primary" disabled={!store.canAfford(ord.price, ord.currency)} onclick={() => buy(`Order a ${sp.name}?`, ord.price, () => act(store.order(sp.id), 'coin'), { gems: ord.currency === 'gems', yes: 'Order' })}>Order one ({ord.currency === 'gems' ? `💎 ${ord.price}` : money(ord.price)})</button>
 				{:else}
 					<p class="muted small">At level {RESEARCH_MAX} you can order it for {ord.currency === 'gems' ? `💎 ${ord.price}` : money(ord.price)}.</p>
 				{/if}
@@ -1817,6 +1822,30 @@
 						<button onclick={() => (sellDecor = null)}>Keep</button>
 					</div>
 				{/if}
+			</div>
+		</div>
+	{/if}
+	{#if confirmAsk}
+		{@const q = confirmAsk}
+		{@const rare = rareFish(q.fish)}
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (confirmAsk = null)}>
+			<div class="dlg">
+				<button class="x" type="button" aria-label="Close" onclick={() => (confirmAsk = null)}>✕</button>
+				<h3>{q.title}</h3>
+				<p class="small">{q.body}</p>
+				{#if rare.length}
+					{#if q.leaving}<p class="small warnline">Leaving your store:</p>{:else}<p class="small good">Your rare fish are safe: they stay with the tank.</p>{/if}
+					<ul class="rarelist">
+						{#each rare as f (f.u)}
+							{@const sp = species(f.s)}
+							<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ?? sp.name}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
+						{/each}
+					</ul>
+				{/if}
+				<div class="row">
+					<button class="primary" onclick={() => (q.run(), (confirmAsk = null))}>{q.yes}</button>
+					<button onclick={() => (confirmAsk = null)}>Cancel</button>
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -2023,8 +2052,13 @@
 	.visit > * {
 		flex-shrink: 0;
 	}
-	.visitfloor {
-		height: min(52vh, 420px);
+	/* Visiting a store: the floor takes all the room the dialog has. */
+	.dlg.visit.store {
+		height: 100%;
+	}
+	.visit.store > .visitfloor {
+		flex: 1 1 0;
+		min-height: 260px;
 	}
 	.tankscroll {
 		overflow-x: auto;

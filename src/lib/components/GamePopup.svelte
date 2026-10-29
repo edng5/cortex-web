@@ -67,6 +67,23 @@
 		ambient.pause('game', open);
 	});
 
+	// While open, the page underneath is pinned in place: on phones a drag inside a game would
+	// otherwise scroll (or rubber-band) the home page into view around it.
+	$effect(() => {
+		if (!open) return;
+		const y = window.scrollY;
+		const body = document.body.style;
+		const root = document.documentElement.style;
+		const prev = { position: body.position, top: body.top, left: body.left, right: body.right, overflow: body.overflow, overscroll: root.overscrollBehavior };
+		Object.assign(body, { position: 'fixed', top: `-${y}px`, left: '0', right: '0', overflow: 'hidden' });
+		root.overscrollBehavior = 'none';
+		return () => {
+			Object.assign(body, { position: prev.position, top: prev.top, left: prev.left, right: prev.right, overflow: prev.overflow });
+			root.overscrollBehavior = prev.overscroll;
+			window.scrollTo({ top: y, behavior: 'instant' });
+		};
+	});
+
 	function onKey(e: KeyboardEvent) {
 		if (!open || e.key !== 'Escape') return;
 		// Handle Esc here only: not in the game, and not the info panel underneath.
@@ -146,6 +163,11 @@
 		background: rgba(3, 5, 10, 0.82);
 		backdrop-filter: blur(6px);
 		color: var(--text, #e2e8f0);
+		/* Scrolling inside a game stays inside it (never hands off to the page underneath). */
+		overscroll-behavior: contain;
+	}
+	.backdrop :global(*) {
+		overscroll-behavior: contain;
 	}
 	.backdrop.open {
 		display: grid;
