@@ -2065,7 +2065,6 @@
 		overflow-x: auto;
 		overflow-y: hidden;
 		-webkit-overflow-scrolling: touch;
-		touch-action: pan-x pan-y;
 		border-radius: 6px;
 	}
 	.stagescroll,
