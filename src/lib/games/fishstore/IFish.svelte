@@ -94,6 +94,7 @@
 	import FishIcon from './FishIcon.svelte';
 	import type { GameUiProps } from '../registry';
 	import { session } from '$lib/session.svelte';
+	import { panScroll } from '$lib/actions/pan-scroll';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
 
@@ -720,7 +721,7 @@
 			{sale ? `${tier(t.tier).name} (for sale)` : `${viewStore && viewStore.favTank === t ? '♥ Favourite show tank' : 'Show tank'}`}
 			<span class="muted small">· {t.fish.length} fish · {cm} cm wide{sale ? '' : ` · level ${t.level}${t.seg > 1 ? ` · ${t.seg} tanks combined` : ''}`} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</span>
 		</h4>
-		<div class="tankscroll">
+		<div class="tankscroll" use:panScroll>
 			<div style="width: max(100%, {Math.round(cm * PX_PER_CM)}px)">
 				{#if sale}
 					<TankCanvas fish={t.fish} water={t.water} clean={t.clean} widthCm={cm} height={200} decor={['gravel']} />
@@ -1003,7 +1004,7 @@
 				{#if show.ready}
 					<!-- Drawn at its true width, like the showcase: a big tank scrolls sideways. -->
 					{@const px = Math.round(showWidthCm(store.capOf(show)) * PX_PER_CM)}
-					<div class="tankscroll stagescroll">
+					<div class="tankscroll stagescroll" use:panScroll>
 						<div class="tankwide" style="width: max(100%, {px}px)">
 							<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={s.center} happy={s.pet.happy} height={0} look={panel === 'style' && styleDraft ? styleDraft : lk} growth={show.growth ?? 30} stand />
 						</div>
@@ -2064,6 +2065,7 @@
 		overflow-x: auto;
 		overflow-y: hidden;
 		-webkit-overflow-scrolling: touch;
+		touch-action: pan-x pan-y;
 		border-radius: 6px;
 	}
 	.stagescroll,
