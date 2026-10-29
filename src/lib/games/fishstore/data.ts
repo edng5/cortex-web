@@ -431,6 +431,35 @@ export const gridSize = (size: number): [number, number] => [GRID_W + 2 * size, 
 /** More backroom shelving can go in with each expansion. */
 export const HOLD_PER_EXPAND = 10;
 
+// ── The showcase: a whole store as everyone sees it (no money, names of staff or anything private) ──
+export interface SnapTank {
+	water: Water;
+	temp: Temp;
+	level: number;
+	seg: number;
+	clean: number;
+	growth: number;
+	decor: DecorTag[];
+	look: TankLook;
+	fish: { s: string; n?: string }[];
+	/** Which fish is the partner (index into `fish`), if it lives here. */
+	partner: number | null;
+}
+export interface StoreSnapshot {
+	size: number;
+	floor: string;
+	sale: { tier: TankTier; water: Water; temp: Temp; x: number; y: number; clean: number; fish: string[] }[];
+	show: (SnapTank & { x: number; y: number })[];
+	/** The favourite show tank (index into `show`): the one listed and opened first. */
+	fav: number;
+	decor: { item: StoreItem; x: number; y: number }[];
+	shelf: { x: number; y: number; level: number };
+	lab: { x: number; y: number } | null;
+	breeder: { x: number; y: number } | null;
+	/** Staff roles (so the floor has its people). */
+	staff: string[];
+}
+
 // ── Supplies (sold from the shelf) ───────────────────────────────────────────────────
 export type SupplyId = 'food' | 'conditioner' | 'filter' | 'net';
 /** Bought wholesale (cost), sold to customers (price). Feeding your centrepiece uses fish food too. */

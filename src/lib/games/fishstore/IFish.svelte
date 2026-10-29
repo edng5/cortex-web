@@ -78,6 +78,7 @@
 		type DecorTag,
 		type Species,
 		type StoreItem,
+		type StoreSnapshot,
 		type TankLook,
 		type TankShape,
 		type TankTier,
@@ -220,7 +221,7 @@
 	}
 	const rareFish = (fs: Fish[]) => fs.filter((f) => RARITY_ORDER(f) >= 2);
 	type ShowcaseTank = { water: Water; temp: Temp; level: number; seg: number; clean: number; growth: number; decor: DecorTag[]; look: TankLook; fish: { s: string; n?: string }[]; partner: number | null };
-	type ShowcaseEntry = { store: string; species: string; fishName: string | null; bond: number; tank: ShowcaseTank | null; mine?: boolean };
+	type ShowcaseEntry = { store: string; species: string; fishName: string | null; bond: number; tank: ShowcaseTank | null; layout: StoreSnapshot | null; mine?: boolean };
 	let showcase = $state<ShowcaseEntry[] | null>(null);
 	/** How many tanks are in the showcase (they load a page at a time). */
 	let showcaseTotal = $state(0);
@@ -228,6 +229,34 @@
 	/** The tank being looked at (an index into `showcase`): step through everyone's tanks. */
 	let viewIdx = $state<number | null>(null);
 	const viewing = $derived(viewIdx === null ? null : (showcase?.[viewIdx] ?? null));
+	/** Their whole store, to walk around (look only). */
+	const viewStore = $derived(viewing?.layout ? new FishStore(viewing.layout, viewing.store) : null);
+	/** The tank tapped in their store (their favourite until you tap another). */
+	let viewSel = $state<{ kind: 'sale' | 'show'; id: number } | null>(null);
+	const viewTank = $derived.by((): { t: ShowTank | SaleTank; center: number | null; look?: TankLook } | null => {
+		if (!viewing) return null;
+		const vs = viewStore;
+		if (!vs) {
+			const t = asShowTank(tankOf(viewing));
+			const pi = tankOf(viewing).partner;
+			return { t, center: pi === null ? null : pi + 1, look: t.look };
+		}
+		const t = viewSel?.kind === 'sale' ? vs.s.sale.find((x) => x.id === viewSel!.id) : (vs.s.show.find((x) => x.id === viewSel?.id) ?? vs.favTank);
+		return t ? { t, center: vs.s.center, look: 'tier' in t ? undefined : vs.lookOf(t) } : null;
+	});
+	/** A tank's width on screen in the viewer: true to its size (wide tanks scroll sideways). */
+	const PX_PER_CM = 3.4;
+	function tapView(x: number, y: number) {
+		const vs = viewStore;
+		if (!vs) return;
+		const at = (o: { x: number; y: number }, w: number, h: number) => x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
+		const sh = vs.s.show.find((t) => at(t, ...vs.footprint('show', t)));
+		const sa = vs.s.sale.find((t) => at(t, ...vs.footprint('sale', t)));
+		if (sh) viewSel = { kind: 'show', id: sh.id };
+		else if (sa) viewSel = { kind: 'sale', id: sa.id };
+		else return;
+		sfx('click');
+	}
 	let showcaseMsg = $state('');
 
 	/** FishMart needs an account (your store lives in it): close the game and open the login. */
@@ -293,7 +322,7 @@
 	function hitAt(x: number, y: number): FloorPick {
 		const at = (o: { x: number; y: number }, w: number, h: number) => x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
 		const hitSale = s.sale.find((t) => at(t, tier(t.tier).w, 1));
-		const hitShow = s.show.find((t) => at(t, Math.min(12, 2 * t.seg), 2));
+		const hitShow = s.show.find((t) => at(t, Math.min(store.gw(), 2 * t.seg), 2));
 		const hitDecor = s.decor.find((d) => at(d, 1, 1));
 		const hitShelf = at(s.shelf, 2, 1);
 		const hitLab = !!s.lab && at(s.lab, 2, 2);
@@ -327,7 +356,7 @@
 	function tapFloor(x: number, y: number) {
 		const at = (o: { x: number; y: number }, w: number, h: number) => x >= o.x && x < o.x + w && y >= o.y && y < o.y + h;
 		const hitSale = s.sale.find((t) => at(t, tier(t.tier).w, 1));
-		const hitShow = s.show.find((t) => at(t, Math.min(12, 2 * t.seg), 2));
+		const hitShow = s.show.find((t) => at(t, Math.min(store.gw(), 2 * t.seg), 2));
 		const hitDecor = s.decor.find((d) => at(d, 1, 1));
 		const hitShelf = at(s.shelf, 2, 1);
 		const hitLab = !!s.lab && at(s.lab, 2, 2);
@@ -533,6 +562,7 @@
 			if (next >= (showcase?.length ?? 0)) return;
 		}
 		viewIdx = next;
+		viewSel = null;
 		sfx('click');
 	}
 	function viewKeys(e: KeyboardEvent) {
@@ -555,22 +585,19 @@
 		return ['common', 'uncommon', 'rare', 'ultra', 'epic', 'legendary', 'mythic'].indexOf(species(f.s).rarity);
 	}
 	const sellable = $derived(myFish.filter((f) => RARITY_ORDER(f) >= 2 && f.u !== s.center && !f.fav));
-	/** Post your favourite show tank to the showcase (quiet: just keep it current). */
+	/** Post your whole store (starring your favourite show tank) to the showcase (quiet: just keep it current). */
 	async function shareTank(quiet = false) {
-		const t = store.favTank;
-		if (!t.fish.length) {
-			if (!quiet) showcaseMsg = 'Put some fish in your favourite tank first.';
+		if (![...s.show, ...s.sale].some((t) => t.fish.length)) {
+			if (!quiet) showcaseMsg = 'Put some fish in your store first.';
 			if (quiet) loadShowcase();
 			return;
 		}
 		if (!quiet) showcaseMsg = '';
-		const pi = t.fish.findIndex((f) => f.u === s.center);
-		const tank = { water: t.water, temp: t.temp, level: t.level, seg: t.seg, clean: Math.round(t.clean), growth: Math.round(t.growth ?? 30), decor: t.decor, look: store.lookOf(t), fish: t.fish.map((f) => ({ s: f.s, ...(f.n ? { n: f.n } : {}) })), partner: pi < 0 ? null : pi };
 		try {
 			const r = await fetch('/api/games/ifish/showcase', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ store: s.name, tank, bond: Math.round(s.pet.bond) })
+				body: JSON.stringify({ store: s.name, layout: store.snapshot(), bond: Math.round(s.pet.bond) })
 			});
 			const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; entries?: ShowcaseEntry[]; total?: number };
 			if (!r.ok || !j.ok) {
@@ -582,7 +609,7 @@
 				s.shared = true;
 				store.save();
 				if (!quiet) {
-					showcaseMsg = 'Your favourite tank is in the showcase!';
+					showcaseMsg = 'Your store is in the showcase!';
 					sfx('done');
 				}
 			}
@@ -1289,18 +1316,18 @@
 		{:else if tab === 'showcase'}
 			<section class="card">
 				<h3>🌍 Global showcase</h3>
-				<p class="muted small">Every store shows off its favourite show tank. Tap one to look inside, then scroll through everyone's with ◀ ▶. Tanks with rarer fish come first.</p>
-				{#if showcase?.length}<button class="primary" onclick={() => ((viewIdx = showcase!.findIndex((e) => !e.mine) >= 0 ? showcase!.findIndex((e) => !e.mine) : 0), sfx('click'))}>👀 Browse all {showcaseTotal} tank{showcaseTotal === 1 ? '' : 's'}</button>{/if}
+				<p class="muted small">Every player shows off their whole store, starring their favourite show tank. Visit one to walk around it and tap any tank to look inside, then scroll through everyone's with ◀ ▶. Stores with rarer fish come first.</p>
+				{#if showcase?.length}<button class="primary" onclick={() => ((viewSel = null), (viewIdx = showcase!.findIndex((e) => !e.mine) >= 0 ? showcase!.findIndex((e) => !e.mine) : 0), sfx('click'))}>👀 Browse all {showcaseTotal} store{showcaseTotal === 1 ? '' : 's'}</button>{/if}
 				{#if loggedIn}
 					{@const fav = store.favTank}
 					<div class="row">
 						<span class="small">♥ Your favourite: <b>{tankName(`show:${fav.id}`)}</b> · {fav.fish.length} fish</span>
-						<button class="primary" disabled={!fav.fish.length} onclick={() => shareTank()}>{s.shared ? 'Update my tank' : 'Share my tank'}</button>
+						<button class="primary" disabled={![...s.show, ...s.sale].some((t) => t.fish.length)} onclick={() => shareTank()}>{s.shared ? 'Update my store' : 'Share my store'}</button>
 						<button onclick={() => ((tab = 'show'), (showId = fav.id))}>Change favourite…</button>
 					</div>
-					{#if s.shared}<p class="muted small">Your shared tank updates whenever you open the showcase.</p>{/if}
+					{#if s.shared}<p class="muted small">Your shared store updates whenever you open the showcase.</p>{/if}
 				{:else}
-					<p>Log in to show off your tank to everyone.</p>
+					<p>Log in to show off your store to everyone.</p>
 				{/if}
 				{#if showcaseMsg}<p class="note">{showcaseMsg}<button class="nx" aria-label="Close" onclick={() => (showcaseMsg = '')}>✕</button></p>{/if}
 				<ul class="list">
@@ -1311,15 +1338,20 @@
 							<FishIcon id={sp.id} size={58} />
 							<div class="fi">
 								<b>{e.store}{e.mine ? ' (you)' : ''}</b>
-								<span class="small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look.shape)?.name ?? 'Classic'} {t.water === 'salt' ? 'reef' : t.temp === 'cold' ? 'coldwater' : 'tropical'} tank · level {t.level}</span>
+								{#if e.layout}
+									{@const [gw, gh] = gridSize(e.layout.size)}
+									<span class="small">{e.layout.show.length} show tank{e.layout.show.length === 1 ? '' : 's'} · {e.layout.sale.length} sale tank{e.layout.sale.length === 1 ? '' : 's'} · {e.layout.show.reduce((a, x) => a + x.fish.length, 0) + e.layout.sale.reduce((a, x) => a + x.fish.length, 0)} fish · {gw}×{gh} floor</span>
+								{:else}
+									<span class="small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look.shape)?.name ?? 'Classic'} {t.water === 'salt' ? 'reef' : t.temp === 'cold' ? 'coldwater' : 'tropical'} tank · level {t.level}</span>
+								{/if}
 								<span class="muted small">Star: {e.fishName ? `${e.fishName} the ` : ''}{sp.name} <span class="rar" class:mythic={sp.rarity === 'mythic'}>{RARITY_LABEL[sp.rarity]}</span>{e.bond ? ` · bond ${e.bond}` : ''}</span>
 							</div>
-							<div class="fa"><button onclick={() => ((viewIdx = i), sfx('click'))}>👀 View</button></div>
+							<div class="fa"><button onclick={() => ((viewSel = null), (viewIdx = i), sfx('click'))}>👀 Visit</button></div>
 						</li>
 					{/each}
 				</ul>
-				{#if showcase && !showcase.length}<p class="muted">Nobody has shared a tank yet. Be the first!</p>{/if}
-				{#if showcase && showcase.length < showcaseTotal}<button onclick={() => loadShowcase(true)}>Show more tanks ({showcaseTotal - showcase.length} left)</button>{/if}
+				{#if showcase && !showcase.length}<p class="muted">Nobody has shared a store yet. Be the first!</p>{/if}
+				{#if showcase && showcase.length < showcaseTotal}<button onclick={() => loadShowcase(true)}>Show more stores ({showcaseTotal - showcase.length} left)</button>{/if}
 			</section>
 			<section class="card">
 				<h3>🛒 Fish market</h3>
@@ -1671,25 +1703,48 @@
 
 	{#if viewing}
 		{@const v = viewing}
-		{@const t = asShowTank(tankOf(v))}
-		{@const pi = tankOf(v).partner}
 		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (viewIdx = null)}>
-			<div class="dlg wide">
+			<div class="dlg wide visit">
 				<button class="x" aria-label="Close" onclick={() => (viewIdx = null)}>✕</button>
 				<div class="browse">
-					<button aria-label="Previous tank" disabled={!viewIdx} onclick={() => stepView(-1)}>◀</button>
+					<button aria-label="Previous store" disabled={!viewIdx} onclick={() => stepView(-1)}>◀</button>
 					<span class="small muted">{(viewIdx ?? 0) + 1} of {showcaseTotal}</span>
-					<button aria-label="Next tank" disabled={(viewIdx ?? 0) + 1 >= showcaseTotal} onclick={() => stepView(1)}>▶</button>
+					<button aria-label="Next store" disabled={(viewIdx ?? 0) + 1 >= showcaseTotal} onclick={() => stepView(1)}>▶</button>
 				</div>
-				<h3>{v.store}'s tank{v.mine ? ' (you)' : ''}</h3>
-				<p class="muted small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look?.shape)?.name ?? 'Classic'} · level {t.level}{t.seg > 1 ? ` · ${t.seg} tanks combined` : ''} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</p>
-				<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={showWidthCm(store.capOf(t))} center={pi === null ? null : pi + 1} happy={80} height={260} look={store.lookOf(t)} growth={t.growth ?? 30} stand />
-				<ul class="rarelist">
-					{#each t.fish.toSorted((a, b) => RARITIES.indexOf(species(b.s).rarity) - RARITIES.indexOf(species(a.s).rarity)) as f (f.u)}
-						{@const sp = species(f.s)}
-						<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ? `${f.n} the ` : ''}{sp.name}{f.u === (pi ?? -1) + 1 ? ' 💗' : ''}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
-					{/each}
-				</ul>
+				<h3>{v.store}{v.mine ? ' (you)' : ''}</h3>
+				{#if viewStore}
+					{@const vs = viewStore}
+					<p class="muted small">{vs.s.show.length} show tank{vs.s.show.length === 1 ? '' : 's'} · {vs.s.sale.length} sale tank{vs.s.sale.length === 1 ? '' : 's'} · {vs.gw()}×{vs.gh()} floor. Tap any tank to look inside.</p>
+					{#key vs}<div class="visitfloor"><StoreFloor store={vs} ontap={tapView} /></div>{/key}
+				{:else}
+					<p class="muted small">This player shared just their favourite tank (before whole stores could be shared).</p>
+				{/if}
+				{#if viewTank}
+					{@const t = viewTank.t}
+					{@const sale = 'tier' in t}
+					{@const cm = sale ? tier(t.tier).cm : showWidthCm((viewStore ?? store).capOf(t))}
+					<h4>
+						{sale ? `${tier(t.tier).name} (for sale)` : `${viewStore && viewStore.favTank === t ? '♥ Favourite show tank' : 'Show tank'}`}
+						<span class="muted small">· {t.fish.length} fish · {cm} cm wide{sale ? '' : ` · level ${t.level}${t.seg > 1 ? ` · ${t.seg} tanks combined` : ''}`} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</span>
+					</h4>
+					<div class="tankscroll">
+						<div style="width: max(100%, {Math.round(cm * PX_PER_CM)}px)">
+							{#if sale}
+								<TankCanvas fish={t.fish} water={t.water} clean={t.clean} widthCm={cm} height={200} decor={['gravel']} />
+							{:else}
+								<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={cm} center={viewTank.center} happy={80} height={260} look={viewTank.look} growth={t.growth ?? 30} stand />
+							{/if}
+						</div>
+					</div>
+					{#if Math.round(cm * PX_PER_CM) > 600}<p class="muted small">↔ A big tank: scroll sideways to see all of it.</p>{/if}
+					<ul class="rarelist">
+						{#each t.fish.toSorted((a, b) => RARITIES.indexOf(species(b.s).rarity) - RARITIES.indexOf(species(a.s).rarity)) as f (f.u)}
+							{@const sp = species(f.s)}
+							<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ? `${f.n} the ` : ''}{sp.name}{f.u === viewTank.center ? ' 💗' : ''}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
+						{/each}
+					</ul>
+					{#if !t.fish.length}<p class="muted small">No fish in this tank right now.</p>{/if}
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -1954,6 +2009,21 @@
 	}
 	.sex.f {
 		color: #f472b6;
+	}
+	.dlg.wide.visit {
+		width: min(980px, 100%);
+	}
+	.visit > * {
+		flex-shrink: 0;
+	}
+	.visitfloor {
+		height: min(52vh, 420px);
+	}
+	.tankscroll {
+		overflow-x: auto;
+		overflow-y: hidden;
+		-webkit-overflow-scrolling: touch;
+		border-radius: 6px;
 	}
 	.browse {
 		display: flex;

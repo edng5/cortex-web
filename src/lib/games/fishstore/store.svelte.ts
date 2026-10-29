@@ -109,6 +109,7 @@ import {
 	type Rarity,
 	type Species,
 	type StoreItem,
+	type StoreSnapshot,
 	type TankTier,
 	type Temp,
 	type Water
@@ -340,6 +341,33 @@ function fresh(): Save {
 	};
 }
 
+/** Someone else's store, rebuilt from its showcase snapshot (just enough to draw it). */
+function fromSnapshot(p: StoreSnapshot, name: string): Save {
+	const s = fresh();
+	let u = 2000;
+	const fish = (sp: string, n?: string): Fish => ({ u: ++u, s: sp, c: 0, ...(n ? { n } : {}) });
+	s.name = name;
+	s.named = true;
+	s.size = p.size;
+	s.floor = p.floor;
+	s.sale = p.sale.map((t, i) => ({ id: 1 + i, tier: t.tier, water: t.water, temp: t.temp, x: t.x, y: t.y, clean: t.clean, ready: true, fish: t.fish.map((f) => fish(f)) }));
+	s.center = null;
+	s.show = p.show.map((t, i) => {
+		const tank: ShowTank = { id: 100 + i, x: t.x, y: t.y, level: t.level, seg: t.seg, water: t.water, temp: t.temp, clean: t.clean, growth: t.growth, decor: t.decor, look: t.look, ready: true, fish: t.fish.map((f) => fish(f.s, f.n)) };
+		if (t.partner !== null && tank.fish[t.partner] && s.center === null) s.center = tank.fish[t.partner].u;
+		return tank;
+	});
+	s.fav = s.show[p.fav]?.id ?? null;
+	s.decor = p.decor.map((d, i) => ({ id: 500 + i, item: d.item, x: d.x, y: d.y }));
+	s.shelf = { ...p.shelf };
+	s.lab = p.lab ? { ...p.lab, ready: true } : null;
+	s.breeder = p.breeder ? { ...p.breeder, ready: true, pair: [] } : null;
+	s.staff = p.staff.map((role, i) => ({ id: 900 + i, name: i ? '' : 'You', role }));
+	s.tasks = [];
+	s.pet = { ...s.pet, happy: 80 };
+	return s;
+}
+
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
 const ok = (msg?: string): Result => ({ ok: true, msg });
 const no = (msg: string) => ({ ok: false as const, msg });
@@ -350,7 +378,15 @@ export class FishStore {
 	/** Messages to pop up (sales while away, finished tasks…). */
 	toast = $state<string[]>([]);
 
-	constructor() {
+	/** A look-only copy of someone else's store (from the showcase): never saved or simulated. */
+	view = false;
+
+	constructor(snap?: StoreSnapshot, name = '') {
+		if (snap) {
+			this.view = true;
+			this.s = fromSnapshot(snap, name);
+			return;
+		}
 		this.load();
 		this.migrate();
 		this.advance(true);
@@ -383,6 +419,7 @@ export class FishStore {
 		for (const f of [...s.hold, ...s.sale.flatMap((t) => t.fish), ...s.show.flatMap((t) => t.fish), ...(s.breeder?.pair ?? [])]) f.g ??= randomGender();
 	}
 	save() {
+		if (this.view) return;
 		try {
 			localStorage.setItem(SAVE_KEY, JSON.stringify($state.snapshot(this.s)));
 		} catch {
@@ -567,6 +604,39 @@ export class FishStore {
 	/** The show tank you show off in the showcase (your main one until you pick another). */
 	get favTank(): ShowTank {
 		return this.s.show.find((t) => t.id === this.s.fav) ?? this.main;
+	}
+	/** Your whole store as the showcase shows it. */
+	snapshot(): StoreSnapshot {
+		const s = this.s;
+		const fav = Math.max(0, s.show.indexOf(this.favTank));
+		return {
+			size: this.size,
+			floor: s.floor,
+			sale: s.sale.map((t) => ({ tier: t.tier, water: t.water, temp: t.temp, x: t.x, y: t.y, clean: Math.round(t.clean), fish: t.fish.map((f) => f.s) })),
+			show: s.show.map((t) => {
+				const pi = t.fish.findIndex((f) => f.u === s.center);
+				return {
+					x: t.x,
+					y: t.y,
+					water: t.water,
+					temp: t.temp,
+					level: t.level,
+					seg: t.seg,
+					clean: Math.round(t.clean),
+					growth: Math.round(t.growth ?? TRIMMED),
+					decor: t.decor,
+					look: this.lookOf(t),
+					fish: t.fish.map((f) => ({ s: f.s, ...(f.n ? { n: f.n } : {}) })),
+					partner: pi < 0 ? null : pi
+				};
+			}),
+			fav,
+			decor: s.decor.map((d) => ({ item: d.item, x: d.x, y: d.y })),
+			shelf: { ...s.shelf },
+			lab: s.lab ? { x: s.lab.x, y: s.lab.y } : null,
+			breeder: s.breeder ? { x: s.breeder.x, y: s.breeder.y } : null,
+			staff: s.staff.map((p) => p.role)
+		};
 	}
 	setFav(id: number): Result {
 		if (!this.s.show.some((t) => t.id === id)) return no('No such tank.');
