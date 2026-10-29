@@ -32,10 +32,16 @@ const MAX_FISH = 80;
 /** Points per fish by rarity, for sorting the showcase. */
 const POINTS = [1, 2, 4, 7, 12, 20, 40];
 
-export function listShowcase(userId: string | null, limit = 40): ShowcaseEntry[] {
+/** How many tanks are in the showcase. */
+export function countShowcase(): number {
+	return (getDb().prepare('SELECT COUNT(*) AS n FROM ifish_showcase').get() as { n: number }).n;
+}
+
+/** A page of the showcase (rarest first): `offset` lets players scroll through everyone's tanks. */
+export function listShowcase(userId: string | null, limit = 30, offset = 0): ShowcaseEntry[] {
 	const rows = getDb()
-		.prepare('SELECT user_id, store, species, fish_name, bond, tank, updated_at FROM ifish_showcase ORDER BY rank DESC, bond DESC, updated_at DESC LIMIT ?')
-		.all(limit) as { user_id: string; store: string; species: string; fish_name: string | null; bond: number; tank: string | null; updated_at: number }[];
+		.prepare('SELECT user_id, store, species, fish_name, bond, tank, updated_at FROM ifish_showcase ORDER BY rank DESC, bond DESC, updated_at DESC, user_id LIMIT ? OFFSET ?')
+		.all(limit, offset) as { user_id: string; store: string; species: string; fish_name: string | null; bond: number; tank: string | null; updated_at: number }[];
 	return rows.map((r) => {
 		let tank: ShowcaseTank | null = null;
 		try {
@@ -71,7 +77,7 @@ function cleanTank(raw: unknown): ShowcaseTank | string {
 		water: t.water === 'salt' ? 'salt' : 'fresh',
 		temp: t.temp === 'cold' ? 'cold' : 'tropical',
 		level: num(t.level, 1, SHOW_MAX_LEVEL, 1),
-		seg: num(t.seg, 1, 5, 1),
+		seg: num(t.seg, 1, 10, 1),
 		clean: num(t.clean, 0, 100, 100),
 		growth: num(t.growth, 0, 100, 30),
 		decor: [...new Set(Array.isArray(t.decor) ? t.decor : [])].filter((d) => TANK_DECOR.some((x) => x.id === d)).slice(0, 20) as string[],

@@ -42,8 +42,12 @@
 		researchCost,
 		researchTime,
 		HOLDING_COST,
-		HOLDING_MAX,
-		MAX_SHOW_TANKS,
+		EXPAND_COST,
+		EXPAND_MAX,
+		EXPAND_TIME,
+		HOLD_PER_EXPAND,
+		gridSize,
+		holdMax,
 		NEW_SHOW_COST,
 		SHELF_CAP,
 		SHELF_UPGRADE,
@@ -80,7 +84,7 @@
 		type Temp,
 		type Water
 	} from './data';
-	import { FishStore, BREED_REF, SHELF_REF, type Fish, type Loc, type Result, type SaleTank, type ShowTank } from './store.svelte';
+	import { FishStore, BREED_REF, EXPAND_REF, SHELF_REF, type Fish, type Loc, type Result, type SaleTank, type ShowTank } from './store.svelte';
 	import { gameAudio } from '../audio.svelte';
 	import TankCanvas from './TankCanvas.svelte';
 	import StoreFloor, { type FloorPick } from './StoreFloor.svelte';
@@ -218,8 +222,12 @@
 	type ShowcaseTank = { water: Water; temp: Temp; level: number; seg: number; clean: number; growth: number; decor: DecorTag[]; look: TankLook; fish: { s: string; n?: string }[]; partner: number | null };
 	type ShowcaseEntry = { store: string; species: string; fishName: string | null; bond: number; tank: ShowcaseTank | null; mine?: boolean };
 	let showcase = $state<ShowcaseEntry[] | null>(null);
-	/** A player's tank opened from the showcase. */
-	let viewing = $state<ShowcaseEntry | null>(null);
+	/** How many tanks are in the showcase (they load a page at a time). */
+	let showcaseTotal = $state(0);
+	let showcaseLoading = false;
+	/** The tank being looked at (an index into `showcase`): step through everyone's tanks. */
+	let viewIdx = $state<number | null>(null);
+	const viewing = $derived(viewIdx === null ? null : (showcase?.[viewIdx] ?? null));
 	let showcaseMsg = $state('');
 
 	/** FishMart needs an account (your store lives in it): close the game and open the login. */
@@ -499,13 +507,39 @@
 		marketBusy = false;
 	}
 
-	async function loadShowcase() {
+	/** Load the showcase from the top, or (`more`) the next page of tanks. */
+	async function loadShowcase(more = false) {
+		if (showcaseLoading) return;
+		showcaseLoading = true;
 		try {
-			const r = await fetch('/api/games/ifish/showcase');
-			showcase = ((await r.json()) as { entries: typeof showcase }).entries;
+			const r = await fetch(`/api/games/ifish/showcase?offset=${more ? (showcase?.length ?? 0) : 0}`);
+			const j = (await r.json()) as { entries: ShowcaseEntry[]; total: number };
+			showcase = more ? [...(showcase ?? []), ...j.entries] : j.entries;
+			showcaseTotal = j.total ?? showcase.length;
 		} catch {
 			showcaseMsg = 'Could not load the showcase.';
+		} finally {
+			showcaseLoading = false;
 		}
+	}
+	/** Step to the next (or previous) player's tank, loading more as you go. */
+	async function stepView(d: number) {
+		if (viewIdx === null || !showcase) return;
+		const next = viewIdx + d;
+		if (next < 0) return;
+		if (next >= showcase.length) {
+			if (showcase.length >= showcaseTotal) return;
+			await loadShowcase(true);
+			if (next >= (showcase?.length ?? 0)) return;
+		}
+		viewIdx = next;
+		sfx('click');
+	}
+	function viewKeys(e: KeyboardEvent) {
+		if (viewIdx === null) return;
+		if (e.key === 'ArrowRight') stepView(1);
+		else if (e.key === 'ArrowLeft') stepView(-1);
+		else if (e.key === 'Escape') viewIdx = null;
 	}
 	$effect(() => {
 		if (tab === 'showcase' && !showcase) {
@@ -538,12 +572,13 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ store: s.name, tank, bond: Math.round(s.pet.bond) })
 			});
-			const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; entries?: ShowcaseEntry[] };
+			const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; entries?: ShowcaseEntry[]; total?: number };
 			if (!r.ok || !j.ok) {
 				if (!quiet) showcaseMsg = j.message ?? 'Could not share that.';
 				if (quiet) loadShowcase();
 			} else {
 				showcase = j.entries ?? showcase;
+				showcaseTotal = j.total ?? showcaseTotal;
 				s.shared = true;
 				store.save();
 				if (!quiet) {
@@ -635,6 +670,8 @@
 	/** The backroom, favourites first. */
 	const holdFish = $derived([...s.hold].sort((a, b) => +!!b.fav - +!!a.fav));
 </script>
+
+<svelte:window onkeydown={viewKeys} />
 
 {#snippet fishRow(f: Fish, from: Loc)}
 	{@const sp = species(f.s)}
@@ -1065,7 +1102,7 @@
 							{#if show.fish.length}<p class="muted small">Move the fish out to change the water type (the tank must be empty).</p>{/if}
 						{:else if panel === 'new'}
 							<h3>New show tank</h3>
-							<p class="muted small">Used {store.showSlotsUsed()}/{Math.min(MAX_SHOW_TANKS, store.showSlotsUnlocked())} (max {MAX_SHOW_TANKS}). More unlock at main tank levels {SHOW_UNLOCK.slice(1).join(', ')}. Combine show tanks to house giants like the Zebra Shark.</p>
+							<p class="muted small">Used {store.showSlotsUsed()}/{Math.min(store.maxShow(), store.showSlotsUnlocked())} (your store has room for {store.maxShow()}). More unlock at main tank levels {SHOW_UNLOCK.slice(1).join(', ')}, and one with each store expansion. Combine show tanks to house giants like the Zebra Shark.</p>
 							<div class="row">
 								<select bind:value={buildWater}><option value="fresh">Freshwater</option><option value="salt">Saltwater</option></select>
 								{#if buildWater === 'fresh'}<select bind:value={buildTemp}><option value="tropical">Tropical</option><option value="cold">Coldwater</option></select>{/if}
@@ -1089,7 +1126,8 @@
 			<section class="card">
 				<h3>Backroom · {holdFish.length}/{s.holdCap}</h3>
 				<p class="muted small">New fish wait here. Stock them in sale tanks (customers buy them), show them off in a show tank, or sell to a wholesaler for 40% of their price.</p>
-				{#if s.holdCap < HOLDING_MAX}<button onclick={() => act(store.buyHolding())}>More shelving +5 ({money(HOLDING_COST)})</button>{/if}
+				{#if s.holdCap < holdMax(store.size)}<button onclick={() => act(store.buyHolding())}>More shelving +5 ({money(HOLDING_COST)})</button>
+				{:else if store.size < EXPAND_MAX}<p class="muted small">The backroom is full of shelving: expand the store (Build &amp; buy) to fit {HOLD_PER_EXPAND} more.</p>{/if}
 				<ul class="list">{#each holdFish as f (f.u)}{@render fishRow(f, 'hold')}{/each}</ul>
 				{#if !holdFish.length}<p class="muted">Empty. Open a shipment or go fishing!</p>{/if}
 			</section>
@@ -1251,7 +1289,8 @@
 		{:else if tab === 'showcase'}
 			<section class="card">
 				<h3>🌍 Global showcase</h3>
-				<p class="muted small">Every store shows off its favourite show tank. Tap one to look inside. Tanks with rarer fish come first.</p>
+				<p class="muted small">Every store shows off its favourite show tank. Tap one to look inside, then scroll through everyone's with ◀ ▶. Tanks with rarer fish come first.</p>
+				{#if showcase?.length}<button class="primary" onclick={() => ((viewIdx = showcase!.findIndex((e) => !e.mine) >= 0 ? showcase!.findIndex((e) => !e.mine) : 0), sfx('click'))}>👀 Browse all {showcaseTotal} tank{showcaseTotal === 1 ? '' : 's'}</button>{/if}
 				{#if loggedIn}
 					{@const fav = store.favTank}
 					<div class="row">
@@ -1275,11 +1314,12 @@
 								<span class="small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look.shape)?.name ?? 'Classic'} {t.water === 'salt' ? 'reef' : t.temp === 'cold' ? 'coldwater' : 'tropical'} tank · level {t.level}</span>
 								<span class="muted small">Star: {e.fishName ? `${e.fishName} the ` : ''}{sp.name} <span class="rar" class:mythic={sp.rarity === 'mythic'}>{RARITY_LABEL[sp.rarity]}</span>{e.bond ? ` · bond ${e.bond}` : ''}</span>
 							</div>
-							<div class="fa"><button onclick={() => ((viewing = e), sfx('click'))}>👀 View</button></div>
+							<div class="fa"><button onclick={() => ((viewIdx = i), sfx('click'))}>👀 View</button></div>
 						</li>
 					{/each}
 				</ul>
 				{#if showcase && !showcase.length}<p class="muted">Nobody has shared a tank yet. Be the first!</p>{/if}
+				{#if showcase && showcase.length < showcaseTotal}<button onclick={() => loadShowcase(true)}>Show more tanks ({showcaseTotal - showcase.length} left)</button>{/if}
 			</section>
 			<section class="card">
 				<h3>🛒 Fish market</h3>
@@ -1478,6 +1518,16 @@
 				{/if}
 				<h4>Show tanks</h4>
 				<button onclick={() => ((building = false), (tab = 'show'), (panel = 'new'))}>⭐ Build a show tank (choose its shape)…</button>
+				<h4>Expand the store · {store.size}/{EXPAND_MAX}</h4>
+				{#if tasksFor(EXPAND_REF)}
+					<p class="muted small">🏗️ Expanding: done in {time(tasksFor(EXPAND_REF)!.end - store.now)}.</p>
+				{:else if store.size < EXPAND_MAX}
+					{@const [gw, gh] = gridSize(store.size + 1)}
+					<button onclick={() => ((building = false), act(store.expand(), 'coin'))}>🏗️ Expand to {gw}×{gh} · {money(EXPAND_COST[store.size])} · {time(EXPAND_TIME[store.size] * 1000)}</button>
+					<p class="muted small">More floor space, room for {HOLD_PER_EXPAND} more fish of backroom shelving, and one more show tank slot. Everything you've placed stays where it is. A builder does it.</p>
+				{:else}
+					<p class="muted small">Your store is fully expanded ({store.gw()}×{store.gh()}).</p>
+				{/if}
 				<h4>Store decorations (popularity)</h4>
 				<ul class="dest">
 					{#each STORE_DECOR as d (d.id)}
@@ -1623,10 +1673,15 @@
 		{@const v = viewing}
 		{@const t = asShowTank(tankOf(v))}
 		{@const pi = tankOf(v).partner}
-		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (viewing = null)}>
+		<div class="modal" role="presentation" onclick={(e) => e.target === e.currentTarget && (viewIdx = null)}>
 			<div class="dlg wide">
-				<button class="x" aria-label="Close" onclick={() => (viewing = null)}>✕</button>
-				<h3>{v.store}'s tank</h3>
+				<button class="x" aria-label="Close" onclick={() => (viewIdx = null)}>✕</button>
+				<div class="browse">
+					<button aria-label="Previous tank" disabled={!viewIdx} onclick={() => stepView(-1)}>◀</button>
+					<span class="small muted">{(viewIdx ?? 0) + 1} of {showcaseTotal}</span>
+					<button aria-label="Next tank" disabled={(viewIdx ?? 0) + 1 >= showcaseTotal} onclick={() => stepView(1)}>▶</button>
+				</div>
+				<h3>{v.store}'s tank{v.mine ? ' (you)' : ''}</h3>
 				<p class="muted small">{t.fish.length} fish · {TANK_SHAPES.find((x) => x.id === t.look?.shape)?.name ?? 'Classic'} · level {t.level}{t.seg > 1 ? ` · ${t.seg} tanks combined` : ''} · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'}</p>
 				<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={showWidthCm(store.capOf(t))} center={pi === null ? null : pi + 1} happy={80} height={260} look={store.lookOf(t)} growth={t.growth ?? 30} stand />
 				<ul class="rarelist">
@@ -1899,6 +1954,17 @@
 	}
 	.sex.f {
 		color: #f472b6;
+	}
+	.browse {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
+		margin: 0 32px 4px;
+	}
+	.browse button {
+		min-width: 44px;
+		font-size: 1.1rem;
 	}
 	.eggs {
 		display: flex;

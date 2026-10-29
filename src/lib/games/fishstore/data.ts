@@ -419,6 +419,17 @@ export const FLOORS: { id: string; name: string; cost: number; appeal: number; a
 ];
 export const GRID_W = 12;
 export const GRID_H = 8;
+/**
+ * Store expansions: each one knocks through a wall (the floor grows right and toward the street,
+ * so nothing you've placed moves), adds backroom shelving room and another show tank slot.
+ */
+export const EXPAND_MAX = 5;
+export const EXPAND_COST = [6000, 15000, 35000, 70000, 140000];
+export const EXPAND_TIME = [1800, 3600, 7200, 10800, 14400];
+/** Floor size (columns, rows) after `size` expansions. */
+export const gridSize = (size: number): [number, number] => [GRID_W + 2 * size, GRID_H + size];
+/** More backroom shelving can go in with each expansion. */
+export const HOLD_PER_EXPAND = 10;
 
 // ── Supplies (sold from the shelf) ───────────────────────────────────────────────────
 export type SupplyId = 'food' | 'conditioner' | 'filter' | 'net';
@@ -458,7 +469,7 @@ export const ROLES: Role[] = [
 	{ id: 'scientist', name: 'Research Scientist', speed: 1, wage: 120, hire: 800, does: 'research', blurb: 'Researches fish in your wiki (at level 5 you can order that fish directly) and breeds fish in the breeding tank.' }
 ];
 /** Tasks a builder can do. */
-export const BUILD_TASKS = ['build', 'upgrade', 'buildShow', 'upgradeShow', 'combine', 'buildLab', 'buildBreeder'];
+export const BUILD_TASKS = ['build', 'upgrade', 'buildShow', 'upgradeShow', 'combine', 'buildLab', 'buildBreeder', 'expand'];
 
 // ── Research (the fish wiki) ─────────────────────────────────────────────────────────
 export const RESEARCH_MAX = 5;
@@ -645,6 +656,7 @@ export const START_GEMS = 10;
 export const HOLDING_BASE = 10;
 export const HOLDING_STEP = 5;
 export const HOLDING_MAX = 30;
+export const holdMax = (size: number) => HOLDING_MAX + HOLD_PER_EXPAND * size;
 export const HOLDING_COST = 500;
 export const FOOD_COST = 5;
 /** Seconds a task takes per gem to skip. */

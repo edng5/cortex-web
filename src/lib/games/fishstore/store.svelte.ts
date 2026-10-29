@@ -69,11 +69,13 @@ import {
 	FOOD_COST,
 	GEM_ODDS,
 	GEM_SECONDS,
-	GRID_H,
-	GRID_W,
+	EXPAND_COST,
+	EXPAND_MAX,
+	EXPAND_TIME,
+	gridSize,
+	holdMax,
 	HOLDING_BASE,
 	HOLDING_COST,
-	HOLDING_MAX,
 	HOLDING_STEP,
 	MAX_SHOW_TANKS,
 	MAX_STAFF,
@@ -165,13 +167,15 @@ export interface Staff {
 	name: string;
 	role: string;
 }
-export type TaskKind = 'build' | 'upgrade' | 'clean' | 'buildShow' | 'upgradeShow' | 'combine' | 'cleanShow' | 'restock' | 'trim' | 'research' | 'buildLab' | 'buildBreeder' | 'breed';
+export type TaskKind = 'build' | 'upgrade' | 'clean' | 'buildShow' | 'upgradeShow' | 'combine' | 'cleanShow' | 'restock' | 'trim' | 'research' | 'buildLab' | 'buildBreeder' | 'breed' | 'expand';
 /** Task reference for the supply shelf (tanks use their ids). */
 export const SHELF_REF = -1;
 /** Task reference for building the research lab. */
 export const LAB_REF = -2;
 /** Task reference for the breeding tank (building it, and breeding in it). */
 export const BREED_REF = -3;
+/** Task reference for expanding the store. */
+export const EXPAND_REF = -4;
 export interface Task {
 	id: number;
 	kind: TaskKind;
@@ -210,6 +214,8 @@ interface Save {
 	acc: number;
 	seq: number;
 	holdCap: number;
+	/** Store expansions done (0 to EXPAND_MAX). */
+	size?: number;
 	floor: string;
 	floors: string[];
 	sale: SaleTank[];
@@ -844,6 +850,10 @@ export class FishStore {
 			case 'buildLab':
 				if (this.s.lab) this.s.lab.ready = true;
 				break;
+			case 'expand':
+				this.s.size = Math.min(EXPAND_MAX, this.size + 1);
+				this.toast = [...this.toast, `🏗️ The store is bigger! More floor space, room for ${holdMax(this.size) - holdMax(this.size - 1)} more fish on backroom shelving, and another show tank slot.`];
+				break;
 			case 'buildBreeder':
 				if (this.s.breeder) this.s.breeder.ready = true;
 				break;
@@ -887,18 +897,18 @@ export class FishStore {
 	// ── The store floor ───────────────────────────────────────────────────────────────
 	footprint(kind: 'sale' | 'show' | 'decor', o: { tier?: TankTier; seg?: number }): [number, number] {
 		if (kind === 'sale') return [tier(o.tier!).w, 1];
-		if (kind === 'show') return [Math.min(GRID_W, 2 * (o.seg ?? 1)), 2];
+		if (kind === 'show') return [Math.min(this.gw(), 2 * (o.seg ?? 1)), 2];
 		return [1, 1];
 	}
 	/** Cells taken, except by `skip`. */
 	private taken(skip?: object): boolean[][] {
-		const g = Array.from({ length: GRID_H }, () => new Array(GRID_W).fill(false));
+		const g = Array.from({ length: this.gh() }, () => new Array(this.gw()).fill(false));
 		const mark = (x: number, y: number, w: number, h: number) => {
-			for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (g[j] && i < GRID_W) g[j][i] = true;
+			for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (g[j] && i < this.gw()) g[j][i] = true;
 		};
 		// The counter and the door are fixed.
-		mark(0, GRID_H - 1, 2, 1);
-		mark(5, GRID_H - 1, 2, 1);
+		mark(0, this.gh() - 1, 2, 1);
+		mark(5, this.gh() - 1, 2, 1);
 		for (const t of this.s.sale) if (t !== skip) mark(t.x, t.y, ...this.footprint('sale', t));
 		for (const t of this.s.show) if (t !== skip) mark(t.x, t.y, ...this.footprint('show', t));
 		for (const d of this.s.decor) if (d !== skip) mark(d.x, d.y, 1, 1);
@@ -909,11 +919,11 @@ export class FishStore {
 	}
 	/** Where people can walk on the floor (true = blocked by a tank, decoration or the counter). Rugs can be walked on. */
 	walkGrid(): boolean[][] {
-		const g = Array.from({ length: GRID_H }, () => new Array(GRID_W).fill(false));
+		const g = Array.from({ length: this.gh() }, () => new Array(this.gw()).fill(false));
 		const mark = (x: number, y: number, w: number, h: number) => {
-			for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (g[j] && i >= 0 && i < GRID_W) g[j][i] = true;
+			for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (g[j] && i >= 0 && i < this.gw()) g[j][i] = true;
 		};
-		mark(0, GRID_H - 1, 2, 1);
+		mark(0, this.gh() - 1, 2, 1);
 		for (const t of this.s.sale) mark(t.x, t.y, ...this.footprint('sale', t));
 		for (const t of this.s.show) mark(t.x, t.y, ...this.footprint('show', t));
 		for (const d of this.s.decor) if (d.item !== 'rug') mark(d.x, d.y, 1, 1);
@@ -923,13 +933,13 @@ export class FishStore {
 		return g;
 	}
 	fits(x: number, y: number, w: number, h: number, skip?: object) {
-		if (x < 0 || y < 0 || x + w > GRID_W || y + h > GRID_H) return false;
+		if (x < 0 || y < 0 || x + w > this.gw() || y + h > this.gh()) return false;
 		const g = this.taken(skip);
 		for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (g[j][i]) return false;
 		return true;
 	}
 	findSpot(w: number, h: number, skip?: object): Placed | null {
-		for (let y = 0; y <= GRID_H - h; y++) for (let x = 0; x <= GRID_W - w; x++) if (this.fits(x, y, w, h, skip)) return { x, y };
+		for (let y = 0; y <= this.gh() - h; y++) for (let x = 0; x <= this.gw() - w; x++) if (this.fits(x, y, w, h, skip)) return { x, y };
 		return null;
 	}
 	moveShelf(x: number, y: number): Result {
@@ -1080,6 +1090,33 @@ export class FishStore {
 			...rare.map((k) => (species(k.s).rarity === 'mythic' ? `🐉 The legend is true: a ${species(k.s).name} hatched!` : `✨ A very rare ${species(k.s).name}!`))
 		];
 		this.say(`Hatched ${names.join(', ')}.`);
+	}
+
+	/** Store expansions done so far. */
+	get size() {
+		return this.s.size ?? 0;
+	}
+	/** The floor's columns and rows (it grows with each expansion). */
+	gw() {
+		return gridSize(this.size)[0];
+	}
+	gh() {
+		return gridSize(this.size)[1];
+	}
+	/** The most show tanks (slots) you can ever have: more with each expansion. */
+	maxShow() {
+		return MAX_SHOW_TANKS + this.size;
+	}
+	/** Expand the store: a builder knocks through a wall. Everything you've placed stays where it is. */
+	expand(): Result {
+		if (this.size >= EXPAND_MAX) return no(`The store is as big as it gets (${EXPAND_MAX} expansions).`);
+		const cost = EXPAND_COST[this.size];
+		if (this.s.cash < cost) return no(`The next expansion costs $${cost.toLocaleString()}.`);
+		const r = this.startTask('expand', `Expand the store (${this.size + 1}/${EXPAND_MAX})`, EXPAND_TIME[this.size], EXPAND_REF);
+		if (!r.ok) return r;
+		this.s.cash -= cost;
+		this.save();
+		return r;
 	}
 
 	/** Build the research lab (one per store; every scientist works in it). */
@@ -1284,16 +1321,18 @@ export class FishStore {
 		return ok(`Restyled for $${cost}.`);
 	}
 	showSlotsUnlocked() {
-		return SHOW_UNLOCK.filter((lvl) => this.main.level >= lvl).length;
+		return SHOW_UNLOCK.filter((lvl) => this.main.level >= lvl).length + this.size;
 	}
 	showSlotsUsed() {
 		return this.s.show.reduce((a, t) => a + t.seg, 0);
 	}
 	buildShow(water: Water, temp: Temp, shape: TankShape = 'rect'): Result {
 		if (water === 'salt' && temp === 'cold') return no('Coldwater saltwater fish are not stocked here.');
-		if (this.showSlotsUsed() >= Math.min(MAX_SHOW_TANKS, this.showSlotsUnlocked())) {
+		if (this.showSlotsUsed() >= Math.min(this.maxShow(), this.showSlotsUnlocked())) {
 			const next = SHOW_UNLOCK.find((lvl) => lvl > this.main.level);
-			return no(this.showSlotsUsed() >= MAX_SHOW_TANKS ? 'You already have the maximum of 5 show tanks.' : `Upgrade your main show tank to level ${next} to unlock another show tank.`);
+			if (this.showSlotsUsed() >= this.maxShow())
+				return no(this.size < EXPAND_MAX ? `You have all ${this.maxShow()} show tanks your store has room for. Expand the store for another.` : `You already have the maximum of ${this.maxShow()} show tanks.`);
+			return no(next ? `Upgrade your main show tank to level ${next} (or expand the store) to unlock another show tank.` : 'Expand the store to unlock another show tank.');
 		}
 		const price = NEW_SHOW_COST + TANK_SHAPES.find((x) => x.id === shape)!.cost;
 		if (this.s.cash < price) return no(`That show tank costs $${price}.`);
@@ -1337,7 +1376,7 @@ export class FishStore {
 			merged.fish.push(f);
 		}
 		const [w, h] = this.footprint('show', { seg: a.seg + b.seg });
-		if (w > GRID_W) return no('That would be too wide for the store.');
+		if (w > this.gw()) return no('That would be too wide for the store.');
 		let spot: Placed | null = this.fits(a.x, a.y, w, h, a) && !this.overlapsTank(a.x, a.y, w, h, b) ? { x: a.x, y: a.y } : null;
 		if (!spot) spot = this.findSpotIgnoring(w, h, [a, b]);
 		if (!spot) return no('Not enough floor space for the combined tank. Rearrange in Layout mode.');
@@ -1429,7 +1468,7 @@ export class FishStore {
 		return { ok: true, fish, gems, free, decor };
 	}
 	buyHolding(): Result {
-		if (this.s.holdCap >= HOLDING_MAX) return no('The backroom is as big as it gets.');
+		if (this.s.holdCap >= holdMax(this.size)) return no(this.size < EXPAND_MAX ? 'The backroom is full of shelving. Expand the store for more room.' : 'The backroom is as big as it gets.');
 		if (this.s.cash < HOLDING_COST) return no(`More shelving costs $${HOLDING_COST}.`);
 		this.s.cash -= HOLDING_COST;
 		this.s.holdCap += HOLDING_STEP;

@@ -12,7 +12,7 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { DEFAULT_LOOK, FLOORS, GRID_H, GRID_W, SUPPLIES, TANK_LIGHTS, TANK_STANDS, TANK_TRIMS, species, tier, type StoreItem, type TankLook } from './data';
+	import { DEFAULT_LOOK, FLOORS, SUPPLIES, TANK_LIGHTS, TANK_STANDS, TANK_TRIMS, species, tier, type StoreItem, type TankLook } from './data';
 	import { bx, drawVoxel, model, shade, type Box } from '../voxel';
 	import type { FishStore } from './store.svelte';
 
@@ -59,13 +59,16 @@
 			return t ? { x: t.x, y: t.y, w: tier(t.tier).w, h: 1, obj: t } : null;
 		}
 		const t = s.show.find((x) => x.id === picked!.id);
-		return t ? { x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, obj: t } : null;
+		return t ? { x: t.x, y: t.y, w: Math.min(GW, 2 * t.seg), h: 2, obj: t } : null;
 	}
 	const ZF = 0.72;
 	const wallH = () => Math.round(T * 1.9);
-	const DOOR: [number, number] = [5, GRID_H - 1];
-	const TILL: [number, number] = [1, GRID_H - 2];
-	const PAY: [number, number] = [2, GRID_H - 1];
+	// The floor grows with store expansions (right and toward the street, so nothing placed moves).
+	const GW = $derived(store.gw());
+	const GH = $derived(store.gh());
+	const DOOR = $derived<[number, number]>([5, GH - 1]);
+	const TILL = $derived<[number, number]>([1, GH - 2]);
+	const PAY = $derived<[number, number]>([2, GH - 1]);
 
 	// ── People ─────────────────────────────────────────────────────────────────────────
 	interface Look {
@@ -107,11 +110,11 @@
 		return store.walkGrid();
 	}
 	function free(g: boolean[][], x: number, y: number) {
-		return x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && !g[y][x];
+		return x >= 0 && y >= 0 && x < GW && y < GH && !g[y][x];
 	}
 	/** Shortest walk between cells (breadth-first), or null. */
 	function route(g: boolean[][], from: [number, number], to: [number, number]): [number, number][] | null {
-		const key = (x: number, y: number) => y * GRID_W + x;
+		const key = (x: number, y: number) => y * GW + x;
 		const prev = new Map<number, number>();
 		const q: [number, number][] = [from];
 		prev.set(key(...from), -1);
@@ -121,7 +124,7 @@
 				const path: [number, number][] = [];
 				let k = key(x, y);
 				while (k !== -1) {
-					path.unshift([k % GRID_W, Math.floor(k / GRID_W)]);
+					path.unshift([k % GW, Math.floor(k / GW)]);
 					k = prev.get(k)!;
 				}
 				return path;
@@ -152,7 +155,7 @@
 		return ok.length ? ok[Math.floor(Math.random() * ok.length)] : null;
 	}
 	function cellOf(a: Agent): [number, number] {
-		return [Math.max(0, Math.min(GRID_W - 1, Math.floor(a.x))), Math.max(0, Math.min(GRID_H - 1, Math.floor(a.y)))];
+		return [Math.max(0, Math.min(GW - 1, Math.floor(a.x))), Math.max(0, Math.min(GH - 1, Math.floor(a.y)))];
 	}
 	function goTo(a: Agent, to: [number, number] | null) {
 		if (!to) return false;
@@ -164,14 +167,14 @@
 	function tanks() {
 		return [
 			...store.s.sale.filter((t) => t.ready).map((t) => ({ x: t.x, y: t.y, w: tier(t.tier).w, h: 1, id: t.id })),
-			...store.s.show.filter((t) => t.ready).map((t) => ({ x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, id: t.id }))
+			...store.s.show.filter((t) => t.ready).map((t) => ({ x: t.x, y: t.y, w: Math.min(GW, 2 * t.seg), h: 2, id: t.id }))
 		];
 	}
 	function allTanks() {
 		const lab = store.s.lab;
 		return [
 			...store.s.sale.map((t) => ({ x: t.x, y: t.y, w: tier(t.tier).w, h: 1, id: t.id })),
-			...store.s.show.map((t) => ({ x: t.x, y: t.y, w: Math.min(GRID_W, 2 * t.seg), h: 2, id: t.id })),
+			...store.s.show.map((t) => ({ x: t.x, y: t.y, w: Math.min(GW, 2 * t.seg), h: 2, id: t.id })),
 			// The lab counts too, so builders and scientists walk over to it.
 			...(lab ? [{ x: lab.x, y: lab.y, w: 2, h: 2, id: -2 }] : []),
 			...(store.s.breeder ? [{ x: store.s.breeder.x, y: store.s.breeder.y, w: 2, h: 1, id: -3 }] : [])
@@ -514,12 +517,12 @@
 		const fitW = wrap.clientWidth;
 		const fitH = wrap.clientHeight;
 		pan = fitW < 640;
-		const fit = Math.floor(Math.min(fitW / GRID_W, fitH > 80 ? (fitH - 8) / (GRID_H + 1.9) : Infinity));
+		const fit = Math.floor(Math.min(fitW / GW, fitH > 80 ? (fitH - 8) / (GH + 1.9) : Infinity));
 		T = pan ? Math.max(fit, 46) : Math.max(16, fit);
-		const W = GRID_W * T;
+		const W = GW * T;
 		const Z = T * ZF;
 		const oy = wallH();
-		const H = oy + GRID_H * T + 6;
+		const H = oy + GH * T + 6;
 		const dpr = Math.min(2, window.devicePixelRatio || 1);
 		if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
 			canvas.width = Math.round(W * dpr);
@@ -531,7 +534,7 @@
 		c.setTransform(dpr, 0, 0, dpr, 0, 0);
 		c.fillStyle = '#0b1a26';
 		c.fillRect(0, 0, W, H);
-		const FW = GRID_W * T;
+		const FW = GW * T;
 
 		// The back wall: wainscot, wallpaper, windows with sky, and lamps.
 		const wg = c.createLinearGradient(0, 0, 0, oy);
@@ -640,8 +643,8 @@
 
 		// Floor: bevelled tiles.
 		const fl = FLOORS.find((f) => f.id === store.s.floor) ?? FLOORS[0];
-		for (let y = 0; y < GRID_H; y++)
-			for (let x = 0; x < GRID_W; x++) {
+		for (let y = 0; y < GH; y++)
+			for (let x = 0; x < GW; x++) {
 				const X = x * T;
 				const Y = oy + y * T;
 				const base = (x + y) % 2 ? fl.a : fl.b;
@@ -662,7 +665,7 @@
 		c.fillRect(0, oy, FW, T * 0.8);
 		for (let i = 0; i < 3; i++) {
 			const lx = FW * (0.2 + i * 0.3);
-			const ly = oy + GRID_H * T * 0.45;
+			const ly = oy + GH * T * 0.45;
 			const pool = c.createRadialGradient(lx, ly, 4, lx, ly, T * 3);
 			pool.addColorStop(0, 'rgba(255,250,220,0.18)');
 			pool.addColorStop(1, 'rgba(255,250,220,0)');
@@ -677,12 +680,12 @@
 		c.fillStyle = '#fff';
 		c.font = `bold ${Math.max(8, Math.round(T * 0.22))}px sans-serif`;
 		c.textAlign = 'center';
-		c.fillText('WELCOME', (DOOR[0] + 1) * T, oy + GRID_H * T - T * 0.3);
+		c.fillText('WELCOME', (DOOR[0] + 1) * T, oy + GH * T - T * 0.3);
 
 		if (layout) {
 			c.strokeStyle = 'rgba(0,0,0,0.15)';
-			for (let x = 0; x <= GRID_W; x++) c.strokeRect(x * T, oy, 0, GRID_H * T);
-			for (let y = 0; y <= GRID_H; y++) c.strokeRect(0, oy + y * T, FW, 0);
+			for (let x = 0; x <= GW; x++) c.strokeRect(x * T, oy, 0, GH * T);
+			for (let y = 0; y <= GH; y++) c.strokeRect(0, oy + y * T, FW, 0);
 			// Where the picked thing would land: dragged, or tapped (its top-left corner on the tile).
 			const box = pickedBox();
 			const to = box && (carry ? [box.x + carry[0], box.y + carry[1]] : hover);
@@ -700,10 +703,10 @@
 		// Everything standing on the floor, back rows first.
 		const things: { y: number; f: () => void }[] = [];
 		things.push({
-			y: GRID_H - 0.01,
+			y: GH - 0.01,
 			f: () => {
-				shadow(c, T, oy + (GRID_H - 0.4) * T, T * 1.1, T * 0.3);
-					drawVoxel(c, counterModel(t), 0, oy + (GRID_H - 1) * T, T, Z);
+				shadow(c, T, oy + (GH - 0.4) * T, T * 1.1, T * 0.3);
+					drawVoxel(c, counterModel(t), 0, oy + (GH - 1) * T, T, Z);
 				}
 			});
 			{
@@ -776,7 +779,7 @@
 			});
 		}
 		for (const sh of store.s.show) {
-			const w = Math.min(GRID_W, 2 * sh.seg);
+			const w = Math.min(GW, 2 * sh.seg);
 			const sel = picked?.kind === 'show' && picked.id === sh.id;
 			things.push({
 				y: sh.y + 1.99,
@@ -862,7 +865,7 @@
 		c.fillRect(X0 + WW * 0.08, Y0 + HH + 2, 3, T * 0.35);
 	}
 
-	const TASK_ICON: Record<string, string> = { build: '🔨', buildShow: '🔨', upgrade: '⬆️', upgradeShow: '⬆️', clean: '🧽', cleanShow: '🧽', trim: '✂️', restock: '📦', combine: '🔗', research: '🔬', buildLab: '🔨', buildBreeder: '🔨', breed: '💞' };
+	const TASK_ICON: Record<string, string> = { build: '🔨', buildShow: '🔨', upgrade: '⬆️', upgradeShow: '⬆️', clean: '🧽', cleanShow: '🧽', trim: '✂️', restock: '📦', combine: '🔗', research: '🔬', buildLab: '🔨', buildBreeder: '🔨', expand: '🏗️', breed: '💞' };
 	/** A progress bar floating over whatever is being built, upgraded, cleaned or restocked. */
 	function progressBars(c: CanvasRenderingContext2D, oy: number, Z: number) {
 		const now = Date.now();
@@ -956,7 +959,7 @@
 		const x = Math.floor((e.clientX - r.left) / T);
 		// Things stand up out of the floor: a tap a little above a tile still counts for it.
 		const y = Math.floor((e.clientY - r.top - wallH() + (layout ? 0 : T * 0.4)) / T);
-		return x >= 0 && y >= 0 && x < GRID_W && y < GRID_H ? [x, y] : null;
+		return x >= 0 && y >= 0 && x < GW && y < GH ? [x, y] : null;
 	}
 </script>
 
