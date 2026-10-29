@@ -961,7 +961,14 @@
 			{@const plants = show.decor.includes('plants')}
 			<div class="stage" role="presentation" onclick={(e) => panel && !(e.target as Element).closest('.pop, .tools, .hud, .nudge, .giftnote') && ((panel = null), (styleDraft = null))}>
 				{#if show.ready}
-					<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={s.center} happy={s.pet.happy} height={0} look={panel === 'style' && styleDraft ? styleDraft : lk} growth={show.growth ?? 30} stand />
+					<!-- Drawn at its true width, like the showcase: a big tank scrolls sideways. -->
+					{@const px = Math.round(showWidthCm(store.capOf(show)) * PX_PER_CM)}
+					<div class="tankscroll stagescroll">
+						<div class="tankwide" style="width: max(100%, {px}px)">
+							<TankCanvas fish={show.fish} decor={show.decor} water={show.water} clean={show.clean} widthCm={showWidthCm(store.capOf(show))} center={s.center} happy={s.pet.happy} height={0} look={panel === 'style' && styleDraft ? styleDraft : lk} growth={show.growth ?? 30} stand />
+						</div>
+					</div>
+					{#if px > 600}<span class="scrollhint">↔ Scroll to see the whole tank</span>{/if}
 				{:else}
 					<div class="building">
 						<span>🏗️</span>
@@ -2024,6 +2031,23 @@
 		overflow-y: hidden;
 		-webkit-overflow-scrolling: touch;
 		border-radius: 6px;
+	}
+	.stagescroll,
+	.tankwide {
+		height: 100%;
+	}
+	.scrollhint {
+		position: absolute;
+		left: 50%;
+		bottom: 18px;
+		transform: translateX(-50%);
+		padding: 2px 10px;
+		border-radius: 999px;
+		background: rgba(7, 18, 28, 0.75);
+		color: #cbd5e1;
+		font-size: 0.75rem;
+		pointer-events: none;
+		z-index: 2;
 	}
 	.browse {
 		display: flex;

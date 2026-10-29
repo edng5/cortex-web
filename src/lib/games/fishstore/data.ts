@@ -16,6 +16,7 @@ export type DecorTag =
 	| 'cave'
 	| 'rock'
 	| 'coral'
+	| 'reef'
 	| 'anemone'
 	| 'ornament'
 	| 'bubbles'
@@ -363,6 +364,7 @@ export const TANK_DECOR: { id: DecorTag; name: string; cost: number; beauty: num
 	{ id: 'cave', name: 'Rock cave', cost: 70, beauty: 6 },
 	{ id: 'rock', name: 'Live rock', cost: 120, beauty: 8, water: 'salt' },
 	{ id: 'coral', name: 'Coral garden', cost: 260, beauty: 13, water: 'salt' },
+	{ id: 'reef', name: 'Coral reef', cost: 700, beauty: 20, water: 'salt' },
 	{ id: 'anemone', name: 'Anemone', cost: 180, beauty: 10, water: 'salt' },
 	{ id: 'ornament', name: 'Treasure chest', cost: 40, beauty: 3 },
 	{ id: 'bubbles', name: 'Bubble wall', cost: 35, beauty: 3 },

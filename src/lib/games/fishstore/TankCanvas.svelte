@@ -5,7 +5,9 @@
   tank is `widthCm` wide) swim forward and back as well as about, smaller and hazier further
   away, casting shadows on the sand. The glass shape (classic, bow-front, hexagon, cylinder or
   rimless), trim, stand and lights follow the tank's look. Dirty water turns murky with algae on
-  the glass; live plants grow taller over time and get overgrown until trimmed. The centrepiece
+  the glass; live plants grow taller over time and get overgrown until trimmed. Decorations keep
+  their true shape whatever the tank's width: a wide tank gets more of the natural scenery (rocks,
+  plants, coral) laid side by side, rather than the same pieces stretched. The centrepiece
   swims briskly with hearts when happy, and mopes near the bottom when it isn't.
 -->
 <script lang="ts">
@@ -84,8 +86,24 @@
 		by0 = 0,
 		by1 = 0;
 	const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-	function P(u: number, v: number, z: number): [number, number] {
+	function Pg(u: number, v: number, z: number): [number, number] {
 		return [lerp(bx0 + u * (bx1 - bx0), fx0 + u * (fx1 - fx0), z), lerp(by0 + v * (by1 - by0), fy0 + v * (fy1 - fy0), z)];
+	}
+	// Scenery is laid out in tiles about as wide as the tank is tall (REF), so it keeps its shape:
+	// inside one, u runs 0 → 1 across the tile (tu0 + u * tsc in the tank; tsc < 0 mirrors it).
+	const REF = 1.6;
+	let tu0 = 0,
+		tsc = 1,
+		seedOff = 0;
+	const P = (u: number, v: number, z: number) => Pg(tu0 + u * tsc, v, z);
+	/** A tile's width in pixels (for glows sized to the scenery). */
+	const tilePx = () => Math.abs(tsc) * (fx1 - fx0);
+	/** Run `f` inside a tile. */
+	function inTile(u0: number, sc: number, seed: number, f: () => void) {
+		const prev = [tu0, tsc, seedOff];
+		[tu0, tsc, seedOff] = [u0, sc, seed];
+		f();
+		[tu0, tsc, seedOff] = prev;
 	}
 	/** How much smaller things look at depth z. */
 	const depthScale = (z: number) => lerp((bx1 - bx0) / (fx1 - fx0), 1, z);
@@ -105,8 +123,13 @@
 	 * A voxel block standing in the tank: u0–u1 across, z0–z1 deep, from v1 (bottom) up to v0
 	 * (top). Draws the side facing the middle (perspective), the top, then the front.
 	 */
-	function cube(c: CanvasRenderingContext2D, u0: number, u1: number, z0: number, z1: number, v0: number, v1: number, col: string) {
+	function cube(c: CanvasRenderingContext2D, ua: number, ub: number, z0: number, z1: number, v0: number, v1: number, col: string) {
+		// Into the tank's own u (a mirrored tile swaps the sides).
+		let u0 = tu0 + ua * tsc,
+			u1 = tu0 + ub * tsc;
+		if (u0 > u1) [u0, u1] = [u1, u0];
 		const um = (u0 + u1) / 2;
+		const P = Pg;
 		if (um < 0.5) quad(c, [P(u1, v0, z1), P(u1, v0, z0), P(u1, v1, z0), P(u1, v1, z1)], shade(col, 0.72));
 		else quad(c, [P(u0, v0, z1), P(u0, v0, z0), P(u0, v1, z0), P(u0, v1, z1)], shade(col, 0.72));
 		quad(c, [P(u0, v0, z0), P(u1, v0, z0), P(u1, v0, z1), P(u0, v0, z1)], shade(col, 1.18));
@@ -142,7 +165,7 @@
 
 	// Seeded randomness, so the scenery stays put from frame to frame.
 	function rng(seed: number) {
-		let h = seed * 2654435761;
+		let h = (seed + seedOff) * 2654435761;
 		return () => {
 			h = Math.imul(h ^ (h >>> 15), 2246822507);
 			h = Math.imul(h ^ (h >>> 13), 3266489909);
@@ -187,6 +210,8 @@
 		by0 = fy0 + ih * 0.03;
 		by1 = fy1 - ih * 0.2;
 		const dirty = 1 - clean / 100;
+		/** About how many tank-tall tiles fit across (more floor detail for wide tanks). */
+		const reps = Math.max(1, Math.round(iw / (REF * ih)));
 		const salt = water === 'salt';
 		const top = salt ? '#5ec8f0' : '#6ed0c0';
 		const deep = salt ? '#1a4a98' : '#185a66';
@@ -215,8 +240,8 @@
 		quad(c, [P(0, 0, 1), P(1, 0, 1), P(1, 0, 0), P(0, 0, 0)], surf);
 		// Ripples on the surface.
 		c.fillStyle = 'rgba(255,255,255,0.35)';
-		for (let i = 0; i < 14; i++) {
-			const u = (i * 0.137 + t * 0.03 * (i % 2 ? 1 : -1) + 10) % 1;
+		for (let i = 0; i < 14 * reps; i++) {
+			const u = (i * 0.137 / reps + t * 0.03 * (i % 2 ? 1 : -1) + 10) % 1;
 			const z = (i * 0.29) % 1;
 			const [x, y] = P(u, 0, z);
 			c.fillRect(x, y + 1, 10 * depthScale(z), 1.5);
@@ -240,7 +265,7 @@
 		quad(c, [P(0, 1, 0), P(1, 1, 0), P(1, FLOOR, 0), P(0, FLOOR, 0)], shade(sub, 0.6));
 		{
 			const r = rng(3);
-			for (let i = 0; i < 90; i++) {
+			for (let i = 0; i < 90 * reps; i++) {
 				const u = r();
 				const z = r();
 				const [x, y] = P(u, FLOOR, z);
@@ -257,7 +282,7 @@
 			sg.addColorStop(1, shade(sub, 0.55));
 			quad(c, [P(0, FLOOR, 1), P(1, FLOOR, 1), P(1, 1.02, 1), P(0, 1.02, 1)], sg);
 			const r = rng(9);
-			for (let i = 0; i < 70; i++) {
+			for (let i = 0; i < 70 * reps; i++) {
 				const x = fx0 + r() * (fx1 - fx0);
 				const y = ya + 3 + r() * (fy1 - ya - 4);
 				const sz = 2 + r() * 4;
@@ -267,8 +292,8 @@
 		}
 		// Light dancing on the floor (caustics).
 		c.fillStyle = 'rgba(255,255,255,0.13)';
-		for (let i = 0; i < 18; i++) {
-			const u = (i * 0.173 + Math.sin(t * 0.5 + i) * 0.03 + 1) % 1;
+		for (let i = 0; i < 18 * reps; i++) {
+			const u = (i * 0.173 / reps + Math.sin(t * 0.5 + i) * 0.03 + 1) % 1;
 			const z = (i * 0.311 + Math.cos(t * 0.4 + i * 2) * 0.03 + 1) % 1;
 			const [x, y] = P(u, FLOOR, z);
 			const s = depthScale(z) * (8 + 4 * Math.sin(t * 1.3 + i));
@@ -302,7 +327,7 @@
 		for (let i = 0; i < (stone ? 26 : 10); i++) {
 			const z = stone ? 0.35 : (i * 0.37) % 1;
 			const v = 1 - ((t * 0.25 + i * 0.137) % 1);
-			const u = stone ? 0.9 + Math.sin(t * 3 + i) * 0.012 : (i * 0.193 + 0.05) % 1;
+			const u = stone ? stoneU + Math.sin(t * 3 + i) * 0.012 : (i * 0.193 + 0.05) % 1;
 			const [x, y] = P(u, v * FLOOR, z);
 			const s = (2 + (i % 3)) * depthScale(z);
 			c.fillRect(Math.round(x), Math.round(y), s, s);
@@ -325,8 +350,35 @@
 		if (stand) drawStand(c, standCol, W, H, standH);
 	}
 
-	/** Rocks, caves, wood, plants, coral and the rest, each placed somewhere in the tank. */
-	function scenery(c: CanvasRenderingContext2D, t: number, items: { z: number; f: () => void }[]) {
+	type Items = { push: (it: { z: number; f: () => void }) => void };
+	/** Where the air stone sits (u across the whole tank). */
+	let stoneU = 0.9;
+
+	/**
+	 * Lay the scenery out in tiles about as wide as the tank is tall, edge to edge (overlapping a
+	 * little when they don't divide evenly). The natural pieces fill every tile, every other one
+	 * mirrored and seeded afresh so it doesn't look copied; the one-off pieces (the treasure
+	 * chest, air stone, limited editions) sit once, in the middle tile.
+	 */
+	function scenery(c: CanvasRenderingContext2D, t: number, items: Items) {
+		const iw = fx1 - fx0;
+		const ih = fy1 - fy0;
+		const tw = Math.min(1, (REF * ih) / iw);
+		const n = Math.max(1, Math.ceil(1 / tw - 0.15));
+		const step = n > 1 ? (1 - tw) / (n - 1) : 0;
+		const start = n > 1 ? 0 : (1 - tw) / 2;
+		const mid = Math.floor((n - 1) / 2);
+		for (let i = 0; i < n; i++) {
+			const flip = (i - mid) % 2 !== 0;
+			const u0 = start + i * step;
+			const at: [number, number, number] = [flip ? u0 + tw : u0, flip ? -tw : tw, (i - mid) * 7919];
+			const tiled: Items = { push: (it) => items.push({ z: it.z, f: () => inTile(...at, it.f) }) };
+			inTile(...at, () => tile(c, t, tiled, i === mid));
+		}
+	}
+
+	/** One tile's scenery: rocks, caves, wood, plants, coral and the rest (`once`: the one-off pieces too). */
+	function tile(c: CanvasRenderingContext2D, t: number, items: Items, once: boolean) {
 		const has = (d: DecorTag) => decor.includes(d);
 		const rock = (u: number, z: number, size: number, col: string) => {
 			items.push({
@@ -435,6 +487,22 @@
 				});
 			});
 		}
+		if (has('reef')) {
+			// A whole reef: live rock along the back, smothered and crowded with coral at every
+			// depth: branching staghorn, brain domes, table plates, sea fans and tube sponges.
+			const r = rng(21);
+			const cols = ['#ff7a8a', '#ffb84a', '#c86af0', '#ff5a5a', '#5ad8c8', '#f4e04a', '#ff8ac8', '#7ab8ff', '#f08a4a'];
+			for (let i = 0; i < 6; i++) rock(0.06 + i * 0.176 + (r() - 0.5) * 0.04, 0.1 + r() * 0.1, 0.9 + r() * 0.6, i % 2 ? '#9a8a7a' : '#8a7e72');
+			for (let i = 0; i < 30; i++) {
+				const u = 0.03 + r() * 0.94;
+				const z = 0.08 + r() * 0.84;
+				const col = cols[Math.floor(r() * cols.length)];
+				const kind = Math.floor(r() * 5);
+				const s = 0.55 + r() * 0.7;
+				const ph = r() * 6;
+				items.push({ z, f: () => reefPiece(c, t, kind, u, z, s, col, ph) });
+			}
+		}
 		if (has('anemone')) {
 			items.push({
 				z: 0.62,
@@ -447,7 +515,7 @@
 				}
 			});
 		}
-		if (has('ornament')) {
+		if (once && has('ornament')) {
 			items.push({
 				z: 0.78,
 				f: () => {
@@ -463,14 +531,57 @@
 				}
 			});
 		}
-		if (has('bubbles')) {
+		if (once && has('bubbles')) {
+			stoneU = tu0 + 0.9 * tsc;
 			items.push({ z: 0.35, f: () => cube(c, 0.88, 0.92, 0.32, 0.36, FLOOR - 0.03, FLOOR, '#5a6a7a') });
 		}
-		limitedEditions(c, t, items, has);
+		if (once) limitedEditions(c, t, items, has);
+	}
+
+	/** One coral on the reef: `kind` 0 staghorn, 1 brain, 2 table, 3 sea fan, 4 tube sponges; `s` its size. */
+	function reefPiece(c: CanvasRenderingContext2D, t: number, kind: number, u: number, z: number, s: number, col: string, ph: number) {
+		const F = FLOOR;
+		const d = 0.03 * s;
+		if (kind === 0) {
+			// Staghorn: a trunk forking into antlers, tips paler.
+			const sway = Math.sin(t * 1.3 + ph) * 0.003;
+			cube(c, u - 0.008 * s, u + 0.008 * s, z - d, z, F - 0.12 * s, F, col);
+			for (const [du, h0, h1] of [[-0.03, 0.07, 0.2], [0.03, 0.09, 0.22], [-0.012, 0.12, 0.27], [0.014, 0.12, 0.25]]) {
+				cube(c, u + Math.min(0, du) * s, u + Math.max(0, du) * s, z - d, z, F - (h0 + 0.02) * s, F - h0 * s, col);
+				cube(c, u + du * s - 0.006 * s + sway, u + du * s + 0.006 * s + sway, z - d, z, F - h1 * s, F - h0 * s, shade(col, 1.08));
+				cube(c, u + du * s - 0.006 * s + sway, u + du * s + 0.006 * s + sway, z - d, z, F - (h1 + 0.02) * s, F - h1 * s, shade(col, 1.35));
+			}
+		} else if (kind === 1) {
+			// Brain coral: a dome, with its winding grooves picked out.
+			const rows = [0.06, 0.056, 0.048, 0.036, 0.02];
+			rows.forEach((w, i) => cube(c, u - w * s, u + w * s, z - d * 1.6, z, F - (i + 1) * 0.022 * s, F - i * 0.022 * s, i % 2 ? col : shade(col, 0.88)));
+			for (let i = 0; i < 3; i++) cube(c, u - 0.04 * s + i * 0.03 * s, u - 0.03 * s + i * 0.03 * s, z, z + 0.002, F - (0.05 + (i % 2) * 0.02) * s, F - (0.035 + (i % 2) * 0.02) * s, shade(col, 0.7));
+		} else if (kind === 2) {
+			// Table coral: a short stalk holding up a broad flat plate.
+			cube(c, u - 0.008 * s, u + 0.008 * s, z - d, z, F - 0.1 * s, F, shade(col, 0.85));
+			cube(c, u - 0.07 * s, u + 0.07 * s, z - d * 2, z, F - 0.12 * s, F - 0.1 * s, col);
+			cube(c, u - 0.05 * s, u + 0.05 * s, z - d * 1.6, z - d * 0.4, F - 0.135 * s, F - 0.12 * s, shade(col, 1.15));
+		} else if (kind === 3) {
+			// A sea fan: a flat lattice, gently swaying.
+			const sway = Math.sin(t * 1.1 + ph) * 0.005;
+			for (let k = -3; k <= 3; k++) {
+				const x = u + k * 0.012 * s + sway * (1 - Math.abs(k) / 4);
+				cube(c, x - 0.0035 * s, x + 0.0035 * s, z - 0.008, z, F - (0.22 - Math.abs(k) * 0.028) * s, F - 0.01 * s, col);
+			}
+			for (let j = 1; j <= 3; j++) cube(c, u - (4 - j) * 0.012 * s + sway, u + (4 - j) * 0.012 * s + sway, z - 0.008, z, F - (j * 0.05 + 0.006) * s, F - j * 0.05 * s, shade(col, 1.12));
+			cube(c, u - 0.006 * s, u + 0.006 * s, z - 0.012, z, F - 0.02 * s, F, shade(col, 0.7));
+		} else {
+			// Tube sponges: a cluster of open-topped tubes.
+			for (const [du, h] of [[-0.022, 0.12], [0, 0.18], [0.024, 0.1], [0.012, 0.07]]) {
+				const x = u + du * s;
+				cube(c, x - 0.01 * s, x + 0.01 * s, z - d, z, F - h * s, F, col);
+				cube(c, x - 0.006 * s, x + 0.006 * s, z - d * 0.8, z - d * 0.2, F - h * s - 0.002, F - h * s, shade(col, 0.45));
+			}
+		}
 	}
 
 	/** The holiday limited editions, each with its own spot so they can all share a tank. */
-	function limitedEditions(c: CanvasRenderingContext2D, t: number, items: { z: number; f: () => void }[], has: (d: DecorTag) => boolean) {
+	function limitedEditions(c: CanvasRenderingContext2D, t: number, items: Items, has: (d: DecorTag) => boolean) {
 		const F = FLOOR;
 		const glow = (u: number, v: number, z: number, col: string, r: number) => {
 			const [x, y] = P(u, v, z);
@@ -496,7 +607,7 @@
 					cube(c, u - 0.045, u - 0.02, z, z + 0.003, F - 0.08, F - 0.06, eye);
 					cube(c, u + 0.02, u + 0.045, z, z + 0.003, F - 0.08, F - 0.06, eye);
 					cube(c, u - 0.04, u + 0.04, z, z + 0.003, F - 0.04, F - 0.025, eye);
-					glow(u, F - 0.06, z, `rgba(255,170,40,${0.25 * lit})`, (fx1 - fx0) * 0.06);
+					glow(u, F - 0.06, z, `rgba(255,170,40,${0.25 * lit})`, tilePx() * 0.06);
 				}
 			});
 		}
@@ -517,7 +628,7 @@
 						cube(c, bu - 0.006, bu + 0.006, z - 0.004, z + 0.004, F - 0.06 - tier * 0.05, F - 0.048 - tier * 0.05, on ? balls[i % 4] : shade(balls[i % 4], 0.6));
 					}
 					cube(c, u - 0.01, u + 0.01, z - 0.025, z - 0.015, F - 0.31, F - 0.29, '#ffe060');
-					glow(u, F - 0.3, z, 'rgba(255,230,120,0.35)', (fx1 - fx0) * 0.03);
+					glow(u, F - 0.3, z, 'rgba(255,230,120,0.35)', tilePx() * 0.03);
 				}
 			});
 		}
@@ -535,7 +646,7 @@
 					cube(c, u - 0.022 + sway, u + 0.022 + sway, z - 0.04, z - 0.02, F - 0.215, F - 0.2, '#f0c040');
 					cube(c, u - 0.022 + sway, u + 0.022 + sway, z - 0.04, z - 0.02, F - 0.12, F - 0.105, '#f0c040');
 					cube(c, u - 0.004 + sway * 1.5, u + 0.004 + sway * 1.5, z - 0.032, z - 0.028, F - 0.105, F - 0.07, '#f0c040');
-					glow(u + sway, F - 0.16, z - 0.01, 'rgba(255,90,60,0.28)', (fx1 - fx0) * 0.05);
+					glow(u + sway, F - 0.16, z - 0.01, 'rgba(255,90,60,0.28)', tilePx() * 0.05);
 				}
 			});
 		}
@@ -620,7 +731,7 @@
 							if (px === '#') cube(c, u0 + i * cw, u0 + (i + 1) * cw, z - 0.025, z, top + j * ch, top + (j + 1) * ch, j % 2 ? '#c8001a' : '#e0102a');
 						})
 					);
-					glow(u0 + 6 * cw, top + 4 * ch, z, 'rgba(255,40,60,0.22)', (fx1 - fx0) * 0.07);
+					glow(u0 + 6 * cw, top + 4 * ch, z, 'rgba(255,40,60,0.22)', tilePx() * 0.07);
 				}
 			});
 		}
@@ -675,7 +786,7 @@
 							quad(c, [P(u, v, z), P(u + cw, v, z), P(u + cw, v + ch, z), P(u, v + ch, z)], col);
 						}
 					});
-					for (const e of [26, 45]) glow(u0 + e * cw, top + 20 * ch, z, `rgba(255,60,40,${burn ? 0.4 : 0.25})`, (fx1 - fx0) * 0.035);
+					for (const e of [26, 45]) glow(u0 + e * cw, top + 20 * ch, z, `rgba(255,60,40,${burn ? 0.4 : 0.25})`, tilePx() * 0.035);
 				}
 			});
 		}

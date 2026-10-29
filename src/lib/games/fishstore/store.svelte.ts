@@ -688,7 +688,9 @@ export class FishStore {
 		const f = this.centerFish;
 		if (!f) return 0;
 		const likes = species(f.s).likes;
-		return likes.filter((l) => this.petTank!.decor.includes(l)).length / likes.length;
+		const has = this.petTank!.decor;
+		// A reef is coral too.
+		return likes.filter((l) => has.includes(l) || (l === 'coral' && has.includes('reef'))).length / likes.length;
 	}
 	petTarget(): number {
 		const p = this.s.pet;
