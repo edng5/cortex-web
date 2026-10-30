@@ -201,7 +201,7 @@ export const GAMES: GameSpec[] = [
 		help: [],
 		touch: { buttons: [] },
 		boards: {},
-		music: 'ifish-store',
+		// FishMart picks its own soundtrack (by tab, and the store's tunes take turns).
 		ui: async () => (await import('./fishstore/IFish.svelte')).default
 	}
 ];

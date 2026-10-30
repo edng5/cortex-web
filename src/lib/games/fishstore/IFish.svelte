@@ -299,6 +299,17 @@
 		if (!active) store.save();
 	});
 
+	// The soundtrack: fishing and the market have their own tunes; the store's take turns.
+	const STORE_SONGS = ['ifish-store', 'ifish-store-2', 'ifish-store-3'];
+	let song = $state(0);
+	onMount(() => {
+		const id = setInterval(() => (song = (song + 1) % STORE_SONGS.length), 4 * 60_000);
+		return () => clearInterval(id);
+	});
+	$effect(() => {
+		if (active) gameAudio.music(tab === 'fish' ? 'ifish-fishing' : tab === 'showcase' ? 'ifish-market' : STORE_SONGS[song]);
+	});
+
 	function act(r: Result | { ok: boolean; msg?: string }, good = 'click') {
 		note = r.msg ?? '';
 		sfx(r.ok ? good : 'error');

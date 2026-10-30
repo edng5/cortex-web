@@ -204,6 +204,48 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k...h...k...h..h'
 	},
+	// More shop tunes (the store rotates through all three): a laid-back café groove in B-flat…
+	'ifish-store-2': {
+		bpm: 86,
+		gain: 0.55,
+		parts: [
+			{ voice: 'pluck', level: 0.06, notes: 'D5 . F5 . Bb5 . A5 . G5 . F5 . D5 . C5 . Eb5 . G5 . F5 . D5 . Bb4 . C5 - - - . . ' },
+			{ voice: 'sine', level: 0.08, notes: 'Bb1 . . Bb1 F2 . . . G1 . . G1 D2 . . . Eb2 . . Eb2 Bb2 . . . F1 . . F1 C2 . F1 . ' },
+			{ voice: 'bell', level: 0.018, notes: '. . . . . . . . . . . . . . . . . . . . . . . . . . . . F6 . D6 . ' }
+		],
+		drums: 'k..hs..hk..hs.h.'
+	},
+	// …and a slow, dreamy drift through the kelp, in D major.
+	'ifish-store-3': {
+		bpm: 76,
+		gain: 0.55,
+		parts: [
+			{ voice: 'bell', level: 0.03, notes: 'F#5 - - - A5 - - - E5 - - - D5 - - - B4 - - - D5 - - - A4 - - - - - - - ' },
+			{ voice: 'pluck', level: 0.04, notes: 'D4 F#4 A4 F#4 D4 F#4 A4 F#4 B3 D4 F#4 D4 B3 D4 F#4 D4 G3 B3 D4 B3 G3 B3 D4 B3 A3 C#4 E4 C#4 A3 C#4 E4 C#4 ' },
+			{ voice: 'triangle', level: 0.05, notes: 'D3 - - - - - - - B2 - - - - - - - G2 - - - - - - - A2 - - - - - - - ' }
+		],
+		drums: 'k.......h.......'
+	},
+	// Fishing: an easy-going riverbank twang in G major.
+	'ifish-fishing': {
+		bpm: 100,
+		gain: 0.55,
+		parts: [
+			{ voice: 'pluck', level: 0.07, notes: 'D5 . B4 . G4 . B4 D5 E5 . D5 . B4 . . . C5 . E5 . D5 . B4 . A4 . G4 . A4 - - - ' },
+			{ voice: 'sine', level: 0.08, notes: 'G2 . D3 . G2 . D3 . G2 . D3 . G2 . D3 . C3 . G2 . C3 . G2 . D3 . A2 . D3 . A2 . ' }
+		],
+		drums: 'k..h.hk.k..h.h..'
+	},
+	// The market (other players' stores): a bright, busy market-day tune in C major.
+	'ifish-market': {
+		bpm: 112,
+		gain: 0.5,
+		parts: [
+			{ voice: 'square', level: 0.03, notes: 'E5 . G5 . C6 . G5 . A5 . F5 . C5 . F5 . G5 . E5 . C5 . E5 . D5 . B4 . G4 - - - ' },
+			{ voice: 'triangle', level: 0.09, notes: 'C3 . C3 . G2 . C3 . F2 . F2 . C3 . F2 . C3 . C3 . G2 . C3 . G2 . G2 . D3 . G2 . ' }
+		],
+		drums: 'k.h.s.h.k.h.s.hh'
+	},
 	// Pong: one tune that speeds up with each stage (FASTER!, SHRINKED!, DOUBLE TROUBLE!, FASTERR!!!).
 	...Object.fromEntries(
 		[112, 124, 134, 144, 158].map((bpm, stage): [string, Track] => [
