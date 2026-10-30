@@ -176,7 +176,7 @@ function parseCatalog(): Species[] {
 		shape: 'magikarp',
 		colors: ['#ee5a2c', '#f6d75a', '#f2f2f2'],
 		pattern: 'none',
-		cm: 90
+		cm: 60
 	});
 	// And the hero of E.Ngine Games' Fishy, in its original 2D art.
 	out.push({
