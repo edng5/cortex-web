@@ -495,6 +495,8 @@ export class FishStore {
 		if (rival) return no(`${sp.name} would fight the ${rival.name}: only one ${kind(sp)} per tank.`);
 		const eats = (pred: Species, prey: Species) => {
 			if (!pred.predator) return false;
+			// Alligator gars leave legendary stingrays alone.
+			if (pred.sci.startsWith('Atractosteus spatula') && prey.rarity === 'legendary' && /Stingray/.test(prey.name)) return false;
 			const p = sizeIdx(pred);
 			return sizeIdx(prey) <= (p >= 3 ? p - 2 : p - 1);
 		};
@@ -1290,6 +1292,7 @@ export class FishStore {
 	}
 	buildTank(t: TankTier, water: Water, temp: Temp): Result {
 		if (water === 'salt' && temp === 'cold') return no('Coldwater saltwater fish are not stocked here.');
+		if (tier(t).upgradeOnly) return no(`A ${tier(t).name.toLowerCase()} is made by upgrading a giant tank.`);
 		const cost = this.tankCost(t, water);
 		if (this.s.cash < cost) return no(`That costs $${cost}.`);
 		const spot = this.findSpot(tier(t).w, 1);
@@ -1361,7 +1364,7 @@ export class FishStore {
 		if (!t) return no('No such tank.');
 		if (t.clean >= 95) return no('That tank is already sparkling.');
 		if ('tier' in t) {
-			const mins = [1.5, 2, 3, 4, 6][TANK_TIERS.findIndex((x) => x.id === t.tier)];
+			const mins = [1.5, 2, 3, 4, 6, 8][TANK_TIERS.findIndex((x) => x.id === t.tier)];
 			return this.startTask('clean', `Clean the ${tier(t.tier).name.toLowerCase()}`, mins * 60, t.id, undefined, by);
 		}
 		return this.startTask('cleanShow', 'Clean the show tank', 240 * t.seg, t.id, undefined, by);
@@ -1766,13 +1769,15 @@ export class FishStore {
 	}
 
 	// ── Storage: treasure chests and special decorations ─────────────────────────────
-	/** Open a treasure chest: maybe a mythic decoration, a limited edition, gems, cash or a free crate. */
+	/** Open a treasure chest: maybe a mythic decoration, this season's limited edition, gems, cash or a free crate. */
 	openChest(): { ok: false; msg: string } | { ok: true; icon: string; text: string; decor?: DecorTag; mythic?: boolean } {
 		if (this.s.chests < 1) return no('No chests to open.');
 		this.s.chests--;
 		const owned = new Set(this.s.limited);
 		const mythics = TANK_DECOR.filter((d) => d.mythic && !owned.has(d.id));
-		const limited = TANK_DECOR.filter((d) => d.limited && !d.mythic && !owned.has(d.id));
+		// A limited edition only during its own holiday (out of season, it can't turn up).
+		const season = activeEvent(this.now)?.id;
+		const limited = TANK_DECOR.filter((d) => d.limited && !d.mythic && d.limited === season && !owned.has(d.id));
 		type Prize = 'mythic' | 'limited' | 'gems' | 'cash' | 'crate';
 		const prize = roll<Prize>([
 			['mythic', mythics.length ? 5 * (1 + this.luck() / 50) : 0],

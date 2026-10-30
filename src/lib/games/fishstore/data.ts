@@ -272,13 +272,15 @@ export const SPECIES_BY_ID = new Map(SPECIES.map((s) => [s.id, s]));
 export const species = (id: string) => SPECIES_BY_ID.get(id) ?? SPECIES[0];
 
 // ── Tanks ────────────────────────────────────────────────────────────────────────────
-export type TankTier = 'nano' | 'small' | 'medium' | 'large' | 'giant';
-export const TANK_TIERS: { id: TankTier; name: string; gallons: number; cm: number; cost: number; build: number; cap: number; maxSize: Size; w: number }[] = [
+export type TankTier = 'nano' | 'small' | 'medium' | 'large' | 'giant' | 'mega';
+/** Sale tanks by size. The mega tank (for giant XXL fish) is only an upgrade of a giant tank. */
+export const TANK_TIERS: { id: TankTier; name: string; gallons: number; cm: number; cost: number; build: number; cap: number; maxSize: Size; w: number; upgradeOnly?: boolean }[] = [
 	{ id: 'nano', name: 'Nano tank', gallons: 10, cm: 50, cost: 150, build: 60, cap: 6, maxSize: 'S', w: 1 },
 	{ id: 'small', name: 'Small tank', gallons: 40, cm: 90, cost: 450, build: 300, cap: 15, maxSize: 'L', w: 1 },
 	{ id: 'medium', name: 'Medium tank', gallons: 75, cm: 120, cost: 1200, build: 900, cap: 30, maxSize: 'L', w: 2 },
 	{ id: 'large', name: 'Large tank', gallons: 180, cm: 180, cost: 3500, build: 2700, cap: 70, maxSize: 'XL', w: 2 },
-	{ id: 'giant', name: 'Giant tank', gallons: 500, cm: 300, cost: 10000, build: 7200, cap: 160, maxSize: 'XL', w: 3 }
+	{ id: 'giant', name: 'Giant tank', gallons: 500, cm: 300, cost: 10000, build: 7200, cap: 160, maxSize: 'XL', w: 3 },
+	{ id: 'mega', name: 'Mega tank', gallons: 1000, cm: 420, cost: 25000, build: 10800, cap: 260, maxSize: 'XXL', w: 3, upgradeOnly: true }
 ];
 export const tier = (id: TankTier) => TANK_TIERS.find((t) => t.id === id)!;
 /** Saltwater setups need more gear (protein skimmer, salt mix, live rock). */

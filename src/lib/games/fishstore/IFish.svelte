@@ -994,7 +994,7 @@
 						<div class="row">
 							<button onclick={() => (adding = `sale:${t.id}`)}>➕ Stock fish</button>
 							<button disabled={!!task} onclick={() => act(store.clean(`sale:${t.id}`))}>🧽 Clean</button>
-							{#if t.tier !== 'giant'}<button disabled={!!task} onclick={() => ask({ title: 'Upgrade this sale tank?', body: `Costs ${money(store.upgradeCost(t.id))}. Your fish stay in it while it's upgraded.`, fish: t.fish, yes: 'Upgrade', run: () => act(store.upgradeTank(t.id)) })}>⬆ Upgrade ({money(store.upgradeCost(t.id))})</button>{/if}
+							{#if t.tier !== 'mega'}<button disabled={!!task} onclick={() => ask({ title: 'Upgrade this sale tank?', body: `Costs ${money(store.upgradeCost(t.id))}. Your fish stay in it while it's upgraded.`, fish: t.fish, yes: 'Upgrade', run: () => act(store.upgradeTank(t.id)) })}>⬆ Upgrade ({money(store.upgradeCost(t.id))})</button>{/if}
 							{#if !t.fish.length}
 								<button onclick={() => ask({ title: `Switch to ${t.water === 'salt' ? 'fresh' : 'salt'}water?`, body: `Only fish for the new water can be stocked here afterwards.${t.water === 'fresh' ? ` Costs ${money(Math.round(tier(t.tier).cost * (SALT_COST - 1)))} for the saltwater gear. You have ${money(s.cash)}.` : ''}`, fish: [], yes: 'Switch', run: () => act(store.setWater(`sale:${t.id}`, t.water === 'salt' ? 'fresh' : 'salt', 'tropical')) })}>Switch to {t.water === 'salt' ? 'fresh' : 'salt'}</button>
 								{#if t.water === 'fresh'}<button onclick={() => act(store.setWater(`sale:${t.id}`, 'fresh', t.temp === 'cold' ? 'tropical' : 'cold'))}>Make {t.temp === 'cold' ? 'tropical' : 'coldwater'}</button>{/if}
@@ -1584,7 +1584,7 @@
 					{#if buildWater === 'fresh'}<select bind:value={buildTemp}><option value="tropical">Tropical (heated)</option><option value="cold">Coldwater (goldfish, koi)</option></select>{/if}
 				</div>
 				<ul class="dest">
-					{#each TANK_TIERS as tt (tt.id)}
+					{#each TANK_TIERS.filter((x) => !x.upgradeOnly) as tt (tt.id)}
 						<li><button onclick={() => addToCart(tt.id as TankTier)}>＋ {tt.name} · {tt.gallons} gal · holds {tt.cap} · up to {SIZE_LABEL[tt.maxSize]} · {money(store.tankCost(tt.id as TankTier, buildWater))} · {time(tt.build * 1000)}</button></li>
 					{/each}
 				</ul>
