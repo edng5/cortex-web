@@ -835,7 +835,7 @@
 				<p class="small">
 					{#if c.kind === 'legend'}✨ An old legend says that when these two legendary arowanas breed, a dragon is sometimes born…
 					{:else if c.kind === 'hybrid'}A real-life hybrid ({c.group?.name} interbreed): the babies take after either parent{c.group?.makes ? `, and now and then come out as a ${c.group.makes.map((id) => species(id).name).join(' or ')}` : ''}.
-					{:else if c.kind === 'karp'}Babies will be Magikarp, and about one in seven hatches ✨ shiny.
+					{:else if c.kind === 'karp'}Babies will be Magikarp, and now and then one hatches ✨ shiny.
 					{:else if c.kind === 'strains'}Two strains of {speciesName(a)}: the babies take after either parent, and now and then show another strain.
 					{:else}Babies will be {a.name}s.{/if}
 					{#if ALBINO_OF[a.id] || ALBINO_OF[z.id]}✨ A very rare albino is possible.{/if}
@@ -1789,7 +1789,7 @@
 						</span>
 						<span class="price">Store price {money(priceOf(sp))}</span>
 						<span class="small">Likes: {sp.likes.map((l) => TANK_DECOR.find((d) => d.id === l)?.name).join(', ')}</span>
-						{#if sp.bred}<span class="small limited">✨ Only from breeding: a very rare surprise in a brood.</span>{:else if ALBINO_OF[sp.id]}<span class="small">💞 Breeding these can very rarely give an albino.</span>{:else if sp.id === 'magikarp'}<span class="small">💞 Breeding Magikarp: about one baby in seven hatches shiny.</span>{/if}
+						{#if sp.bred}<span class="small limited">✨ Only from breeding: a very rare surprise in a brood.</span>{:else if ALBINO_OF[sp.id]}<span class="small">💞 Breeding these can very rarely give an albino.</span>{:else if sp.id === 'magikarp'}<span class="small">💞 Breeding Magikarp can sometimes give a shiny one.</span>{/if}
 					</div>
 				</div>
 				<h4>🔬 Research · level {lvl}/{RESEARCH_MAX}</h4>
