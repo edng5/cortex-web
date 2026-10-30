@@ -13,7 +13,7 @@
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import TouchControls from './TouchControls.svelte';
 	import GameLoading from './GameLoading.svelte';
-	import { pullSave, watchSave } from '$lib/games/cloud-save';
+	import { accountTag, pullSave, watchSave } from '$lib/games/cloud-save';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
 
@@ -46,12 +46,15 @@
 		let raf = 0;
 		let disposed = false;
 		// Signed in: start from the account's progress if it's newer (coins, upgrades, settings…),
-		// and keep sending changes to it while playing.
+		// and keep sending changes to it while playing. Only once in step with the account: a
+		// save started while it couldn't be reached (or signed out) never goes over the account's.
 		let sync: ReturnType<typeof watchSave> | null = null;
 		const shown = performance.now();
-		const ready = (session.user ? pullSave(spec.id, spec.saveKey) : Promise.resolve()).then(() => {
+		const user = session.user;
+		const tag = user ? accountTag(user.email) : null;
+		const ready = (tag ? pullSave(spec.id, spec.saveKey, tag) : Promise.resolve(false)).then((inStep) => {
 			// Watch from here on (so taking the account's copy doesn't count as a new change).
-			sync = watchSave(spec.id, spec.saveKey, () => !!session.user);
+			sync = watchSave(spec.id, spec.saveKey, () => (inStep && session.user?.email === user?.email ? tag : null));
 			syncFlush = sync.flush;
 		});
 		const atLeast = <T,>(v: T) => new Promise<T>((done) => setTimeout(() => done(v), Math.max(0, shown + 900 - performance.now())));

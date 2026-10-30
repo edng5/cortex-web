@@ -13,6 +13,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"gen-keys": "tsx scripts/gen-keys.ts",
 		"audit": "tsx --env-file=.env scripts/audit.ts",
+		"ifish:restore": "tsx scripts/ifish-restore.ts",
 		"email:test": "tsx --env-file=.env scripts/email-test.ts",
 		"email:setup": "tsx scripts/email-setup.ts"
 	},

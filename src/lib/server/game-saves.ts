@@ -3,8 +3,12 @@
 // game itself stores it in the browser; the copy that changed most recently wins.
 import { getDb } from './db';
 
-/** Far larger than any game's save; anything bigger is refused. */
-export const MAX_SAVE_BYTES = 32_000;
+/**
+ * Far larger than any game's save; anything bigger is refused. A big FishMart store is well over
+ * 50 KB (its wiki and research alone are ~50 KB once complete). Sent as JSON inside JSON, so this
+ * stays well under the server's 512 KB request limit.
+ */
+export const MAX_SAVE_BYTES = 300_000;
 
 export function getSave(userId: string, game: string): { data: string; savedAt: number } | null {
 	const row = getDb().prepare('SELECT data, saved_at FROM game_saves WHERE user_id = ? AND game = ?').get(userId, game) as
