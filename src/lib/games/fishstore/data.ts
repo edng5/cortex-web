@@ -170,7 +170,7 @@ function parseCatalog(): Species[] {
 		sci: 'Pokémon (easter egg)',
 		water: 'fresh',
 		temp: 'tropical',
-		size: 'XL',
+		size: 'L',
 		rarity: 'mythic',
 		likes: ['plants', 'sand'],
 		shape: 'magikarp',
@@ -549,12 +549,19 @@ export const hybridGroup = (s: Species) => HYBRID_GROUPS.find((g) => g.members.s
 /** The one legendary pair that can hatch a mythic. */
 export const MYTHIC_CROSS = { a: 'platinum-arowana', b: 'albino-silver-arowana', makes: 'celestial-dragon', odds: 0.15 };
 export const isMythicCross = (a: Species, b: Species) => (a.id === MYTHIC_CROSS.a && b.id === MYTHIC_CROSS.b) || (a.id === MYTHIC_CROSS.b && b.id === MYTHIC_CROSS.a);
-export type BreedKind = 'pure' | 'strains' | 'hybrid' | 'legend';
+export type BreedKind = 'pure' | 'strains' | 'hybrid' | 'legend' | 'karp';
+/** Magikarp (gold or not): the one mythic that breeds, and its babies are sometimes shiny. */
+export const isKarp = (s: Species) => s.id === 'magikarp' || s.id === 'shiny-magikarp';
+/** Chance each Magikarp baby hatches shiny, before luck (one in seven, like a catch). */
+export const SHINY_KARP_ODDS = 1 / 7;
+/** Mythic fish don't breed in captivity, except Magikarp. */
+export const canBreedAtAll = (s: Species) => s.rarity !== 'mythic' || isKarp(s);
 /**
  * Can these two breed? The same species always can (varieties mix their strains); different
  * species only if they really interbreed (see HYBRID_GROUPS) and share water.
  */
 export function canBreed(a: Species, b: Species): { ok: true; kind: BreedKind; cross: boolean; group?: (typeof HYBRID_GROUPS)[number] } | { ok: false; why: string } {
+	if (isKarp(a) && isKarp(b)) return { ok: true, kind: 'karp', cross: false };
 	if (a.rarity === 'mythic' || b.rarity === 'mythic') return { ok: false, why: "Mythic fish don't breed in captivity." };
 	if (isMythicCross(a, b)) return { ok: true, kind: 'legend', cross: true };
 	if (a.id === b.id) return { ok: true, kind: 'pure', cross: false };

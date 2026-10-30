@@ -18,6 +18,7 @@ import {
 	hatchTime,
 	breedTime,
 	canBreed,
+	SHINY_KARP_ODDS,
 	MYTHIC_CROSS,
 	speciesName,
 	BUILD_TASKS,
@@ -1106,6 +1107,9 @@ export class FishStore {
 			if (how.ok && how.kind === 'legend' && Math.random() < MYTHIC_CROSS.odds * (1 + this.luck() / 100)) {
 				// The legend: two legendary arowanas, and a dragon.
 				sp = species(MYTHIC_CROSS.makes);
+			} else if (how.ok && how.kind === 'karp') {
+				// Magikarp: one baby in seven hatches shiny, whatever colour the parents are.
+				sp = species(Math.random() < SHINY_KARP_ODDS * (1 + this.luck() / 100) ? 'shiny-magikarp' : 'magikarp');
 			} else if (how.ok && how.kind === 'strains' && Math.random() < HYBRID_ODDS) {
 				// Mixing strains of one species sometimes brings out another of its strains.
 				const kin = WILD.filter((s) => speciesName(s) === speciesName(a) && RARITIES.indexOf(s.rarity) <= top && s.id !== a.id && s.id !== z.id);

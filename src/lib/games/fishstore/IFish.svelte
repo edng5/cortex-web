@@ -25,6 +25,7 @@
 		BROOD,
 		hatchTime,
 		canBreed,
+		canBreedAtAll,
 		speciesName,
 		LAB_COST,
 		LAB_TIME,
@@ -805,9 +806,9 @@
 			<button class="gem" onclick={() => buy(`Finish ${task.label.toLowerCase()} now?`, store.gemsToFinish(task), () => act(store.rush(task.id), 'done'), { gems: true, yes: 'Finish now' })}>Finish now 💎{store.gemsToFinish(task)}</button>
 		{/if}
 	{:else}
-		{@const males = myFish.filter((f) => f.g === 'm' && f.u !== s.center && species(f.s).rarity !== 'mythic')}
+		{@const males = myFish.filter((f) => f.g === 'm' && f.u !== s.center && canBreedAtAll(species(f.s)))}
 		{@const dad = myFish.find((f) => f.u === breedM)}
-		{@const moms = myFish.filter((f) => f.g === 'f' && f.u !== s.center && species(f.s).rarity !== 'mythic').sort((a, b) => (dad ? +canBreed(species(dad.s), species(b.s)).ok - +canBreed(species(dad.s), species(a.s)).ok : 0))}
+		{@const moms = myFish.filter((f) => f.g === 'f' && f.u !== s.center && canBreedAtAll(species(f.s))).sort((a, b) => (dad ? +canBreed(species(dad.s), species(b.s)).ok - +canBreed(species(dad.s), species(a.s)).ok : 0))}
 		{@const mom = myFish.find((f) => f.u === breedF)}
 		<p class="muted small">Pick a ♂ male and a ♀ female: the same species, or fish that really interbreed (like platies and swordtails, or goldfish and koi). A Research Scientist looks after them. They lay eggs (the parents go back to the backroom), and the eggs hatch a while later.</p>
 		<div class="row">
@@ -834,6 +835,7 @@
 				<p class="small">
 					{#if c.kind === 'legend'}✨ An old legend says that when these two legendary arowanas breed, a dragon is sometimes born…
 					{:else if c.kind === 'hybrid'}A real-life hybrid ({c.group?.name} interbreed): the babies take after either parent{c.group?.makes ? `, and now and then come out as a ${c.group.makes.map((id) => species(id).name).join(' or ')}` : ''}.
+					{:else if c.kind === 'karp'}Babies will be Magikarp, and about one in seven hatches ✨ shiny.
 					{:else if c.kind === 'strains'}Two strains of {speciesName(a)}: the babies take after either parent, and now and then show another strain.
 					{:else}Babies will be {a.name}s.{/if}
 					{#if ALBINO_OF[a.id] || ALBINO_OF[z.id]}✨ A very rare albino is possible.{/if}
@@ -1787,7 +1789,7 @@
 						</span>
 						<span class="price">Store price {money(priceOf(sp))}</span>
 						<span class="small">Likes: {sp.likes.map((l) => TANK_DECOR.find((d) => d.id === l)?.name).join(', ')}</span>
-						{#if sp.bred}<span class="small limited">✨ Only from breeding: a very rare surprise in a brood.</span>{:else if ALBINO_OF[sp.id]}<span class="small">💞 Breeding these can very rarely give an albino.</span>{/if}
+						{#if sp.bred}<span class="small limited">✨ Only from breeding: a very rare surprise in a brood.</span>{:else if ALBINO_OF[sp.id]}<span class="small">💞 Breeding these can very rarely give an albino.</span>{:else if sp.id === 'magikarp'}<span class="small">💞 Breeding Magikarp: about one baby in seven hatches shiny.</span>{/if}
 					</div>
 				</div>
 				<h4>🔬 Research · level {lvl}/{RESEARCH_MAX}</h4>
