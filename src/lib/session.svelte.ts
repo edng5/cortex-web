@@ -76,8 +76,8 @@ class Session {
 		this.limitOpen = true;
 	}
 
-	/** Ask for a one-time sign-in link. Returns the message to show. */
-	async sendEmailLink(email: string): Promise<{ ok: boolean; message: string; devLink?: string }> {
+	/** Ask for a 4-digit sign-in code by email. Returns the message to show. */
+	async sendEmailCode(email: string): Promise<{ ok: boolean; message: string; devCode?: string }> {
 		try {
 			const res = await fetch('/auth/email', {
 				method: 'POST',
@@ -88,8 +88,27 @@ class Session {
 			return {
 				ok: res.ok,
 				message: data.message ?? (res.ok ? 'Check your email.' : 'Something went wrong.'),
-				devLink: data.devLink
+				devCode: data.devCode
 			};
+		} catch {
+			return { ok: false, message: 'Could not reach the server.' };
+		}
+	}
+
+	/** Sign in with the emailed code (the page reloads, signed in). Returns the problem if not. */
+	async verifyEmailCode(email: string, code: string): Promise<{ ok: boolean; message: string }> {
+		try {
+			const res = await fetch('/auth/email/verify', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email, code })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (res.ok) {
+				location.reload();
+				return { ok: true, message: '' };
+			}
+			return { ok: false, message: data.message ?? 'Something went wrong.' };
 		} catch {
 			return { ok: false, message: 'Could not reach the server.' };
 		}

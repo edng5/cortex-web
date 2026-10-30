@@ -36,12 +36,18 @@ export function getDb(): Database.Database {
 			created_at  INTEGER NOT NULL,
 			expires_at  INTEGER NOT NULL
 		);
-		CREATE TABLE IF NOT EXISTS login_links (
-			token_hash  TEXT PRIMARY KEY,
-			email_hash  TEXT NOT NULL,
+		-- Sign-in codes, one per email (sign-in links before them).
+		DROP TABLE IF EXISTS login_links;
+		CREATE TABLE IF NOT EXISTS login_codes (
+			email_hash  TEXT PRIMARY KEY,       -- blind index of the email
 			email_enc   TEXT NOT NULL,
+			code_hash   TEXT,                   -- HMAC of the current code; NULL once used or burned
 			expires_at  INTEGER NOT NULL,
-			used_at     INTEGER
+			tries       INTEGER NOT NULL,       -- wrong guesses at the current code
+			sends       INTEGER NOT NULL,       -- codes sent since sends_from (hourly cap)
+			sends_from  INTEGER NOT NULL,
+			fails       INTEGER NOT NULL,       -- wrong guesses since fails_from (daily cap)
+			fails_from  INTEGER NOT NULL
 		);
 		-- Free questions for visitors who aren't logged in, keyed by a blind index of their IP.
 		CREATE TABLE IF NOT EXISTS anon_usage (
@@ -58,7 +64,7 @@ export function getDb(): Database.Database {
 		CREATE TABLE IF NOT EXISTS audit_log (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			ts          INTEGER NOT NULL,
-			event       TEXT NOT NULL,          -- login | login_link_sent | logout | chat_prompt | chat_blocked | quota_exceeded
+			event       TEXT NOT NULL,          -- login | login_code_sent | logout | chat_prompt | chat_blocked | quota_exceeded
 			user_id     TEXT,
 			email_enc   TEXT,
 			ip_enc      TEXT,
@@ -148,7 +154,7 @@ export function purgeExpired(): void {
 	const now = Date.now();
 	db.prepare('DELETE FROM audit_log WHERE ts < ?').run(now - AUDIT_RETENTION_DAYS * 86_400_000);
 	db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
-	db.prepare('DELETE FROM login_links WHERE expires_at < ?').run(now - 86_400_000);
+	db.prepare('DELETE FROM login_codes WHERE expires_at < ?').run(now - 86_400_000);
 	const twoDaysAgo = new Date(now - 2 * 86_400_000).toISOString().slice(0, 10);
 	db.prepare('DELETE FROM user_usage WHERE day < ?').run(twoDaysAgo);
 }

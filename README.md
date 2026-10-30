@@ -106,7 +106,7 @@ nginx), set adapter-node's `ADDRESS_HEADER=X-Forwarded-For` so visitors are told
 1. `npm run gen-keys` → adds `AUTH_ENC_KEY` and `AUTH_HMAC_KEY` to `.env` (encryption keys; never
    change them once set, or stored data becomes unreadable; back them up).
 2. Set `ORIGIN` to your public URL (e.g. `https://edng5.com`).
-3. Email sign-in: set `SMTP_URL` and `EMAIL_FROM`. Without SMTP, links are printed to the server console.
+3. Email sign-in: set `SMTP_URL` and `EMAIL_FROM`. Without SMTP, codes are printed to the server console.
 4. Google sign-in (optional): create an OAuth client (Web) in Google Cloud Console, add the redirect
    URI `<ORIGIN>/auth/google/callback`, and set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 5. Members: `MEMBER_EMAILS=a@x.com,b@y.com` unlocks the hidden **Surprise!** node
@@ -116,14 +116,15 @@ nginx), set adapter-node's `ADDRESS_HEADER=X-Forwarded-For` so visitors are told
 for visitors who aren't logged in, 10 per day when logged in. Failed answers are refunded.
 
 **Security**
-- No passwords: Google OAuth 2.0 with PKCE + state, or single-use email links (15 min, stored hashed).
+- No passwords: Google OAuth 2.0 with PKCE + state, or a single-use 4-digit email code (10 min, stored as an HMAC; 5 wrong tries burns it, 15 a day
+  locks the email until the next day, 5 codes an hour).
 - Session cookie: 32 random bytes, `HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS, 30 days; only
   its SHA-256 hash is stored.
 - Emails, IPs and prompt text are AES-256-GCM encrypted at rest; lookups use HMAC blind indexes.
 - Members-only nodes are never sent to, or searched for, anyone else (including in Cortex's answers).
 - Sign-in emails are rate-limited per IP and per address.
 
-**Audit log**: logins, sign-in link requests, logouts, every Cortex prompt (with its outcome),
+**Audit log**: logins, sign-in code requests, logouts, every Cortex prompt (with its outcome),
 blocks and limit hits. Read it with `npm run audit -- --days 7 [--event chat_prompt]`. Entries
 older than 90 days are deleted automatically (hourly).
 

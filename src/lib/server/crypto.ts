@@ -4,7 +4,7 @@
 //   Used for emails, IP addresses and chat prompts stored in the database.
 // - blindIndex: HMAC-SHA256 so an encrypted value can still be looked up
 //   (e.g. find a user by email, count an IP's free questions) without storing it in clear.
-// - hashToken: SHA-256 of a random bearer token (sessions, sign-in links). Only the hash
+// - hashToken: SHA-256 of a random bearer token (sessions). Only the hash
 //   is stored, so a database leak can't be replayed as live sessions.
 //
 // Keys come from env (generate them with `npm run gen-keys`):

@@ -1,18 +1,51 @@
-<!-- Log in: Google, or a one-time link by email. No passwords. -->
+<!-- Log in: Google, or a 4-digit code sent by email. No passwords. -->
 <script lang="ts">
 	import Modal from './Modal.svelte';
 	import { session } from '$lib/session.svelte';
 
 	let email = $state('');
 	let sending = $state(false);
-	let result = $state<{ ok: boolean; message: string; devLink?: string } | null>(null);
+	let result = $state<{ ok: boolean; message: string; devCode?: string } | null>(null);
+	/** The emailed code, as typed (digits only). */
+	let code = $state('');
+	let checking = $state(false);
+	let codeError = $state('');
+	let codeInput = $state<HTMLInputElement>();
 
-	async function sendLink(e: SubmitEvent) {
-		e.preventDefault();
+	async function sendCode(e?: SubmitEvent) {
+		e?.preventDefault();
 		if (!email.trim() || sending) return;
 		sending = true;
-		result = await session.sendEmailLink(email.trim());
+		result = await session.sendEmailCode(email.trim());
 		sending = false;
+		code = '';
+		codeError = '';
+		if (result.ok) setTimeout(() => codeInput?.focus());
+	}
+
+	async function checkCode(e?: SubmitEvent) {
+		e?.preventDefault();
+		if (code.length !== 4 || checking) return;
+		checking = true;
+		const r = await session.verifyEmailCode(email.trim(), code);
+		if (!r.ok) {
+			checking = false;
+			codeError = r.message;
+			code = '';
+			codeInput?.focus();
+		}
+	}
+
+	function typed() {
+		code = code.replace(/\D/g, '').slice(0, 4);
+		codeError = '';
+		if (code.length === 4) checkCode();
+	}
+
+	function startOver() {
+		result = null;
+		code = '';
+		codeError = '';
 	}
 </script>
 
@@ -35,16 +68,36 @@
 			<div class="or"><span>or</span></div>
 		{/if}
 
-		{#if result?.ok && result.devLink}
-			<div class="dev">
-				<p>{result.message}</p>
-				<a href={result.devLink}>Sign in as {email.trim()}</a>
-			</div>
-		{:else if result?.ok}
-			<p class="sent">{result.message}</p>
+		{#if result?.ok}
+			<form onsubmit={checkCode}>
+				<p class={result.devCode ? 'dev' : 'sent'}>{result.message}</p>
+				<label for="login-code">Enter the 4-digit code</label>
+				<div class="row">
+					<input
+						id="login-code"
+						class="code"
+						bind:this={codeInput}
+						bind:value={code}
+						oninput={typed}
+						inputmode="numeric"
+						autocomplete="one-time-code"
+						pattern="[0-9]*"
+						maxlength="4"
+						placeholder="••••"
+						disabled={checking}
+					/>
+					<button type="submit" disabled={checking || code.length !== 4}>{checking ? 'Signing in…' : 'Sign in'}</button>
+				</div>
+				{#if codeError}<p class="err">{codeError}</p>{/if}
+				<p class="again">
+					<button type="button" class="link" onclick={() => sendCode()} disabled={sending}>{sending ? 'Sending…' : 'Send a new code'}</button>
+					·
+					<button type="button" class="link" onclick={startOver}>Use a different email</button>
+				</p>
+			</form>
 		{:else}
-			<form onsubmit={sendLink}>
-				<label for="login-email">Email me a sign-in link</label>
+			<form onsubmit={sendCode}>
+				<label for="login-email">Email me a sign-in code</label>
 				<div class="row">
 					<input
 						id="login-email"
@@ -55,7 +108,7 @@
 						required
 						maxlength="254"
 					/>
-					<button type="submit" disabled={sending || !email.trim()}>{sending ? 'Sending…' : 'Send link'}</button>
+					<button type="submit" disabled={sending || !email.trim()}>{sending ? 'Sending…' : 'Send code'}</button>
 				</div>
 				{#if result && !result.ok}<p class="err">{result.message}</p>{/if}
 			</form>
@@ -140,25 +193,35 @@
 		border: 1px solid rgba(52, 211, 153, 0.4);
 		color: #a7f3d0;
 	}
+	.sent,
+	.dev {
+		margin: 0 0 14px;
+		font-size: 0.88rem;
+	}
 	.dev {
 		padding: 12px;
 		border-radius: 10px;
 		background: rgba(251, 191, 36, 0.08);
 		border: 1px solid rgba(251, 191, 36, 0.45);
 		color: #fde68a;
-		font-size: 0.88rem;
 	}
-	.dev p {
-		margin: 0 0 10px;
+	.code {
+		font-size: 1.3rem;
+		letter-spacing: 0.5em;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
 	}
-	.dev a {
-		display: inline-block;
-		padding: 8px 14px;
-		border-radius: 8px;
-		background: #f59e0b;
-		color: #111827;
-		font-weight: 600;
-		text-decoration: none;
+	.again {
+		margin: 10px 0 0;
+		font-size: 0.82rem;
+		color: var(--muted);
+	}
+	.link {
+		padding: 0;
+		background: none;
+		color: #7dd3fc;
+		font-weight: 500;
+		text-decoration: underline;
 	}
 	.err,
 	.warn {

@@ -1,11 +1,13 @@
 // Accounts, sessions and passwordless email sign-in.
 //
 // Security model
-// - No passwords: sign in with Google (OAuth 2.0 + PKCE) or a one-time email link.
+// - No passwords: sign in with Google (OAuth 2.0 + PKCE) or a 4-digit code sent by email.
 // - Session = 32 random bytes in an HttpOnly, Secure, SameSite=Lax cookie. The database only
 //   stores sha256(token), so a leaked DB can't be used to hijack sessions. 30-day expiry,
 //   extended on use ("remember me" for the next visit).
-// - Sign-in links: random token, stored hashed, single use, expire after 15 minutes.
+// - Sign-in codes: random, stored as an HMAC, single use, expire after 10 minutes. Guessing is
+//   capped: 5 wrong tries burns the code, 15 a day locks the email out until the day is up, and
+//   only 5 codes are sent an hour, so a 4-digit code can't be worked out by trying them all.
 // - Emails are stored AES-256-GCM encrypted, looked up via an HMAC blind index.
 // - Members: emails listed in MEMBER_EMAILS (env, comma-separated) — never in the repo.
 import crypto from 'node:crypto';
@@ -15,7 +17,11 @@ import { blindIndex, decrypt, encrypt, hashToken, randomToken } from './crypto';
 export const SESSION_COOKIE = 'cortex_session';
 export const SESSION_DAYS = 30;
 const SESSION_MS = SESSION_DAYS * 86_400_000;
-const LINK_MS = 15 * 60_000;
+export const CODE_MINUTES = 10;
+const CODE_MS = CODE_MINUTES * 60_000;
+const CODE_TRIES = 5;
+const SENDS_PER_HOUR = 5;
+const FAILS_PER_DAY = 15;
 
 export interface SessionUser {
 	id: string;
@@ -110,35 +116,76 @@ export function deleteSession(token: string | undefined): void {
 	if (token) getDb().prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
 }
 
-// ── Email sign-in links ───────────────────────────────────────────────────
+// ── Email sign-in codes ───────────────────────────────────────────────────
 
-/** Recent links for this email/IP — used to throttle sending. */
-export function recentLinkCount(email: string, windowMs = 60 * 60_000): number {
-	const row = getDb()
-		.prepare('SELECT COUNT(*) AS n FROM login_links WHERE email_hash = ? AND expires_at > ?')
-		.get(blindIndex('email', normaliseEmail(email)), Date.now() - windowMs + LINK_MS) as { n: number };
-	return row.n;
-}
+type CodeRow = {
+	email_enc: string;
+	code_hash: string | null;
+	expires_at: number;
+	tries: number;
+	sends: number;
+	sends_from: number;
+	fails: number;
+	fails_from: number;
+};
+const codeHash = (emailHash: string, code: string) => blindIndex('login-code', `${emailHash}:${code}`);
+const codeRow = (emailHash: string) => getDb().prepare('SELECT * FROM login_codes WHERE email_hash = ?').get(emailHash) as CodeRow | undefined;
 
-export function createLoginLink(email: string): string {
+/**
+ * A new sign-in code for this email (any earlier one stops working), or null if it's had too
+ * many codes this hour, or too many wrong guesses today.
+ */
+export function createLoginCode(email: string): string | null {
 	const e = normaliseEmail(email);
-	const token = randomToken();
+	const eh = blindIndex('email', e);
+	const now = Date.now();
+	const row = codeRow(eh);
+	const hourly = row && now - row.sends_from < 60 * 60_000;
+	const daily = row && now - row.fails_from < 86_400_000;
+	if ((hourly && row.sends >= SENDS_PER_HOUR) || (daily && row.fails >= FAILS_PER_DAY)) return null;
+	const code = String(crypto.randomInt(0, 10_000)).padStart(4, '0');
 	getDb()
-		.prepare('INSERT INTO login_links (token_hash, email_hash, email_enc, expires_at) VALUES (?, ?, ?, ?)')
-		.run(hashToken(token), blindIndex('email', e), encrypt(e), Date.now() + LINK_MS);
-	return token;
+		.prepare(
+			`INSERT INTO login_codes (email_hash, email_enc, code_hash, expires_at, tries, sends, sends_from, fails, fails_from)
+			 VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
+			 ON CONFLICT(email_hash) DO UPDATE SET email_enc = excluded.email_enc, code_hash = excluded.code_hash,
+			   expires_at = excluded.expires_at, tries = 0, sends = excluded.sends, sends_from = excluded.sends_from,
+			   fails = excluded.fails, fails_from = excluded.fails_from`
+		)
+		.run(eh, encrypt(e), codeHash(eh, code), now + CODE_MS, hourly ? row.sends + 1 : 1, hourly ? row.sends_from : now, daily ? row.fails : 0, daily ? row.fails_from : now);
+	return code;
 }
 
-/** Single-use: returns the email if the link is valid, and burns it. */
-export function consumeLoginLink(token: string): string | null {
-	if (!token || token.length > 100) return null;
+/**
+ * Check a code typed in. Right: the email (and the code is used up). Wrong: why, and how many
+ * tries are left on this code.
+ */
+export function consumeLoginCode(email: string, code: string): { ok: true; email: string } | { ok: false; reason: 'wrong' | 'expired' | 'locked'; triesLeft: number } {
+	const eh = blindIndex('email', normaliseEmail(email));
+	const now = Date.now();
+	const row = codeRow(eh);
+	if (!row || !row.code_hash || row.expires_at < now) return { ok: false, reason: 'expired', triesLeft: 0 };
+	if (now - row.fails_from < 86_400_000 && row.fails >= FAILS_PER_DAY) return { ok: false, reason: 'locked', triesLeft: 0 };
 	const db = getDb();
-	const th = hashToken(token);
-	const row = db
-		.prepare('SELECT email_enc, expires_at, used_at FROM login_links WHERE token_hash = ?')
-		.get(th) as { email_enc: string; expires_at: number; used_at: number | null } | undefined;
-	if (!row || row.used_at || row.expires_at < Date.now()) return null;
-	const res = db.prepare('UPDATE login_links SET used_at = ? WHERE token_hash = ? AND used_at IS NULL').run(Date.now(), th);
-	if (res.changes !== 1) return null; // lost a race with another click
-	return decrypt(row.email_enc);
+	const given = /^\d{4}$/.test(code) ? codeHash(eh, code) : '';
+	const right = given.length === row.code_hash.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(row.code_hash));
+	if (right) {
+		// Used up (only one request can win, if two arrive at once).
+		const res = db.prepare('UPDATE login_codes SET code_hash = NULL WHERE email_hash = ? AND code_hash = ?').run(eh, row.code_hash);
+		if (res.changes === 1) return { ok: true, email: decrypt(row.email_enc) };
+		return { ok: false, reason: 'expired', triesLeft: 0 };
+	}
+	const tries = row.tries + 1;
+	const freshDay = now - row.fails_from >= 86_400_000;
+	const fails = freshDay ? 1 : row.fails + 1;
+	const burned = tries >= CODE_TRIES || fails >= FAILS_PER_DAY;
+	db.prepare('UPDATE login_codes SET tries = ?, fails = ?, fails_from = ?, code_hash = ? WHERE email_hash = ?').run(
+		tries,
+		fails,
+		freshDay ? now : row.fails_from,
+		burned ? null : row.code_hash,
+		eh
+	);
+	if (fails >= FAILS_PER_DAY) return { ok: false, reason: 'locked', triesLeft: 0 };
+	return { ok: false, reason: burned ? 'expired' : 'wrong', triesLeft: CODE_TRIES - tries };
 }
