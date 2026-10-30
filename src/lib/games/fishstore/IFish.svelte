@@ -727,7 +727,7 @@
 				{#if sale}
 					<TankCanvas fish={t.fish} water={t.water} clean={t.clean} widthCm={cm} height={200} decor={['gravel']} />
 				{:else}
-					<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={cm} center={viewTank.center} happy={80} height={260} look={viewTank.look} growth={t.growth ?? 30} stand />
+					<TankCanvas fish={t.fish} decor={t.decor} water={t.water} clean={t.clean} widthCm={cm} center={viewTank.center} happy={80} height={260} tallCm={46} look={viewTank.look} growth={t.growth ?? 30} stand />
 				{/if}
 			</div>
 		</div>

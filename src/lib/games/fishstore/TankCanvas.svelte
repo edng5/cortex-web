@@ -28,7 +28,8 @@
 		height = 220,
 		look = DEFAULT_LOOK,
 		growth = 30,
-		stand = false
+		stand = false,
+		tallCm = 0
 	}: {
 		fish: Fish[];
 		decor?: DecorTag[];
@@ -43,6 +44,8 @@
 		growth?: number;
 		/** Draw the cabinet stand under the tank. */
 		stand?: boolean;
+		/** How tall the glass is in cm, for a short, wide view: fish are never drawn bigger than that allows. */
+		tallCm?: number;
 	} = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
@@ -816,7 +819,7 @@
 	function swim(c: CanvasRenderingContext2D, t: number, dt: number, items: { z: number; f: () => void }[], W: number) {
 		const live = new Set(fish.map((f) => f.u));
 		for (const u of swimmers.keys()) if (!live.has(u)) swimmers.delete(u);
-		const pxPerCm = (fx1 - fx0) / widthCm;
+		const pxPerCm = Math.min((fx1 - fx0) / widthCm, tallCm ? (fy1 - fy0) / tallCm : Infinity);
 		for (const f of fish) {
 			const sp = species(f.s);
 			const isCenter = f.u === center;
