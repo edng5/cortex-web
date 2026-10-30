@@ -235,21 +235,30 @@
 	<div
 		class="scene"
 		onpointerdown={(e) => {
+			// The left mouse button, a finger or a pen: hook the fish, then hold to reel.
+			if (e.button !== 0) return;
 			e.preventDefault();
+			// Keep hold of the press even if the mouse drifts off the water while reeling.
+			try {
+				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+			} catch {
+				// (not a live pointer)
+			}
 			if (phase === 'bite' || phase === 'wait') hook();
 			holding = true;
 		}}
 		onpointerup={() => (holding = false)}
-		onpointerleave={() => (holding = false)}
 		onpointercancel={() => (holding = false)}
+		onlostpointercapture={() => (holding = false)}
+		oncontextmenu={(e) => e.preventDefault()}
 	>
 		<canvas bind:this={canvas} style="height: 300px"></canvas>
 		{#if phase === 'reel' && fish}
-			<p class="hint" style="--c: {RARITY_COLOR[fish.rarity]}">Something <b>{RARITY_LABEL[fish.rarity]}</b> is on the line! Hold to lift the green bar.</p>
+			<p class="hint" style="--c: {RARITY_COLOR[fish.rarity]}">Something <b>{RARITY_LABEL[fish.rarity]}</b> is on the line! Hold (click / touch / Space) to lift the green bar.</p>
 		{:else if phase === 'wait'}
-			<p class="hint">Waiting for a bite… tap / Space when you see "!"</p>
+			<p class="hint">Waiting for a bite… click / tap / Space when you see "!"</p>
 		{:else if phase === 'bite'}
-			<p class="hint big">BITE! Tap / Space now!</p>
+			<p class="hint big">BITE! Click / tap / Space now!</p>
 		{/if}
 	</div>
 
