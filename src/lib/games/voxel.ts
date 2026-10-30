@@ -20,7 +20,28 @@ export const model = (boxes: Box[]): Model => boxes.sort((p, q) => p.y + p.d + p
 /** Draw order for a flat model with details lying on top of it (Magikarp): bottom up, then back to front. */
 export const layered = (boxes: Box[]): Model => boxes.sort((p, q) => p.z - q.z || p.y + p.d - (q.y + q.d));
 
+// Shading is asked for over and over with the same colours (every block of every model, every
+// frame), so the answers are remembered. Shades that drift smoothly (glows) would fill the cache
+// forever, so it starts afresh when it gets big.
+const shades = new Map<string, Map<number, string>>();
+let remembered = 0;
 export function shade(color: string, f: number): string {
+	let byF = shades.get(color);
+	if (!byF) shades.set(color, (byF = new Map()));
+	let out = byF.get(f);
+	if (out === undefined) {
+		if (++remembered > 4000) {
+			shades.clear();
+			shades.set(color, byF);
+			byF.clear();
+			remembered = 1;
+		}
+		out = computeShade(color, f);
+		byF.set(f, out);
+	}
+	return out;
+}
+function computeShade(color: string, f: number): string {
 	const ch = (v: number) => Math.max(0, Math.min(255, Math.round(v * f)));
 	// Also takes an already-shaded rgb(...) colour, so shades can be stacked.
 	if (color.startsWith('rgb')) {
@@ -31,6 +52,15 @@ export function shade(color: string, f: number): string {
 	return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
 }
 
+/** Each colour's lit top and shaded front, by colour (the hot path: every block, every frame). */
+const tops = new Map<string, string>();
+const fronts = new Map<string, string>();
+const lit = (map: Map<string, string>, c: string, f: number) => {
+	let out = map.get(c);
+	if (out === undefined) map.set(c, (out = shade(c, f)));
+	return out;
+};
+
 /** Draw a model with its tile's top-left at (px, py): `T` px per tile, `Z` px per tile of height. */
 export function drawVoxel(ctx: CanvasRenderingContext2D, m: Model, px: number, py: number, T: number, Z: number, s = 1, alpha = 1, flatten = 1) {
 	for (const b of m) {
@@ -38,9 +68,9 @@ export function drawVoxel(ctx: CanvasRenderingContext2D, m: Model, px: number, p
 		const X = px + b.x * T * s;
 		const W = b.w * T * s;
 		const top = py + b.y * T * s - (b.z + b.h) * Z * s * flatten;
-		ctx.fillStyle = shade(b.c, 1.14);
+		ctx.fillStyle = lit(tops, b.c, 1.14);
 		ctx.fillRect(X, top, W, b.d * T * s);
-		ctx.fillStyle = shade(b.c, 0.74);
+		ctx.fillStyle = lit(fronts, b.c, 0.74);
 		ctx.fillRect(X, py + (b.y + b.d) * T * s - (b.z + b.h) * Z * s * flatten, W, b.h * Z * s * flatten);
 	}
 	ctx.globalAlpha = 1;

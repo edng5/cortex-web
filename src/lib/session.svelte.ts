@@ -23,6 +23,8 @@ class Session {
 	/** E.Ngine Games pop-up, and the game showing in it (null = the games menu). */
 	gameOpen = $state(false);
 	gameId = $state<string | null>(null);
+	/** Opened from the header's Play button: leaving a game goes back to the games menu. */
+	gamesFromHeader = $state(false);
 	/** Nickname, also the leaderboard name (undefined = not loaded yet, null = not chosen). */
 	playerName = $state<string | null | undefined>(undefined);
 
@@ -33,9 +35,10 @@ class Session {
 		this.auth = data.auth;
 	}
 
-	/** Open the E.Ngine Games pop-up, on a game or on its menu. */
-	openGames(id: string | null = null) {
+	/** Open the E.Ngine Games pop-up, on a game or on its menu (`fromHeader`: the header's Play button). */
+	openGames(id: string | null = null, fromHeader = false) {
 		this.gameId = id;
+		this.gamesFromHeader = fromHeader;
 		this.gameOpen = true;
 	}
 

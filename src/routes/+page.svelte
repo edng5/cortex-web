@@ -138,6 +138,7 @@
 		onbackground={() => found && cortex.reset()}
 		{filterType}
 		{filterOrder}
+		paused={session.gameOpen}
 	/>
 
 	<header class="hero">

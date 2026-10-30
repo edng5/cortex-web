@@ -148,6 +148,7 @@
 	function draw(t: number) {
 		if (!canvas) return;
 		const W = canvas.clientWidth;
+		if (W < 10) return; // hidden: nothing to draw (the fishing itself carries on)
 		const H = 300;
 		const dpr = Math.min(2, window.devicePixelRatio || 1);
 		if (canvas.width !== Math.round(W * dpr)) {

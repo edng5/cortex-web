@@ -84,7 +84,7 @@
 			<span class="label">{ambient.muted ? 'Mute on' : 'Mute off'}</span>
 		</button>
 		<!-- E.Ngine Games: the joystick icon and "Play". -->
-		<button class="play" onclick={() => session.openGames()} aria-label="Play E.Ngine Games" title="Play E.Ngine Games">
+		<button class="play" onclick={() => session.openGames(null, true)} aria-label="Play E.Ngine Games" title="Play E.Ngine Games">
 			<img src="/games/engine-icon.png" alt="" width="22" height="22" />
 			<span>Play</span>
 		</button>

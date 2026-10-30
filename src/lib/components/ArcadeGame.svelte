@@ -86,10 +86,15 @@
 				let last = performance.now();
 				let acc = 0;
 				const frame = (now: number) => {
+					// Hidden or paused: stop the loop (no wake-ups) until it's showing again.
+					if (!playing) {
+						raf = 0;
+						return;
+					}
 					raf = requestAnimationFrame(frame);
-					const dt = Math.min(250, now - last);
+					const dt = Math.max(0, Math.min(250, now - last));
 					last = now;
-					if (!game || !ctx || !playing) return;
+					if (!game || !ctx) return;
 					const g = !!game.gestures?.();
 					if (g !== gestures) gestures = g;
 					const d = game.disabledButtons?.().join(' ') ?? '';
@@ -105,9 +110,21 @@
 						steps++;
 					}
 					if (steps === 10) acc = 0; // fell far behind (tab was busy): don't fast-forward
-					game.paint(ctx, now);
+					// Draw only when something changed (a tick, or input since the last frame). On a
+					// faster screen than the game's tick rate (120 Hz phones), the frames in between
+					// would show exactly the same picture.
+					if (steps || repaint) {
+						repaint = false;
+						game.paint(ctx, now);
+					}
 				};
 				raf = requestAnimationFrame(frame);
+				resumeLoop = () => {
+					if (raf) return;
+					repaint = true;
+					last = performance.now();
+					raf = requestAnimationFrame(frame);
+				};
 				queueMicrotask(() => canvas?.focus());
 			})
 			.catch((err) => {
@@ -115,6 +132,7 @@
 				status = 'error';
 			});
 		return () => {
+			resumeLoop = null;
 			upright.removeEventListener('change', onTurn);
 			disposed = true;
 			cancelAnimationFrame(raf);
@@ -141,7 +159,10 @@
 	async function loadBoard() {
 		try {
 			const res = await fetch(url);
-			if (res.ok && game) game.global = (await res.json()) as Board;
+			if (res.ok && game) {
+				game.global = (await res.json()) as Board;
+				repaint = true;
+			}
 		} catch {
 			/* offline: the high scores screen falls back to this browser's scores */
 		}
@@ -157,14 +178,27 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ board, score })
 			});
-			if (res.ok && game) game.global = (await res.json()) as Board;
+			if (res.ok && game) {
+				game.global = (await res.json()) as Board;
+				repaint = true;
+			}
 		} catch {
 			/* offline: the score still counts in this browser */
 		}
 	}
 	$effect(() => {
 		const signedIn = !!session.user;
-		if (game) game.loggedIn = signedIn;
+		if (game) {
+			game.loggedIn = signedIn;
+			repaint = true;
+		}
+	});
+	/** Restarts a canvas game's frame loop once it's showing again. */
+	let resumeLoop: (() => void) | null = null;
+	/** Input arrived since the last frame was drawn: draw the next one even without a tick. */
+	let repaint = true;
+	$effect(() => {
+		if (playing) resumeLoop?.();
 	});
 	// A new leaderboard name: show it on the board.
 	$effect(() => {
@@ -192,6 +226,7 @@
 
 	function onKeyDown(e: KeyboardEvent) {
 		if (!game || !active) return;
+		repaint = true;
 		if (game.keyPressed(e.code)) {
 			e.preventDefault();
 			held.add(e.code);
@@ -199,6 +234,7 @@
 	}
 	function onKeyUp(e: KeyboardEvent) {
 		if (!game) return;
+		repaint = true;
 		if (game.keyReleased(e.code)) {
 			e.preventDefault();
 			held.delete(e.code);
@@ -207,15 +243,18 @@
 	// On-screen controls: the same as pressing and releasing keys.
 	function touchPress(code: string) {
 		if (!game || !active) return;
+		repaint = true;
 		if (game.keyPressed(code)) held.add(code);
 	}
 	function touchRelease(code: string) {
 		if (!game) return;
+		repaint = true;
 		game.keyReleased(code);
 		held.delete(code);
 	}
 
 	function releaseAll() {
+		repaint = true;
 		for (const code of held) game?.keyReleased(code);
 		held.clear();
 	}
@@ -227,10 +266,12 @@
 	}
 	function onPointerMove(e: PointerEvent) {
 		if (!game || !active) return;
+		repaint = true;
 		pointer = game.pointerMove(...toGame(e));
 	}
 	function onPointerDown(e: PointerEvent) {
 		if (!game || !active || e.button !== 0) return;
+		repaint = true;
 		canvas?.focus();
 		game.pointerDown(...toGame(e));
 		pointer = game.pointerMove(...toGame(e));

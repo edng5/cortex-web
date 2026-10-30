@@ -15,6 +15,7 @@
 	import { DEFAULT_LOOK, TANK_LIGHTS, TANK_STANDS, TANK_TRIMS, species, type DecorTag, type TankLook, type Water } from './data';
 	import { drawFish } from './fishArt';
 	import { shade } from '../voxel';
+	import { visibleLoop } from '../visible-loop';
 	import type { Fish } from './store.svelte';
 
 	let {
@@ -63,19 +64,11 @@
 		phase: number;
 	}
 	const swimmers = new Map<number, Swimmer>();
+	/** The still back of the tank, drawn once (see draw), and what it was drawn for. */
+	let back: { key: string; canvas: HTMLCanvasElement } | null = null;
 
-	onMount(() => {
-		let raf = 0;
-		let last = performance.now();
-		const frame = (now: number) => {
-			raf = requestAnimationFrame(frame);
-			const dt = Math.min(0.05, (now - last) / 1000);
-			last = now;
-			draw(now / 1000, dt);
-		};
-		raf = requestAnimationFrame(frame);
-		return () => cancelAnimationFrame(raf);
-	});
+	// Animates only while it's on screen, at up to 60 frames a second.
+	onMount(() => visibleLoop(wrap!, (now, dt) => draw(now / 1000, Math.min(0.05, dt)), 60));
 
 	// ── The tank's geometry ─────────────────────────────────────────────────────────────
 	// Front glass rectangle (F) and the back wall (B), smaller and a little lower: you look
@@ -117,7 +110,21 @@
 		c.fillStyle = fill;
 		c.beginPath();
 		c.moveTo(pts[0][0], pts[0][1]);
-		for (const p of pts.slice(1)) c.lineTo(p[0], p[1]);
+		for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+		c.closePath();
+		c.fill();
+	}
+	// Pg's two halves, for the hot path (cube faces) without building arrays: the same sums.
+	const gx = (u: number, z: number) => lerp(bx0 + u * (bx1 - bx0), fx0 + u * (fx1 - fx0), z);
+	const gy = (v: number, z: number) => lerp(by0 + v * (by1 - by0), fy0 + v * (fy1 - fy0), z);
+	/** A four-cornered face of a cube: corners (u, v, z) in the tank's own u. */
+	function face(c: CanvasRenderingContext2D, fill: string, ua: number, va: number, za: number, ub: number, vb: number, zb: number, uc: number, vc: number, zc: number, ud: number, vd: number, zd: number) {
+		c.fillStyle = fill;
+		c.beginPath();
+		c.moveTo(gx(ua, za), gy(va, za));
+		c.lineTo(gx(ub, zb), gy(vb, zb));
+		c.lineTo(gx(uc, zc), gy(vc, zc));
+		c.lineTo(gx(ud, zd), gy(vd, zd));
 		c.closePath();
 		c.fill();
 	}
@@ -132,11 +139,10 @@
 			u1 = tu0 + ub * tsc;
 		if (u0 > u1) [u0, u1] = [u1, u0];
 		const um = (u0 + u1) / 2;
-		const P = Pg;
-		if (um < 0.5) quad(c, [P(u1, v0, z1), P(u1, v0, z0), P(u1, v1, z0), P(u1, v1, z1)], shade(col, 0.72));
-		else quad(c, [P(u0, v0, z1), P(u0, v0, z0), P(u0, v1, z0), P(u0, v1, z1)], shade(col, 0.72));
-		quad(c, [P(u0, v0, z0), P(u1, v0, z0), P(u1, v0, z1), P(u0, v0, z1)], shade(col, 1.18));
-		quad(c, [P(u0, v0, z1), P(u1, v0, z1), P(u1, v1, z1), P(u0, v1, z1)], col);
+		const us = um < 0.5 ? u1 : u0;
+		face(c, shade(col, 0.72), us, v0, z1, us, v0, z0, us, v1, z0, us, v1, z1);
+		face(c, shade(col, 1.18), u0, v0, z0, u1, v0, z0, u1, v0, z1, u0, v0, z1);
+		face(c, col, u0, v0, z1, u1, v0, z1, u1, v1, z1, u0, v1, z1);
 	}
 
 	/** The front outline of the glass, for clipping and the frame. */
@@ -219,28 +225,94 @@
 		const top = salt ? '#5ec8f0' : '#6ed0c0';
 		const deep = salt ? '#1a4a98' : '#185a66';
 
+		function still(c: CanvasRenderingContext2D) {
+			c.save();
+			outline(c, L.shape);
+			c.clip();
+			// Side walls, back wall and the underside of the surface.
+			c.fillStyle = mix(top, deep, 0.45);
+			c.fillRect(0, 0, W, H);
+			const bw = c.createLinearGradient(0, by0, 0, by1);
+			bw.addColorStop(0, mix(top, deep, 0.25));
+			bw.addColorStop(1, deep);
+			quad(c, [P(0, 0, 0), P(1, 0, 0), P(1, 1, 0), P(0, 1, 0)], bw);
+			const sideG = (x0: number, x1: number) => {
+				const g = c.createLinearGradient(x0, 0, x1, 0);
+				g.addColorStop(0, mix(top, deep, 0.35));
+				g.addColorStop(1, mix(top, deep, 0.6));
+				return g;
+			};
+			quad(c, [P(0, 0, 1), P(0, 0, 0), P(0, 1, 0), P(0, 1, 1)], sideG(fx0, bx0));
+			quad(c, [P(1, 0, 1), P(1, 0, 0), P(1, 1, 0), P(1, 1, 1)], sideG(fx1, bx1));
+			const surf = c.createLinearGradient(0, fy0, 0, by0);
+			surf.addColorStop(0, 'rgba(255,255,255,0.45)');
+			surf.addColorStop(1, 'rgba(255,255,255,0.12)');
+			quad(c, [P(0, 0, 1), P(1, 0, 1), P(1, 0, 0), P(0, 0, 0)], surf);
+			// The backdrop picture on the back wall.
+			if (decor.includes('backdrop')) {
+				const r = rng(7);
+				for (let i = 0; i < 9; i++) {
+					const u0 = i / 9;
+					const hgt = 0.25 + r() * 0.35;
+					quad(c, [P(u0, 1 - hgt, 0), P(u0 + 0.12, 1 - hgt - 0.05, 0), P(u0 + 0.12, 1, 0), P(u0, 1, 0)], salt ? '#2a4a8a' : '#2a5a5a');
+				}
+			}
+
+			// The floor: substrate surface receding to the back wall, and its cut face behind the front glass.
+			const sub = decor.includes('sand') ? '#e8d8a8' : decor.includes('gravel') ? '#8a8478' : salt ? '#e0d0a0' : '#b8a888';
+			const fg = c.createLinearGradient(0, by1, 0, fy1);
+			fg.addColorStop(0, shade(sub, 0.7));
+			fg.addColorStop(1, sub);
+			quad(c, [P(0, FLOOR, 0), P(1, FLOOR, 0), P(1, FLOOR, 1), P(0, FLOOR, 1)], fg);
+			quad(c, [P(0, 1, 0), P(1, 1, 0), P(1, FLOOR, 0), P(0, FLOOR, 0)], shade(sub, 0.6));
+			{
+				const r = rng(3);
+				for (let i = 0; i < 90 * reps; i++) {
+					const u = r();
+					const z = r();
+					const [x, y] = P(u, FLOOR, z);
+					const s = depthScale(z) * (2 + r() * 3);
+					c.fillStyle = shade(sub, 0.75 + r() * 0.45);
+					c.fillRect(x, y - s * 0.5, s * 1.4, s * 0.7);
+				}
+			}
+			// The substrate's cut face behind the front glass: layers of sand and pebbles.
+			{
+				const [, ya] = P(0, FLOOR, 1);
+				const sg = c.createLinearGradient(0, ya, 0, fy1);
+				sg.addColorStop(0, shade(sub, 0.95));
+				sg.addColorStop(1, shade(sub, 0.55));
+				quad(c, [P(0, FLOOR, 1), P(1, FLOOR, 1), P(1, 1.02, 1), P(0, 1.02, 1)], sg);
+				const r = rng(9);
+				for (let i = 0; i < 70 * reps; i++) {
+					const x = fx0 + r() * (fx1 - fx0);
+					const y = ya + 3 + r() * (fy1 - ya - 4);
+					const sz = 2 + r() * 4;
+					c.fillStyle = shade(sub, 0.6 + r() * 0.5);
+					c.fillRect(x, y, sz * 1.3, sz * 0.8);
+				}
+			}
+			c.restore();
+		}
+		// The still part of the water (walls, surface, backdrop, floor and its pebbles) is drawn once
+		// into a copy, reused every frame until the tank's size or look changes; what moves goes on top.
+		const backKey = [W, H, dpr, L.shape, stand, water, decor.includes('backdrop'), decor.includes('sand'), decor.includes('gravel')].join('|');
+		if (!back || back.key !== backKey) {
+			const cv = back?.canvas ?? document.createElement('canvas');
+			cv.width = canvas.width;
+			cv.height = canvas.height;
+			const b = cv.getContext('2d')!;
+			b.setTransform(dpr, 0, 0, dpr, 0, 0);
+			b.imageSmoothingEnabled = false;
+			still(b);
+			back = { key: backKey, canvas: cv };
+		}
+		c.setTransform(1, 0, 0, 1, 0, 0);
+		c.drawImage(back.canvas, 0, 0);
+		c.setTransform(dpr, 0, 0, dpr, 0, 0);
 		c.save();
 		outline(c, L.shape);
 		c.clip();
-		// Side walls, back wall and the underside of the surface.
-		c.fillStyle = mix(top, deep, 0.45);
-		c.fillRect(0, 0, W, H);
-		const bw = c.createLinearGradient(0, by0, 0, by1);
-		bw.addColorStop(0, mix(top, deep, 0.25));
-		bw.addColorStop(1, deep);
-		quad(c, [P(0, 0, 0), P(1, 0, 0), P(1, 1, 0), P(0, 1, 0)], bw);
-		const sideG = (x0: number, x1: number) => {
-			const g = c.createLinearGradient(x0, 0, x1, 0);
-			g.addColorStop(0, mix(top, deep, 0.35));
-			g.addColorStop(1, mix(top, deep, 0.6));
-			return g;
-		};
-		quad(c, [P(0, 0, 1), P(0, 0, 0), P(0, 1, 0), P(0, 1, 1)], sideG(fx0, bx0));
-		quad(c, [P(1, 0, 1), P(1, 0, 0), P(1, 1, 0), P(1, 1, 1)], sideG(fx1, bx1));
-		const surf = c.createLinearGradient(0, fy0, 0, by0);
-		surf.addColorStop(0, 'rgba(255,255,255,0.45)');
-		surf.addColorStop(1, 'rgba(255,255,255,0.12)');
-		quad(c, [P(0, 0, 1), P(1, 0, 1), P(1, 0, 0), P(0, 0, 0)], surf);
 		// Ripples on the surface.
 		c.fillStyle = 'rgba(255,255,255,0.35)';
 		for (let i = 0; i < 14 * reps; i++) {
@@ -248,50 +320,6 @@
 			const z = (i * 0.29) % 1;
 			const [x, y] = P(u, 0, z);
 			c.fillRect(x, y + 1, 10 * depthScale(z), 1.5);
-		}
-		// The backdrop picture on the back wall.
-		if (decor.includes('backdrop')) {
-			const r = rng(7);
-			for (let i = 0; i < 9; i++) {
-				const u0 = i / 9;
-				const hgt = 0.25 + r() * 0.35;
-				quad(c, [P(u0, 1 - hgt, 0), P(u0 + 0.12, 1 - hgt - 0.05, 0), P(u0 + 0.12, 1, 0), P(u0, 1, 0)], salt ? '#2a4a8a' : '#2a5a5a');
-			}
-		}
-
-		// The floor: substrate surface receding to the back wall, and its cut face behind the front glass.
-		const sub = decor.includes('sand') ? '#e8d8a8' : decor.includes('gravel') ? '#8a8478' : salt ? '#e0d0a0' : '#b8a888';
-		const fg = c.createLinearGradient(0, by1, 0, fy1);
-		fg.addColorStop(0, shade(sub, 0.7));
-		fg.addColorStop(1, sub);
-		quad(c, [P(0, FLOOR, 0), P(1, FLOOR, 0), P(1, FLOOR, 1), P(0, FLOOR, 1)], fg);
-		quad(c, [P(0, 1, 0), P(1, 1, 0), P(1, FLOOR, 0), P(0, FLOOR, 0)], shade(sub, 0.6));
-		{
-			const r = rng(3);
-			for (let i = 0; i < 90 * reps; i++) {
-				const u = r();
-				const z = r();
-				const [x, y] = P(u, FLOOR, z);
-				const s = depthScale(z) * (2 + r() * 3);
-				c.fillStyle = shade(sub, 0.75 + r() * 0.45);
-				c.fillRect(x, y - s * 0.5, s * 1.4, s * 0.7);
-			}
-		}
-		// The substrate's cut face behind the front glass: layers of sand and pebbles.
-		{
-			const [, ya] = P(0, FLOOR, 1);
-			const sg = c.createLinearGradient(0, ya, 0, fy1);
-			sg.addColorStop(0, shade(sub, 0.95));
-			sg.addColorStop(1, shade(sub, 0.55));
-			quad(c, [P(0, FLOOR, 1), P(1, FLOOR, 1), P(1, 1.02, 1), P(0, 1.02, 1)], sg);
-			const r = rng(9);
-			for (let i = 0; i < 70 * reps; i++) {
-				const x = fx0 + r() * (fx1 - fx0);
-				const y = ya + 3 + r() * (fy1 - ya - 4);
-				const sz = 2 + r() * 4;
-				c.fillStyle = shade(sub, 0.6 + r() * 0.5);
-				c.fillRect(x, y, sz * 1.3, sz * 0.8);
-			}
 		}
 		// Light dancing on the floor (caustics).
 		c.fillStyle = 'rgba(255,255,255,0.13)';

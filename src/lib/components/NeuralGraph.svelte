@@ -41,6 +41,8 @@
 		filterType?: string | null;
 		/** Order of the filtered column: oldest → newest, or biggest neuron first. */
 		filterOrder?: 'date' | 'size';
+		/** Covered up (a game is open over it): stop animating until uncovered. */
+		paused?: boolean;
 	}
 
 	let {
@@ -54,7 +56,8 @@
 		onselect,
 		onbackground,
 		filterType = null,
-		filterOrder = 'date'
+		filterOrder = 'date',
+		paused = false
 	}: Props = $props();
 
 	interface SimNode extends SimulationNodeDatum {
@@ -453,6 +456,11 @@
 	}
 
 	// ── Render loop ───────────────────────────────────────────────────────────
+	/** Restarts the render loop after a pause. */
+	let resume: (() => void) | null = null;
+	$effect(() => {
+		if (!paused) resume?.();
+	});
 
 	onMount(() => {
 		const ctx = canvas.getContext('2d')!;
@@ -465,6 +473,12 @@
 			canvas.width = width * dpr;
 			canvas.height = height * dpr;
 			snapView = true;
+			// Resizing clears the canvas: paused (under a game), draw it once more.
+			if (paused && !raf)
+				requestAnimationFrame((now) => {
+					render(now);
+					last = now;
+				});
 		});
 		ro.observe(canvas);
 
@@ -497,8 +511,16 @@
 		let raf = 0;
 
 		const frame = (now: number) => {
+			// Covered by a game: stop here (no drawing, no wake-ups) until uncovered.
+			if (paused) {
+				raf = 0;
+				return;
+			}
 			raf = requestAnimationFrame(frame);
-			const dt = Math.min(64, now - last);
+			render(now);
+		};
+		const render = (now: number) => {
+			const dt = Math.max(0, Math.min(64, now - last));
 			last = now;
 
 			// Mood → target energy.
@@ -756,7 +778,13 @@
 		};
 
 		raf = requestAnimationFrame(frame);
+		resume = () => {
+			if (raf) return;
+			last = performance.now();
+			raf = requestAnimationFrame(frame);
+		};
 		return () => {
+			resume = null;
 			cancelAnimationFrame(raf);
 			ro.disconnect();
 			canvas.removeEventListener('wheel', onWheel);

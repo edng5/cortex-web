@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import { DEFAULT_LOOK, FLOORS, SUPPLIES, TANK_LIGHTS, TANK_STANDS, TANK_TRIMS, species, tier, type StoreItem, type TankLook } from './data';
 	import { bx, drawVoxel, model, shade, type Box } from '../voxel';
+	import { visibleLoop } from '../visible-loop';
 	import type { FishStore } from './store.svelte';
 
 	let {
@@ -498,19 +499,18 @@
 		c.fill();
 	}
 
-	onMount(() => {
-		let raf = 0;
-		let last = performance.now();
-		const frame = (now: number) => {
-			raf = requestAnimationFrame(frame);
-			const dt = Math.min(0.1, (now - last) / 1000);
-			last = now;
-			updatePeople(dt);
-			draw(now / 1000);
-		};
-		raf = requestAnimationFrame(frame);
-		return () => cancelAnimationFrame(raf);
-	});
+	// Animates only while it's on screen (the people are just for show, so they wait too), at up
+	// to 60 frames a second.
+	onMount(() =>
+		visibleLoop(
+			wrap!,
+			(now, dt) => {
+				updatePeople(Math.min(0.1, dt));
+				draw(now / 1000);
+			},
+			60
+		)
+	);
 
 	function draw(t: number) {
 		if (!canvas || !wrap) return;

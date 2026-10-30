@@ -1,8 +1,8 @@
 <!--
   E.Ngine Games pop-up: the game being played (picked from the menu on the E.Ngine Games node).
   Leaving a game (Esc, ✕, a click outside, or Quit / Exit in its own menu) closes the pop-up,
-  back to the node; on phones and mid-size screens (no games menu beside the node) it goes back
-  to the games menu first. Esc, ✕ and clicking outside ask first, so a stray key press doesn't end a
+  back to the node; opened from the header's Play button, or on phones and mid-size screens (no
+  games menu beside the node), it goes back to the games menu first. Esc, ✕ and clicking outside ask first, so a stray key press doesn't end a
   run; the game pauses while asking. The pop-up stays mounted (hidden and paused), and so does
   every game started in it, so each one is where you left it when reopened.
   On mid-size screens the node has no menu beside it, so the pop-up opens on the menu instead.
@@ -42,11 +42,12 @@
 		onclose();
 	}
 	/**
-	 * Leaving a game. Where the games menu sits beside the E.Ngine Games node (wide screens),
-	 * back to the node; otherwise (phones, mid-size screens) back to the games menu first.
+	 * Leaving a game. Opened from the node where the games menu sits beside it (wide screens),
+	 * back to the node; otherwise (opened from the header's Play button, or on phones and mid-size
+	 * screens) back to the games menu first.
 	 */
 	function leaveGame() {
-		if (window.innerWidth > 1024) return close();
+		if (window.innerWidth > 1024 && !session.gamesFromHeader) return close();
 		confirming = false;
 		session.gameId = null;
 		// The tap that quit the game would otherwise land on the menu now under the finger and
@@ -296,6 +297,9 @@
 			padding: 0;
 			place-items: start center;
 			background: #03050a;
+			/* Solid here, so a blur of the page behind would never show: skip it (phones would
+			   otherwise redo it every frame). */
+			backdrop-filter: none;
 		}
 		.card:not(.menu) {
 			width: 100vw;

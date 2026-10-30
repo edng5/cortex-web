@@ -1,6 +1,5 @@
 <!-- Bottom dock: status, live captions, mic button, mute, and a typed-question fallback. -->
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { cortex } from '$lib/cortex.svelte';
 	import { site } from '$lib/config/site';
 	import { session } from '$lib/session.svelte';
@@ -27,12 +26,16 @@
 		cortex.ask(q);
 	}
 
-	// Mic ring pulses with the user's voice.
-	onMount(() => {
+	// Mic ring pulses with the user's voice (only while the mic is on, and not under a game).
+	$effect(() => {
+		if (!cortex.micEnabled || session.gameOpen) {
+			if (ring) ring.style.transform = 'scale(1)';
+			return;
+		}
 		let raf = 0;
 		const loop = () => {
 			raf = requestAnimationFrame(loop);
-			if (ring) ring.style.transform = `scale(${1 + (cortex.micEnabled ? cortex.audioLevel() * 0.9 : 0)})`;
+			if (ring) ring.style.transform = `scale(${1 + cortex.audioLevel() * 0.9})`;
 		};
 		loop();
 		return () => cancelAnimationFrame(raf);
