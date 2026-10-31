@@ -1,23 +1,31 @@
 <!-- Energy for the games (Phrase Quest, scenarios): a chip for the header, or (`out`) the panel shown
-     when it's run out, with when the next point arrives. -->
+     when it's run out, counting down to when it fills back up (tomorrow). -->
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { ENERGY_MAX, game } from './game.svelte';
+	import { ENERGY_MAX, countdown, game } from './game.svelte';
 
 	let { out = false, onhome }: { out?: boolean; onhome?: () => void } = $props();
-	const mmss = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor((ms % 60_000) / 1000)).padStart(2, '0')}`;
+
+	// The countdown ticks every second while it's showing.
+	$effect(() => {
+		if (!out) return;
+		const t = setInterval(() => game.tick(), 1000);
+		return () => clearInterval(t);
+	});
 </script>
 
 {#if out}
 	<div class="out" role="status">
 		<span class="bolt"><Icon name="bolt" size={30} color="#fff" /></span>
 		<b>Out of energy</b>
-		<p>Your next bolt arrives in <b>{mmss(game.nextEnergyIn)}</b>. Finishing a daily goal gives you 5, and levelling up in Phrase Quest fills it up.</p>
+		<p>It fills back up tomorrow, in</p>
+		<span class="count" aria-label="Time until energy refills">{countdown(game.nextEnergyIn)}</span>
+		<p>Finishing a daily goal gives you 5 now, and levelling up in Phrase Quest fills it up.</p>
 		<p class="muted">Chats with your friends are free: keep talking while you wait.</p>
 		{#if onhome}<button class="btn" onclick={onhome}>Back to friends</button>{/if}
 	</div>
 {:else}
-	<span class="chip" class:low={game.energy <= 3} title="Energy: {game.energy} of {ENERGY_MAX}. Each try uses 1; it refills over time.">
+	<span class="chip" class:low={game.energy <= 3} title="Energy: {game.energy} of {ENERGY_MAX}. Each try uses 1; it fills back up each day.">
 		<Icon name="bolt" size={16} />{game.energy}
 	</span>
 {/if}
@@ -54,6 +62,13 @@
 		margin: 0;
 		font-size: 14px;
 		line-height: 1.5;
+	}
+	.count {
+		font-size: 32px;
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.02em;
+		color: #ea580c;
 	}
 	.muted {
 		color: var(--se-muted);

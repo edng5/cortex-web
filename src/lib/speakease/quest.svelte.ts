@@ -141,7 +141,7 @@ class PhraseQuest {
 		if (!c || this.checking) return;
 		// Each try costs energy.
 		if (!game.spend()) {
-			app.say('Out of energy! It refills over time.');
+			app.say('Out of energy! It fills back up tomorrow.');
 			return;
 		}
 		this.checking = true;

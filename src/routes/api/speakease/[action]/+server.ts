@@ -1,7 +1,7 @@
 // SpeakEase AI (web edition) API, one route per thing the app's backend did:
 //   POST /api/speakease/listen?botId=…&locale=…   (body: the recording) → { text, words: [{ w, s }] }
 //   POST /api/speakease/reply     { botId, locale, turns, scenario? }    → { text }
-//   POST /api/speakease/speak     { botId, locale, text, slow? }        → audio/wav (Easso's voice; others are Cortex)
+//   POST /api/speakease/speak     { botId, locale, text }               → audio/wav (Easso's voice; others are Cortex)
 //   POST /api/speakease/correct   { text }                               → { text }
 //   POST /api/speakease/suggest   { turns }                              → { text }
 //   POST /api/speakease/translate { text, to }                           → { text }
@@ -11,8 +11,9 @@
 //   POST /api/speakease/pronounce { word, locale, explainIn }           → { sounds, ipa, how }
 //   POST /api/speakease/dictionary { word, from, locale }               → { entries: [...] }
 //   POST /api/speakease/phonetics  { text, locale }                     → { romanization, words: [{ word, sounds, ipa }] }
-// Open to everyone (like the app), so it's rate limited per visitor. Signed-in players are called
-// by their site nickname (looked up here, never taken from the page).
+// Friend chats are open to everyone (like the app), so it's rate limited per visitor; the games
+// (Phrase Quest, scenarios, the dictionary) need an account. Signed-in players are called by their
+// site nickname (looked up here, never taken from the page).
 import { error, json } from '@sveltejs/kit';
 import { rateLimit } from '$lib/server/ratelimit';
 import { LlmError } from '$lib/server/llm-error';
@@ -57,6 +58,9 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 	}
 
 	const nickname = locals.user ? getPlayerName(locals.user.id) : null;
+	const signedIn = () => {
+		if (!locals.user) error(401, 'Sign in to play the games. Chatting with your friends is free.');
+	};
 	const recording = async () => {
 		const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
 		if (!AUDIO_TYPES.includes(type)) error(415, 'Unsupported audio.');
@@ -68,6 +72,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 
 	try {
 		if (params.action === 'attempt') {
+			signedIn();
 			who(url.searchParams.get('botId'));
 			const loc = locale(url.searchParams.get('locale'));
 			const target = url.searchParams.get('target') ?? '';
@@ -79,7 +84,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 		if (params.action === 'listen') {
 			const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
 			if (!AUDIO_TYPES.includes(type)) error(415, 'Unsupported audio.');
-			who(url.searchParams.get('botId'));
+			if (who(url.searchParams.get('botId')).scenario) signedIn();
 			const loc = locale(url.searchParams.get('locale'));
 			const audio = Buffer.from(await request.arrayBuffer());
 			if (!audio.length) return json({ text: '', words: [] });
@@ -92,6 +97,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 		switch (params.action) {
 			case 'reply': {
 				const { c, scenario } = who(body.botId);
+				if (scenario) signedIn();
 				// Scenario characters are Cortex too (male).
 				return json({ text: await reply(c.id, 'gender' in c ? c.gender : 'male', locale(body.locale), turnsOf(body.turns), scenario, nickname) });
 			}
@@ -99,7 +105,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 				// Only Easso has a Gemini voice: everyone else is Cortex, who speaks with the browser's voice.
 				const { c } = who(body.botId);
 				if (c.id !== '0') error(400, 'This character speaks with Cortex’s voice.');
-				const wav = await speak(textOf(body.text), EASSO_VOICE, locale(body.locale), body.slow === true);
+				const wav = await speak(textOf(body.text), EASSO_VOICE, locale(body.locale));
 				return new Response(new Uint8Array(wav), { headers: { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' } });
 			}
 			case 'correct':
@@ -107,6 +113,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 			case 'suggest':
 				return json({ text: await suggest(turnsOf(body.turns)) });
 			case 'phrases': {
+				signedIn();
 				const level = Number(body.level);
 				if (!Number.isInteger(level) || level < 1 || level > 99) error(400, 'Invalid level.');
 				const known = Array.isArray(body.known) ? body.known.filter((k: unknown) => typeof k === 'string' && k.length <= MAX_TARGET).slice(-80) : [];
@@ -120,6 +127,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 			case 'phonetics':
 				return json(await phonetics(textOf(body.text), locale(body.locale)));
 			case 'dictionary': {
+				signedIn();
 				const word = typeof body.word === 'string' ? body.word.trim() : '';
 				if (!word || word.length > 80) error(400, 'Type a word to look up.');
 				return json({ entries: await lookUp(word, explainIn(body.from), locale(body.locale)) });

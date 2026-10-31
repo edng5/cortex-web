@@ -548,23 +548,33 @@ export async function lookUp(word: string, from: string, locale: string): Promis
 		}));
 }
 
-/** The words spoken in the character's own voice, as a WAV file. */
-export async function speak(textIn: string, voice: string, locale: string, slow = false): Promise<Buffer> {
-	const how = slow ? 'slowly and very clearly, as a teacher would for a learner, pausing a little between words' : 'in a friendly, warm tone';
-	const say = `Speak in natural, native ${languageOf(locale)}, ${how}:\n${textIn}`;
+/**
+ * The words spoken in the character's own voice, as a WAV file. Only the words are sent: an
+ * instruction in the prompt ("speak slowly…") sometimes gets read out too, so the language goes in
+ * the speech settings and slow playback is done by the player.
+ */
+export async function speak(textIn: string, voice: string, locale: string): Promise<Buffer> {
 	let lastErr: unknown;
 	for (const model of TTS_MODELS) {
-		try {
-			const { parts } = await call(model, {
-				contents: [{ parts: [{ text: say }] }],
-				generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
-			});
-			const audio = parts.find((p) => p.inlineData)?.inlineData;
-			if (!audio) throw new LlmError('other', 'No audio returned');
-			const data = Buffer.from(audio.data, 'base64');
-			return /wav/i.test(audio.mimeType) ? data : pcmToWav(data, Number(/rate=(\d+)/.exec(audio.mimeType)?.[1]) || 24_000);
-		} catch (err) {
-			lastErr = err;
+		// With the language set, then (should a model not take that language code) without it.
+		for (const languageCode of [locale, undefined]) {
+			try {
+				const { parts } = await call(model, {
+					contents: [{ parts: [{ text: textIn }] }],
+					generationConfig: {
+						responseModalities: ['AUDIO'],
+						speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } }, ...(languageCode ? { languageCode } : {}) }
+					}
+				});
+				const audio = parts.find((p) => p.inlineData)?.inlineData;
+				if (!audio) throw new LlmError('other', 'No audio returned');
+				const data = Buffer.from(audio.data, 'base64');
+				return /wav/i.test(audio.mimeType) ? data : pcmToWav(data, Number(/rate=(\d+)/.exec(audio.mimeType)?.[1]) || 24_000);
+			} catch (err) {
+				lastErr = err;
+				// Out of quota or busy: on to the next model, not this one again.
+				if (!(err instanceof LlmError) || err.kind !== 'other') break;
+			}
 		}
 	}
 	throw lastErr;

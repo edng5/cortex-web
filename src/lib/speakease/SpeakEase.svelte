@@ -14,6 +14,7 @@
 	import { quest } from './quest.svelte';
 	import { game } from './game.svelte';
 	import { pullProgress, watchProgress } from './sync';
+	import { session } from '$lib/session.svelte';
 
 	/** `back`: where the home screen's back arrow goes (the home page, or the SpeakEase node). */
 	let {
@@ -21,6 +22,13 @@
 		account = null,
 		back = '/?node=proj-speakease'
 	}: { nickname?: string | null; account?: string | null; back?: string } = $props();
+
+	/** The games (Phrase Quest, scenarios, the dictionary) need an account; friend chats don't. */
+	const signedIn = $derived(!!account);
+	/** Asking to sign in before a game opens. */
+	let signInFor = $state<string | null>(null);
+	const GAME_NAMES = { practice: 'Scenarios', phrases: 'Phrase Quest', dictionary: 'the Dictionary' } as const;
+	const googleHref = $derived(`/auth/google?next=${encodeURIComponent(page.url.pathname + page.url.search)}`);
 
 	// Drawn once this browser's settings are loaded (no flash of the wrong theme or favourites).
 	let ready = $state(false);
@@ -46,6 +54,10 @@
 	});
 
 	function open(screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) {
+		if (screen !== 'chat' && !signedIn) {
+			signInFor = GAME_NAMES[screen];
+			return;
+		}
 		// This tap lets the greeting be spoken (phones only allow speech that starts in a tap).
 		app.unlockVoice();
 		if (screen === 'chat') app.openChat(id);
@@ -68,7 +80,7 @@
 	{#if !ready}
 		<div class="loading" aria-label="Loading"></div>
 	{:else if app.screen === 'home'}
-		<Home onopen={open} {back} />
+		<Home onopen={open} {back} {signedIn} />
 	{:else if app.screen === 'phrases'}
 		<Phrases onback={() => history.back()} />
 	{:else if app.screen === 'dictionary'}
@@ -77,6 +89,27 @@
 		{#key app.botId}<Chat onback={() => history.back()} />{/key}
 	{/if}
 	{#if app.toast}<div class="toast" role="status">{app.toast}</div>{/if}
+	{#if signInFor}
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="overlay" onclick={() => (signInFor = null)}></div>
+		<div class="sheet sign-in" role="dialog" aria-modal="true" aria-label="Sign in to play">
+			<div class="grabber"></div>
+			<span class="lock" aria-hidden="true">🔒</span>
+			<h3>Sign in to play {signInFor}</h3>
+			<p>Phrase Quest, Scenarios and the Dictionary are for signed-in players, so your XP, levels and badges are saved to your account and follow you to every device.</p>
+			<p class="free">Chatting with your friends is free, no account needed.</p>
+			{#if session.auth.google}<a class="btn wide" href={googleHref}>Continue with Google</a>{/if}
+			<button
+				class="btn wide"
+				class:ghost={session.auth.google}
+				onclick={() => {
+					signInFor = null;
+					session.loginOpen = true;
+				}}>Sign in with an email code</button
+			>
+			<button class="btn ghost wide" onclick={() => (signInFor = null)}>Not now</button>
+		</div>
+	{/if}
 
 	<div class="pops" aria-live="polite">
 		{#each game.pops as p (p.id)}<span class="pop">{p.text}</span>{/each}
@@ -209,6 +242,31 @@
 		box-shadow: 0 -20px 50px -10px rgba(0, 0, 0, 0.5);
 		color: var(--se-text);
 		animation: se-up 0.22s ease-out;
+	}
+	.sign-in {
+		text-align: center;
+	}
+	.sign-in .lock {
+		font-size: 34px;
+	}
+	.sign-in h3 {
+		margin: 6px 0 8px;
+	}
+	.sign-in p {
+		margin: 0 0 10px;
+		color: var(--se-muted);
+		font-size: 14px;
+		line-height: 1.5;
+	}
+	.sign-in .free {
+		color: var(--se-good);
+		font-weight: 650;
+	}
+	.sign-in .btn {
+		width: 100%;
+		margin-top: 8px;
+		text-decoration: none;
+		box-sizing: border-box;
 	}
 	.se :global(.sheet .grabber) {
 		width: 40px;

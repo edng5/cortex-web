@@ -1,10 +1,14 @@
 // The signed-in player's nickname (their name on the site), so SpeakEase's characters greet them by
-// it, and a tag for their account, so their progress syncs between devices.
+// it, and a tag for their account, so their progress syncs between devices. Also who's signed in and
+// how sign-in works here, for the log-in box (the games need an account).
 import { getPlayerName } from '$lib/server/player-name';
-import { blindIndex } from '$lib/server/crypto';
+import { blindIndex, keysConfigured } from '$lib/server/crypto';
+import { googleConfigured } from '$lib/server/google';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ locals }) => ({
+	user: locals.user ? { email: locals.user.email, name: locals.user.name, isMember: locals.user.isMember, nickname: getPlayerName(locals.user.id) } : null,
+	auth: { ready: keysConfigured(), google: googleConfigured() },
 	nickname: locals.user ? getPlayerName(locals.user.id) : null,
 	/** An opaque tag for the account (not the email), marking whose progress a browser holds. */
 	account: locals.user ? blindIndex('speakease-account', locals.user.id).slice(0, 16) : null

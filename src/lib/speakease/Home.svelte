@@ -8,10 +8,15 @@
 	import { app, load, store, type ThemeSetting } from './app.svelte';
 	import { sideways } from './sideways';
 	import { quest } from './quest.svelte';
-	import { BADGES, ENERGY_MAX, game, starsFor } from './game.svelte';
+	import { BADGES, ENERGY_MAX, countdown, game, starsFor } from './game.svelte';
 	import { FRIENDS, SCENARIOS, TRANSLATE_OPTIONS, type Friend } from './data';
 
-	let { onopen, back = '/?node=proj-speakease' }: { onopen: (screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) => void; back?: string } = $props();
+	/** `signedIn`: the games need an account (opening one signed out asks to sign in). */
+	let {
+		onopen,
+		back = '/?node=proj-speakease',
+		signedIn = false
+	}: { onopen: (screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) => void; back?: string; signedIn?: boolean } = $props();
 
 	let settingsOpen = $state(false);
 	let questPicker = $state(false);
@@ -26,7 +31,12 @@
 	const sceneStars = $derived(SCENARIOS.reduce((n, sc) => n + starsFor(game.saved.scenes[sc.id] ?? 0), 0));
 
 	const rank = $derived(game.rank);
-	const mmss = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor((ms % 60_000) / 1000)).padStart(2, '0')}`;
+	// Out of energy: the countdown to tomorrow's refill ticks every second.
+	$effect(() => {
+		if (game.energy >= 1) return;
+		const t = setInterval(() => game.tick(), 1000);
+		return () => clearInterval(t);
+	});
 
 	const favorites = $derived(app.favorites.map((id) => FRIENDS.find((f) => f.id === id)!).filter(Boolean));
 	const goals = $derived(app.goals);
@@ -81,10 +91,10 @@
 			</div>
 		</div>
 		<div class="stats">
-			<div class="stat energy" title="Phrase Quest tries and scenario lines use energy. It refills over time.">
+			<div class="stat energy" title="Phrase Quest tries and scenario lines use energy. It fills back up each day.">
 				<Icon name="bolt" size={18} />
 				<span><b>{game.energy}</b>/{ENERGY_MAX}</span>
-				<small>{game.energy >= ENERGY_MAX ? 'Full' : `+1 in ${mmss(game.nextEnergyIn)}`}</small>
+				<small>{game.energy >= ENERGY_MAX ? 'Full' : game.energy < 1 ? `Refills in ${countdown(game.nextEnergyIn)}` : 'Refills tomorrow'}</small>
 			</div>
 			<div class="stat flame" title="Days in a row you've practised">
 				<Icon name="flame" size={18} />
@@ -130,25 +140,29 @@
 		</div>
 	</section>
 
-	<button class="quest" onclick={() => (questPicker = true)}>
+	<button class="quest" onclick={() => (signedIn ? (questPicker = true) : onopen('phrases', ''))}>
 		<span class="quest-icon"><Icon name="sparkles" size={26} color="#fff" /></span>
 		<span class="quest-text">
 			<strong>Phrase Quest</strong>
 			<small>Learn new phrases, how to say them, and level up</small>
 		</span>
-		<span class="quest-level">{lastQuest.language}<br /><b>Lv {quest.levelOf(lastQuest.locale)}</b></span>
+		{#if signedIn}
+			<span class="quest-level">{lastQuest.language}<br /><b>Lv {quest.levelOf(lastQuest.locale)}</b></span>
+		{:else}
+			<span class="locked">🔒 Sign in</span>
+		{/if}
 	</button>
 
-	<button class="tile" onclick={() => (scenePicker = true)}>
+	<button class="tile" onclick={() => (signedIn ? (scenePicker = true) : onopen('practice', ''))}>
 		<span class="tile-icon scenes"><Icon name="play" size={22} color="#fff" /></span>
 		<span class="quest-text"><strong>Scenarios</strong><small>Role-play everyday life and travel · {sceneStars}/{SCENARIOS.length * 3} ★</small></span>
-		<Icon name="next" size={18} />
+		{#if signedIn}<Icon name="next" size={18} />{:else}<span class="locked">🔒 Sign in</span>{/if}
 	</button>
 
 	<button class="tile" onclick={() => onopen('dictionary', '')}>
 		<span class="tile-icon"><Icon name="book" size={22} color="#fff" /></span>
 		<span class="quest-text"><strong>Dictionary</strong><small>Look up a word and hear how it's said</small></span>
-		<Icon name="next" size={18} />
+		{#if signedIn}<Icon name="next" size={18} />{:else}<span class="locked">🔒 Sign in</span>{/if}
 	</button>
 
 	<h2 class="section">Favorite Languages</h2>
@@ -783,6 +797,20 @@
 		text-align: left;
 		cursor: pointer;
 		box-shadow: var(--se-shadow);
+	}
+	.locked {
+		flex: none;
+		padding: 4px 9px;
+		border-radius: 999px;
+		background: var(--se-surface-2);
+		color: var(--se-muted);
+		font-size: 12px;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+	.quest .locked {
+		background: rgba(255, 255, 255, 0.22);
+		color: #fff;
 	}
 	.tile:hover {
 		background: var(--se-surface-2);

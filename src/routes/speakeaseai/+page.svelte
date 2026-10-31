@@ -2,10 +2,13 @@
      In a phone frame on a computer; the whole screen on a phone. -->
 <script lang="ts">
 	import SpeakEase from '$lib/speakease/SpeakEase.svelte';
+	import LoginModal from '$lib/components/LoginModal.svelte';
 	import { page } from '$app/state';
 	import { site } from '$lib/config/site';
+	import { session } from '$lib/session.svelte';
 
 	let { data } = $props();
+	$effect.pre(() => session.init({ user: data.user, quota: null, auth: data.auth }));
 	// Opened from the site's header: Back returns to the home page; otherwise to the SpeakEase node.
 	const fromHome = $derived(page.url.searchParams.get('from') === 'home');
 	const back = $derived(fromHome ? '/' : '/?node=proj-speakease');
@@ -35,6 +38,8 @@
 		<div class="screen"><SpeakEase nickname={data.nickname} account={data.account} {back} /></div>
 	</div>
 </main>
+
+{#if session.loginOpen}<LoginModal />{/if}
 
 <style>
 	.page {

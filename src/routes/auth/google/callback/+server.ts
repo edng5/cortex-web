@@ -24,6 +24,8 @@ export const GET: RequestHandler = async ({ url, cookies, getClientAddress }) =>
 	const verifier = cookies.get('g_verifier');
 	cookies.delete('g_state', { path: '/' });
 	cookies.delete('g_verifier', { path: '/' });
+	const next = cookies.get('g_next');
+	cookies.delete('g_next', { path: '/' });
 	// CSRF protection: the state must round-trip through our own cookie.
 	if (!code || !state || !savedState || !verifier || state !== savedState) error(400, 'Invalid sign-in request');
 
@@ -47,5 +49,5 @@ export const GET: RequestHandler = async ({ url, cookies, getClientAddress }) =>
 	const userId = upsertUser(claims.email, 'google', claims.name ?? null);
 	startSession(cookies, url, userId);
 	audit('login', { userId, email: claims.email, ip: getClientAddress(), detail: { provider: 'google' } });
-	redirect(302, '/');
+	redirect(302, next && /^\/(?!\/)[\w\-/?=&.]*$/.test(next) ? next : '/');
 };

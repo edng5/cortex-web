@@ -38,11 +38,24 @@ export const BADGES: Badge[] = [
 /** Scenario stars: 1 for finishing it once, 2 at 3 times, 3 at 5 times. */
 export const starsFor = (wins: number) => (wins >= 5 ? 3 : wins >= 3 ? 2 : wins >= 1 ? 1 : 0);
 
-/** Energy: practice in the games costs it, and it refills over time (friend chats are free). */
+/** Energy: practice in the games costs it, and it fills back up the next day (friend chats are free). */
 export const ENERGY_MAX = 20;
-export const ENERGY_REFILL_MS = 6 * 60_000;
 /** A phrase attempt or a scenario line. */
 export const ENERGY_COST = 1;
+
+/** The local date (YYYY-MM-DD): energy refills when it changes. */
+const dayOf = (t: number) => {
+	const d = new Date(t);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+/** A countdown as h:mm:ss (or m:ss under an hour). */
+export const countdown = (ms: number) => {
+	const s = Math.max(0, Math.ceil(ms / 1000));
+	const h = Math.floor(s / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	const ss = String(s % 60).padStart(2, '0');
+	return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+};
 
 /** XP to go from level n to n + 1. */
 const stepFor = (n: number) => 100 + (n - 1) * 50;
@@ -64,13 +77,13 @@ interface Saved {
 	bestCombo: number;
 	/** Scenario id → times finished. */
 	scenes: Record<string, number>;
-	/** Energy as of `energyAt` (it refills from there). */
+	/** Energy left on `energyDay` (a new day starts full). */
 	energy: number;
-	energyAt: number;
+	energyDay: string;
 	/** Words looked up in the dictionary. */
 	lookups: number;
 }
-const blank = (): Saved => ({ xp: 0, badges: {}, phraseLangs: {}, phrases: 0, bestCombo: 0, scenes: {}, energy: ENERGY_MAX, energyAt: 0, lookups: 0 });
+const blank = (): Saved => ({ xp: 0, badges: {}, phraseLangs: {}, phrases: 0, bestCombo: 0, scenes: {}, energy: ENERGY_MAX, energyDay: '', lookups: 0 });
 
 class Game {
 	saved = $state<Saved>(blank());
@@ -87,7 +100,7 @@ class Game {
 	/** Pops and a celebration held back while quiet, for the home screen. */
 	private held: string[] = [];
 	private heldParty = false;
-	/** Ticks every few seconds so the energy refill (and its countdown) updates. */
+	/** Ticks so the next day's refill (and its countdown) shows up. */
 	now = $state(Date.now());
 	private popId = 0;
 	private wonTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,30 +121,27 @@ class Game {
 	}
 
 	// ── Energy ──────────────────────────────────────────────────────────────────────
-	/** Energy right now (refilled since it was last spent). */
+	/** Energy right now: what's left today, or full on a new day. */
 	get energy(): number {
 		const s = this.saved;
-		if (s.energy >= ENERGY_MAX) return ENERGY_MAX;
-		return Math.min(ENERGY_MAX, s.energy + Math.floor((this.now - s.energyAt) / ENERGY_REFILL_MS));
+		return s.energyDay === dayOf(this.now) ? Math.min(ENERGY_MAX, s.energy) : ENERGY_MAX;
 	}
-	/** Until the next point of energy (ms), or 0 when full. */
+	/** Until it fills back up at midnight (ms), or 0 when full. */
 	get nextEnergyIn(): number {
 		if (this.energy >= ENERGY_MAX) return 0;
-		const s = this.saved;
-		return ENERGY_REFILL_MS - ((this.now - s.energyAt) % ENERGY_REFILL_MS);
+		const midnight = new Date(this.now);
+		midnight.setHours(24, 0, 0, 0);
+		return midnight.getTime() - this.now;
 	}
-	/** Pin down the refilled amount, keeping the time already counted toward the next point. */
+	/** A new day: back to full. */
 	private settle() {
 		const s = this.saved;
-		const now = Date.now();
-		this.now = now;
-		if (s.energy >= ENERGY_MAX) {
-			s.energyAt = now;
-			return;
+		this.now = Date.now();
+		const day = dayOf(this.now);
+		if (s.energyDay !== day) {
+			s.energy = ENERGY_MAX;
+			s.energyDay = day;
 		}
-		const gained = Math.floor((now - s.energyAt) / ENERGY_REFILL_MS);
-		s.energy = Math.min(ENERGY_MAX, s.energy + gained);
-		s.energyAt = s.energy >= ENERGY_MAX ? now : s.energyAt + gained * ENERGY_REFILL_MS;
 	}
 	/** Spend energy; false (and nothing spent) if there isn't enough. */
 	spend(n = ENERGY_COST): boolean {

@@ -408,7 +408,7 @@ class SpeakEase {
 		const bot = this.botId;
 		// Scenario lines cost energy (friend chats are free).
 		if (this.screen === 'practice' && !game.spend()) {
-			this.say('Out of energy! It refills over time.');
+			this.say('Out of energy! It fills back up tomorrow.');
 			return;
 		}
 		this.waiting = true;
@@ -537,7 +537,8 @@ class SpeakEase {
 		const bot = opts.botId ?? this.botId;
 		const locale = opts.locale ?? this.locale;
 		const screen = this.screen;
-		const key = `${bot}|${locale}|${opts.slow ? 'slow' : ''}|${clean}`;
+		// One recording serves both speeds: slow is played back slower.
+		const key = `${bot}|${locale}|${clean}`;
 		this.stopVoice();
 		if (bot !== '0') return this.cortexSay(clean, locale, !!opts.slow);
 		let url = this.voiceCache.get(key);
@@ -547,7 +548,7 @@ class SpeakEase {
 				const res = await fetch('/api/speakease/speak', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ botId: bot, locale, text: clean.slice(0, 1000), slow: !!opts.slow })
+					body: JSON.stringify({ botId: bot, locale, text: clean.slice(0, 1000) })
 				});
 				if (!res.ok) throw new Error(`voice ${res.status}`);
 				url = URL.createObjectURL(await res.blob());
@@ -562,6 +563,10 @@ class SpeakEase {
 		if (this.screen !== screen || this.screen === 'home') return;
 		this.stopVoice();
 		this.audio = new Audio(url);
+		if (opts.slow) {
+			this.audio.preservesPitch = true;
+			this.audio.playbackRate = 0.7;
+		}
 		try {
 			await this.audio.play();
 		} catch (err) {

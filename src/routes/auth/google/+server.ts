@@ -1,4 +1,5 @@
-// GET /auth/google → redirect to Google's consent screen.
+// GET /auth/google[?next=/path] → redirect to Google's consent screen (and afterwards to `next`, a page
+// on this site, or the home page).
 import { error, redirect } from '@sveltejs/kit';
 import { generateCodeVerifier, generateState } from 'arctic';
 import { googleClient, googleConfigured } from '$lib/server/google';
@@ -12,5 +13,9 @@ export const GET: RequestHandler = ({ url, cookies }) => {
 	const opts = { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: url.protocol === 'https:', maxAge: 600 };
 	cookies.set('g_state', state, opts);
 	cookies.set('g_verifier', verifier, opts);
+	// Only a path on this site (never another origin, e.g. //evil.example).
+	const next = url.searchParams.get('next') ?? '';
+	if (/^\/(?!\/)[\w\-/?=&.]*$/.test(next)) cookies.set('g_next', next, opts);
+	else cookies.delete('g_next', { path: '/' });
 	redirect(302, authUrl.toString());
 };
