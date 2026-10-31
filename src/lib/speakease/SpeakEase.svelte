@@ -28,6 +28,8 @@
 	});
 
 	function open(screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) {
+		// This tap lets the greeting be spoken (phones only allow speech that starts in a tap).
+		app.unlockVoice();
 		if (screen === 'chat') app.openChat(id);
 		else if (screen === 'practice') app.openScenario(id);
 		else if (screen === 'dictionary') app.openDictionary();

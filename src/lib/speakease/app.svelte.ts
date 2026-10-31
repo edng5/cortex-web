@@ -320,6 +320,9 @@ class SpeakEase {
 		// Friend chats are plain conversations: no game pops in here.
 		game.quiet = true;
 		this.active();
+		// Greet out loud: the hello in a new chat, or the last thing they said in a saved one.
+		const last = [...this.messages].reverse().find((m) => m.role === 'assistant');
+		if (last) this.play(last.text);
 	}
 
 	/** Open a scenario: it starts once a language is picked (scenarios aren't saved). */
@@ -606,6 +609,19 @@ class SpeakEase {
 		u.pitch = site.speechPitch;
 		speechSynthesis.speak(u);
 	}
+
+	/**
+	 * Call from the tap that opens a chat or scenario: phones (iOS especially) only allow speech
+	 * that starts in a tap, and this lets the greeting that follows be spoken.
+	 */
+	unlockVoice() {
+		if (typeof speechSynthesis === 'undefined' || this.voiceUnlocked) return;
+		this.voiceUnlocked = true;
+		const u = new SpeechSynthesisUtterance(' ');
+		u.volume = 0;
+		speechSynthesis.speak(u);
+	}
+	private voiceUnlocked = false;
 
 	stopVoice() {
 		this.audio?.pause();
