@@ -14,7 +14,8 @@
 	import { quest } from './quest.svelte';
 	import { game } from './game.svelte';
 
-	let { nickname = null }: { nickname?: string | null } = $props();
+	/** `back`: where the home screen's back arrow goes (the home page, or the SpeakEase node). */
+	let { nickname = null, back = '/?node=proj-speakease' }: { nickname?: string | null; back?: string } = $props();
 
 	// Drawn once this browser's settings are loaded (no flash of the wrong theme or favourites).
 	let ready = $state(false);
@@ -47,7 +48,7 @@
 	{#if !ready}
 		<div class="loading" aria-label="Loading"></div>
 	{:else if app.screen === 'home'}
-		<Home onopen={open} />
+		<Home onopen={open} {back} />
 	{:else if app.screen === 'phrases'}
 		<Phrases onback={() => history.back()} />
 	{:else if app.screen === 'dictionary'}

@@ -89,7 +89,8 @@
 			<span>Play</span>
 		</button>
 		<!-- SpeakEase AI: the app, playable on the site. -->
-		<a class="speakease" href="/speakeaseai" aria-label="Try SpeakEase AI" title="SpeakEase AI: practise speaking 16 languages">
+		<!-- ?from=home: Back from SpeakEase returns to the home page (not the SpeakEase node). -->
+		<a class="speakease" href="/speakeaseai?from=home" aria-label="Try SpeakEase AI" title="SpeakEase AI: practise speaking 16 languages">
 			<img src="/images/speakease/icon.png" alt="" width="22" height="22" />
 			<span>SpeakEase AI</span>
 		</a>

@@ -2,9 +2,13 @@
      In a phone frame on a computer; the whole screen on a phone. -->
 <script lang="ts">
 	import SpeakEase from '$lib/speakease/SpeakEase.svelte';
+	import { page } from '$app/state';
 	import { site } from '$lib/config/site';
 
 	let { data } = $props();
+	// Opened from the site's header: Back returns to the home page; otherwise to the SpeakEase node.
+	const fromHome = $derived(page.url.searchParams.get('from') === 'home');
+	const back = $derived(fromHome ? '/' : '/?node=proj-speakease');
 </script>
 
 <svelte:head>
@@ -18,7 +22,7 @@
 
 <main class="page">
 	<div class="intro">
-		<a class="home" href="/?node=proj-speakease">← Back to SpeakEase AI</a>
+		<a class="home" href={back}>← {fromHome ? `Back to ${site.fullName}` : 'Back to SpeakEase AI'}</a>
 		<div class="brand">
 			<img src="/images/speakease/icon.png" alt="" width="44" height="44" />
 			<div>
@@ -28,7 +32,7 @@
 		</div>
 	</div>
 	<div class="phone">
-		<div class="screen"><SpeakEase nickname={data.nickname} /></div>
+		<div class="screen"><SpeakEase nickname={data.nickname} {back} /></div>
 	</div>
 </main>
 

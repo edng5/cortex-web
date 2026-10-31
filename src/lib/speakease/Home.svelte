@@ -11,7 +11,7 @@
 	import { BADGES, ENERGY_MAX, game, starsFor } from './game.svelte';
 	import { FRIENDS, SCENARIOS, TRANSLATE_OPTIONS, type Friend } from './data';
 
-	let { onopen }: { onopen: (screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) => void } = $props();
+	let { onopen, back = '/?node=proj-speakease' }: { onopen: (screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) => void; back?: string } = $props();
 
 	let settingsOpen = $state(false);
 	let questPicker = $state(false);
@@ -51,7 +51,7 @@
 </script>
 
 <header class="bar">
-	<a class="icon-btn" href="/?node=proj-speakease" aria-label="Back to SpeakEase AI on Edward Ng's site"><Icon name="back" size={22} /></a>
+	<a class="icon-btn" href={back} aria-label={back === '/' ? "Back to Edward Ng's site" : "Back to SpeakEase AI on Edward Ng's site"}><Icon name="back" size={22} /></a>
 	<span class="brand"><img src="/images/speakease/icon.png" alt="" width="24" height="24" />SpeakEase</span>
 	<span class="streak" class:lit={app.practisedToday} title={app.practisedToday ? 'Practised today' : streak ? 'Practise today to keep your streak' : 'Practise today to start a streak'}>
 		<Icon name="flame" size={18} />{streak}
