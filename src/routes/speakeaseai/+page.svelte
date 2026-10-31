@@ -32,7 +32,7 @@
 		</div>
 	</div>
 	<div class="phone">
-		<div class="screen"><SpeakEase nickname={data.nickname} {back} /></div>
+		<div class="screen"><SpeakEase nickname={data.nickname} account={data.account} {back} /></div>
 	</div>
 </main>
 

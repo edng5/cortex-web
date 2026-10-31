@@ -10,21 +10,39 @@
 	import Dictionary from './Dictionary.svelte';
 	import Confetti from './Confetti.svelte';
 	import Avatar from './Avatar.svelte';
-	import { app } from './app.svelte';
+	import { app, load } from './app.svelte';
 	import { quest } from './quest.svelte';
 	import { game } from './game.svelte';
+	import { pullProgress, watchProgress } from './sync';
 
 	/** `back`: where the home screen's back arrow goes (the home page, or the SpeakEase node). */
-	let { nickname = null, back = '/?node=proj-speakease' }: { nickname?: string | null; back?: string } = $props();
+	let {
+		nickname = null,
+		account = null,
+		back = '/?node=proj-speakease'
+	}: { nickname?: string | null; account?: string | null; back?: string } = $props();
 
 	// Drawn once this browser's settings are loaded (no flash of the wrong theme or favourites).
 	let ready = $state(false);
 	onMount(() => {
-		app.init(nickname);
-		ready = true;
+		let stopSync: (() => void) | null = null;
+		let gone = false;
+		// Signed in: first take the account's progress (if it's newer), then keep sending changes.
+		const synced = account ? pullProgress(account) : Promise.resolve(false);
+		synced.then((inStep) => {
+			if (gone) return;
+			quest.locale = load('phrases-lang', quest.locale);
+			app.init(nickname);
+			ready = true;
+			if (inStep) stopSync = watchProgress();
+		});
 		// Practice time for today's goal (only while a lesson is open and you're active).
 		const timer = setInterval(() => app.tick(5), 5000);
-		return () => clearInterval(timer);
+		return () => {
+			gone = true;
+			clearInterval(timer);
+			stopSync?.();
+		};
 	});
 
 	function open(screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) {

@@ -17,6 +17,12 @@ export interface Card {
 	level: number;
 	/** Back from an earlier level, to check it stuck. */
 	review?: boolean;
+	/** Its opposite (yes → no), to learn as well when asked. */
+	opposite?: Omit<Card, 'id' | 'level' | 'review' | 'opposite' | 'oppositeOf' | 'oppositeQueued'>;
+	/** This card is the opposite of that phrase. */
+	oppositeOf?: string;
+	/** Its opposite has been added to the queue. */
+	oppositeQueued?: boolean;
 }
 
 interface Progress {
@@ -161,6 +167,38 @@ class PhraseQuest {
 		} finally {
 			this.checking = false;
 		}
+	}
+
+	/** Learn this phrase's opposite too: it comes up right after this one. */
+	learnOpposite() {
+		const c = this.card;
+		if (!c?.opposite || c.oppositeQueued) return;
+		c.oppositeQueued = true;
+		this.progress.queue.splice(1, 0, { ...c.opposite, id: newId(), level: c.level, oppositeOf: c.text });
+		this.save();
+	}
+
+	/** Phrases learned so far, by level (for reviewing). */
+	get learnedByLevel(): { level: number; cards: Card[] }[] {
+		const by = new Map<number, Card[]>();
+		for (const c of this.progress.learned) by.set(c.level, [...(by.get(c.level) ?? []), c]);
+		return [...by.entries()].sort(([a], [b]) => a - b).map(([level, cards]) => ({ level, cards }));
+	}
+
+	/**
+	 * Go back over earlier phrases: a level's (or, with none given, everything learned), up to 8 in a
+	 * shuffled review round before carrying on. Reviews don't count toward the next level.
+	 */
+	reviewLevel(level: number | null = null) {
+		const pool = this.progress.learned.filter((c) => level === null || c.level === level);
+		if (!pool.length) return;
+		const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, 8);
+		// Drop reviews already waiting, then put this round first.
+		this.progress.queue = this.progress.queue.filter((c) => !c.review);
+		this.progress.queue.unshift(...picked.map((c) => ({ ...c, id: newId(), review: true, opposite: undefined, oppositeQueued: undefined })));
+		this.result = null;
+		this.tries = 0;
+		this.save();
 	}
 
 	/** After a result: next phrase (passed, or out of tries) or another go. */

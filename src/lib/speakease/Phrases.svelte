@@ -13,6 +13,12 @@
 	let { onback }: { onback: () => void } = $props();
 
 	let recording = $state(false);
+	/** The "review earlier phrases" sheet. */
+	let reviewOpen = $state(false);
+	function review(level: number | null) {
+		reviewOpen = false;
+		quest.reviewLevel(level);
+	}
 	const card = $derived(quest.card);
 	const r = $derived(quest.result);
 	/** Waiting for "Next" (passed, or out of tries). */
@@ -34,6 +40,9 @@
 	<button class="icon-btn" onclick={onback} aria-label="Back to home"><Icon name="back" size={22} /></button>
 	<Avatar look={tutor.persona} size={38} name={tutor.name} />
 	<span class="who"><b>Phrase Quest</b><small>{tutor.language} with {tutor.name}</small></span>
+	<button class="review-btn" onclick={() => (reviewOpen = true)} disabled={!p.learned.length} title={p.learned.length ? 'Review earlier phrases' : 'Learn a phrase first'}>
+		<Icon name="retry" size={16} />Review
+	</button>
 	<Energy />
 	<span class="level">Lv {p.level}</span>
 </header>
@@ -55,10 +64,20 @@
 		</div>
 	{:else}
 		<article class="phrase" class:review={card.review}>
-			<p class="tag">{card.review ? 'Review' : `New phrase · Level ${card.level}`}</p>
+			<p class="tag">{card.review ? 'Review' : card.oppositeOf ? `Opposite of “${card.oppositeOf}”` : `New phrase · Level ${card.level}`}</p>
 			<h1 dir="auto">{card.text}</h1>
 			{#if card.romanization}<p class="roman">{card.romanization}</p>{/if}
 			<p class="meaning">{card.meaning}</p>
+			{#if card.opposite && !card.review}
+				<div class="opposite">
+					<span><small>Opposite</small><b dir="auto">{card.opposite.text}</b> <em>{card.opposite.meaning}</em></span>
+					{#if card.oppositeQueued}
+						<span class="queued">Up next</span>
+					{:else}
+						<button class="btn ghost small" onclick={() => quest.learnOpposite()}>Learn the opposite too</button>
+					{/if}
+				</div>
+			{/if}
 			<div class="say">
 				<div>
 					<span class="label">Sounds like</span>
@@ -133,6 +152,32 @@
 	/>
 </div>
 
+{#if reviewOpen}
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="overlay" onclick={() => (reviewOpen = false)}></div>
+	<div class="sheet" role="dialog" aria-modal="true" aria-label="Review earlier phrases">
+		<div class="grabber"></div>
+		<h3>Review earlier phrases</h3>
+		<p class="fine">Reviews don't count toward the next level. Tap a phrase to hear it.</p>
+		<button class="btn wide" onclick={() => review(null)}>Review everything ({p.learned.length})</button>
+		{#each quest.learnedByLevel as lv (lv.level)}
+			<div class="lv">
+				<div class="lv-head">
+					<b>Level {lv.level}</b><small>{lv.cards.length} phrase{lv.cards.length === 1 ? '' : 's'}</small>
+					<button class="btn ghost small" onclick={() => review(lv.level)}>Review level {lv.level}</button>
+				</div>
+				<div class="lv-list">
+					{#each lv.cards as c (c.id)}
+						<button class="lv-item" onclick={() => app.play(c.text, { botId: tutor.id, locale: quest.locale })}>
+							<span dir="auto">{c.text}</span><small>{c.meaning}</small>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/each}
+	</div>
+{/if}
+
 {#if quest.levelUp}
 	<div class="overlay" role="dialog" aria-modal="true" aria-label="Level up">
 		<div class="card up">
@@ -169,6 +214,105 @@
 		color: #fff;
 		font-weight: 750;
 		font-size: 14px;
+	}
+	.review-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 10px;
+		border: 1px solid var(--se-border);
+		border-radius: 999px;
+		background: var(--se-surface-2);
+		color: var(--se-text);
+		font: inherit;
+		font-size: 13px;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.review-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.opposite {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-top: 10px;
+		padding: 8px 10px;
+		border-radius: 12px;
+		border: 1px dashed color-mix(in srgb, var(--se-primary-2) 50%, transparent);
+	}
+	.opposite > span:first-child {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 6px;
+	}
+	.opposite small {
+		width: 100%;
+		color: var(--se-muted);
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+	.opposite em {
+		color: var(--se-muted);
+		font-size: 13px;
+		font-style: normal;
+	}
+	.queued {
+		color: var(--se-good);
+		font-size: 13px;
+		font-weight: 700;
+	}
+	.btn.small {
+		padding: 7px 11px;
+		border-radius: 10px;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+	.fine {
+		margin: -4px 0 12px;
+		color: var(--se-muted);
+		font-size: 13px;
+	}
+	.lv {
+		margin-top: 14px;
+	}
+	.lv-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 6px;
+	}
+	.lv-head small {
+		flex: 1;
+		color: var(--se-muted);
+	}
+	.lv-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.lv-item {
+		display: flex;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 8px 10px;
+		border: none;
+		border-radius: 10px;
+		background: var(--se-surface-2);
+		color: var(--se-text);
+		font: inherit;
+		text-align: start;
+		cursor: pointer;
+	}
+	.lv-item small {
+		color: var(--se-muted);
+		text-align: end;
 	}
 	.progress {
 		display: flex;

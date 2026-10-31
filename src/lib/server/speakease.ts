@@ -49,12 +49,12 @@ async function call(model: string, body: object, signal?: AbortSignal): Promise<
 	}
 }
 
-async function text(system: string | null, contents: Content[], json?: object): Promise<string> {
+async function text(system: string | null, contents: Content[], json?: object, maxTokens = 1024): Promise<string> {
 	const { parts } = await call(geminiModel(), {
 		...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
 		contents,
 		generationConfig: {
-			maxOutputTokens: 1024,
+			maxOutputTokens: maxTokens,
 			thinkingConfig: { thinkingLevel: 'low' },
 			...(json ? { responseMimeType: 'application/json', responseSchema: json } : {})
 		}
@@ -196,6 +196,8 @@ export interface Phrase {
 	meaning: string;
 	/** The tricky bits: a word, what it sounds like, how to make the sound. */
 	tips: { word: string; soundsLike: string; how: string }[];
+	/** Its opposite, when it has a natural one (yes → no, hello → goodbye), to learn as well. */
+	opposite?: Omit<Phrase, 'opposite' | 'tips'> & { tips: Phrase['tips'] };
 }
 
 /** What each level asks for: easy greetings first, natural fluent sentences later. */
@@ -229,9 +231,28 @@ const PHRASE_SCHEMA = {
 							properties: { word: { type: 'STRING' }, soundsLike: { type: 'STRING' }, how: { type: 'STRING' } },
 							required: ['word', 'soundsLike', 'how']
 						}
+					},
+					opposite: {
+						type: 'OBJECT',
+						properties: {
+							text: { type: 'STRING' },
+							romanization: { type: 'STRING' },
+							sounds: { type: 'STRING' },
+							ipa: { type: 'STRING' },
+							meaning: { type: 'STRING' },
+							tips: {
+								type: 'ARRAY',
+								items: {
+									type: 'OBJECT',
+									properties: { word: { type: 'STRING' }, soundsLike: { type: 'STRING' }, how: { type: 'STRING' } },
+									required: ['word', 'soundsLike', 'how']
+								}
+							}
+						},
+						required: ['text', 'romanization', 'sounds', 'ipa', 'meaning', 'tips']
 					}
 				},
-				required: ['text', 'romanization', 'sounds', 'ipa', 'meaning', 'tips']
+				required: ['text', 'romanization', 'sounds', 'ipa', 'meaning', 'tips', 'opposite']
 			}
 		}
 	},
@@ -255,12 +276,15 @@ export async function phrases(locale: string, level: number, known: string[], ex
 							`"sounds" (an easy sound-it-out spelling for an English speaker, syllables split with hyphens and the stressed ` +
 							`syllable in CAPITALS; mark tones for tonal languages), "ipa", "meaning" (in ${explain}), and "tips" for the 1–3 ` +
 							`hardest words or sounds: what it sounds like and how to make the sound with your mouth (lips, tongue, tone), in ${explain}. ` +
+							`Also give "opposite": the phrase with the opposite meaning, in the same fields (yes → no, hello → goodbye, ` +
+							`I like it → I don't like it, open → closed), or an empty "text" if it has no natural opposite. ` +
 							(known.length ? `Don't repeat any of these: ${known.slice(-80).join(' | ')}.` : '')
 					}
 				]
 			}
 		],
-		PHRASE_SCHEMA
+		PHRASE_SCHEMA,
+		6000
 	);
 	const j = JSON.parse(out) as { phrases?: Phrase[] };
 	return (j.phrases ?? [])
@@ -272,15 +296,33 @@ export async function phrases(locale: string, level: number, known: string[], ex
 			sounds: String(p.sounds ?? '').trim(),
 			ipa: String(p.ipa ?? '').trim(),
 			meaning: String(p.meaning ?? '').trim(),
-			tips: (Array.isArray(p.tips) ? p.tips : [])
-				.slice(0, 3)
-				.map((t) => ({ word: String(t.word ?? ''), soundsLike: String(t.soundsLike ?? ''), how: String(t.how ?? '') }))
+			tips: tipsOf(p.tips),
+			...(p.opposite && String(p.opposite.text ?? '').trim()
+				? {
+						opposite: {
+							text: String(p.opposite.text).trim(),
+							romanization: String(p.opposite.romanization ?? '').trim(),
+							sounds: String(p.opposite.sounds ?? '').trim(),
+							ipa: String(p.opposite.ipa ?? '').trim(),
+							meaning: String(p.opposite.meaning ?? '').trim(),
+							tips: tipsOf(p.opposite.tips)
+						}
+					}
+				: {})
 		}));
 }
 
+const tipsOf = (v: unknown): Phrase['tips'] =>
+	(Array.isArray(v) ? v : []).slice(0, 3).map((t) => ({ word: String(t?.word ?? ''), soundsLike: String(t?.soundsLike ?? ''), how: String(t?.how ?? '') }));
+
 /**
- * The learner tried to say `target`: each of its words with a score (0 if left out), what was
- * heard, and an overall score.
+ * The learner tried to say `target`: each of its words with a score (0 if left out or wrong), what
+ * was heard, and an overall score.
+ *
+ * Listened to blind: the model isn't told the target (told it, it "hears" the phrase it expects,
+ * filling in missing words and passing mispronunciations). What was heard is then lined up with the
+ * target here: a word said right keeps its pronunciation score, a near miss (spelled nearly the
+ * same) is capped, and a word that's missing or different scores 0.
  */
 export async function assess(
 	audioBase64: string,
@@ -288,63 +330,70 @@ export async function assess(
 	locale: string,
 	target: string
 ): Promise<{ heard: string; words: { w: string; s: number }[]; score: number }> {
-	const lang = languageOf(locale);
-	const out = await text(
-		null,
-		[
-			{
-				role: 'user',
-				parts: [
-					{ inlineData: { mimeType, data: audioBase64 } },
-					{
-						text:
-							`A learner of ${lang} (${locale}) is trying to say this phrase: ${JSON.stringify(target)}. Write down what they actually ` +
-							`said ("heard"). Then go through the words of the TARGET phrase in order (for Chinese or Japanese, short words) and for ` +
-							`each one write how it actually sounded and score it from 0 to 100 like Azure pronunciation assessment: 95–100 said ` +
-							`right (an accent alone is fine); 86–94 slightly off; 60–85 a sound clearly wrong (a wrong vowel, consonant or tone, ` +
-							`a dropped sound); under 60 mispronounced; 0 if it was left out or replaced by a different word. Judge the sounds ` +
-							`you heard, not the word you think they meant. If there is no speech, heard is "" and every word scores 0.`
-					}
-				]
-			}
-		],
-		{
-			type: 'OBJECT',
-			properties: {
-				heard: { type: 'STRING' },
-				words: {
-					type: 'ARRAY',
-					items: {
-						type: 'OBJECT',
-						properties: { word: { type: 'STRING' }, sounded: { type: 'STRING' }, score: { type: 'INTEGER' } },
-						required: ['word', 'sounded', 'score'],
-						propertyOrdering: ['word', 'sounded', 'score']
-					}
-				}
-			},
-			required: ['heard', 'words']
-		}
-	);
-	const j = JSON.parse(out) as { heard?: string; words?: { word: string; score: number }[] };
-	const scored = (j.words ?? [])
-		.filter((x) => typeof x.word === 'string' && x.word.trim())
-		.map((x) => ({ w: x.word.trim(), s: Math.max(0, Math.min(100, Math.round(Number(x.score) || 0))) }));
-	const heard = (j.heard ?? '').trim();
-	// Always report the target's own words (the model sometimes lists what it heard instead):
-	// each target word takes its score from the matching scored word, else 0 (not said).
-	let words = scored;
-	if (!noSpaces(locale)) {
-		const bare = (w: string) => w.toLocaleLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
-		const pool = scored.map((x) => ({ ...x, key: bare(x.w), used: false }));
-		const sameCount = pool.length === target.split(/\s+/).length;
-		words = target.split(/\s+/).filter(Boolean).map((w, i) => {
-			const m = pool.find((x) => !x.used && x.key === bare(w)) ?? (sameCount && heard && !pool[i].used ? pool[i] : null);
-			if (m) m.used = true;
-			return { w, s: m && heard ? m.s : 0 };
-		});
-	}
-	const score = words.length ? Math.round(words.reduce((a, x) => a + x.s, 0) / words.length) : 0;
+	const heardNow = await transcribe(audioBase64, mimeType, locale);
+	const heard = heardNow.text;
+	const words = noSpaces(locale) ? alignChars(target, heardNow.words) : alignWords(target, heardNow.words);
+	const score = words.length ? Math.round(words.reduce((n, x) => n + x.s, 0) / words.length) : 0;
 	return { heard, words, score };
+}
+
+/** A near miss (a word recognisable but not quite right) scores at most this. */
+const NEAR_MISS = 70;
+const bare = (w: string) => w.toLocaleLowerCase().normalize('NFC').replace(/[^\p{L}\p{N}']/gu, '');
+
+/** How alike two words are, 0–1 (edit distance). */
+function likeness(a: string, b: string): number {
+	if (a === b) return 1;
+	if (!a.length || !b.length) return 0;
+	let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i++) {
+		const cur = [i];
+		for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+		prev = cur;
+	}
+	return 1 - prev[b.length] / Math.max(a.length, b.length);
+}
+
+/** Line the heard words up with the target's, in order (languages with spaces). */
+function alignWords(target: string, heard: { w: string; s: number }[]): { w: string; s: number }[] {
+	const pool = heard.map((h) => ({ key: bare(h.w), s: h.s }));
+	let from = 0;
+	return target
+		.split(/\s+/)
+		.filter((w) => bare(w))
+		.map((w) => {
+			const key = bare(w);
+			// The next heard word that matches (looking a few words ahead, for skipped or extra words).
+			for (let i = from; i < Math.min(pool.length, from + 4); i++) {
+				if (pool[i].key === key) {
+					from = i + 1;
+					return { w, s: pool[i].s };
+				}
+			}
+			for (let i = from; i < Math.min(pool.length, from + 2); i++) {
+				if (likeness(pool[i].key, key) >= 0.6) {
+					from = i + 1;
+					return { w, s: Math.min(pool[i].s, NEAR_MISS) };
+				}
+			}
+			return { w, s: 0 };
+		});
+}
+
+/** Chinese and Japanese: line up character by character (each heard character takes its word's score). */
+function alignChars(target: string, heard: { w: string; s: number }[]): { w: string; s: number }[] {
+	const chars: { c: string; s: number }[] = [];
+	for (const h of heard) for (const c of bare(h.w)) chars.push({ c, s: h.s });
+	let from = 0;
+	return [...bare(target)].map((c) => {
+		for (let i = from; i < Math.min(chars.length, from + 4); i++) {
+			if (chars[i].c === c) {
+				from = i + 1;
+				return { w: c, s: chars[i].s };
+			}
+		}
+		return { w: c, s: 0 };
+	});
 }
 
 /** How to say one word: a sound-it-out spelling, IPA and a tip (for words marked down in a chat). */
@@ -408,7 +457,8 @@ export async function phonetics(textIn: string, locale: string): Promise<{ roman
 				}
 			},
 			required: ['romanization', 'words']
-		}
+		},
+		3000
 	);
 	const j = JSON.parse(out) as { romanization?: string; words?: { word: string; sounds: string; ipa: string }[] };
 	const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
@@ -478,7 +528,8 @@ export async function lookUp(word: string, from: string, locale: string): Promis
 				}
 			},
 			required: ['entries']
-		}
+		},
+		3000
 	);
 	const j = JSON.parse(out) as { entries?: Partial<DictEntry>[] };
 	const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');

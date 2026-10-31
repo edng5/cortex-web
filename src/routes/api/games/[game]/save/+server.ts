@@ -6,15 +6,18 @@ import { MAX_SAVE_BYTES, getSave, putSave } from '$lib/server/game-saves';
 import { rateLimit } from '$lib/server/ratelimit';
 import type { RequestHandler } from './$types';
 
+/** The arcade games, plus SpeakEase AI (its progress bundle, synced the same way). */
+const saveable = (g: string) => isGame(g) || g === 'speakease';
+
 export const GET: RequestHandler = ({ locals, params, setHeaders }) => {
-	if (!isGame(params.game)) error(404, 'No such game.');
+	if (!saveable(params.game)) error(404, 'No such game.');
 	if (!locals.user) error(401, 'Log in to sync your progress.');
 	setHeaders({ 'cache-control': 'no-store' });
 	return json(getSave(locals.user.id, params.game) ?? { data: null, savedAt: 0 });
 };
 
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
-	if (!isGame(params.game)) error(404, 'No such game.');
+	if (!saveable(params.game)) error(404, 'No such game.');
 	if (!locals.user) error(401, 'Log in to sync your progress.');
 	// Saves are sent every few seconds at most while playing; this only stops floods.
 	if (!rateLimit(`game-save:${locals.user.id}`, 300, 10 * 60_000)) error(429, 'Too many saves, slow down.');
