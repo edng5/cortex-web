@@ -6,6 +6,7 @@ tags: [surprise, youtube, playlist, video-editing, friends]
 weight: 2
 # Only logged-in members (emails in MEMBER_EMAILS) can see this node.
 membersOnly: true
+ring: true
 # Clicking the node opens this playlist in a large player. The URL is kept out of the public
 # repo: set SURPRISE_PLAYLIST_URL in .env (or the host's environment variables).
 playlist: env:SURPRISE_PLAYLIST_URL

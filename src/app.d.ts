@@ -6,6 +6,10 @@ declare global {
 			/** Anonymous per-browser id (cookie). */
 			visitorId: string;
 		}
+		interface PageState {
+			/** SpeakEase AI: the open screen, so the browser's Back button returns home. */
+			speakease?: 'chat' | 'practice' | 'phrases' | 'dictionary';
+		}
 	}
 
 	// Web Speech API (not in lib.dom for all TS versions)

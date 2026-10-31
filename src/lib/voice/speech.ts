@@ -294,7 +294,7 @@ const MALE_VOICE =
 const FEMALE_VOICE =
 	/\b(female|woman|samantha|karen|victoria|zira|aria|jenny|sonia|libby|natasha|moira|tessa|fiona|susan|hazel|catherine|emma|ava|allison|serena|kate|nicky|joanna|salli|kimberly|ivy|clara|michelle|ana|heera|neerja|google us english)\b/i;
 
-function isMaleVoice(v: SpeechSynthesisVoice): boolean {
+export function isMaleVoice(v: SpeechSynthesisVoice): boolean {
 	return MALE_VOICE.test(v.name) && !/female/i.test(v.name);
 }
 

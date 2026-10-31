@@ -1,4 +1,4 @@
-<!-- Top-right header: Experience · Projects · Log in / account menu. -->
+<!-- Top-right header: music · Play (E.Ngine Games) · SpeakEase AI · Experience · Projects · Log in / account menu. -->
 <script lang="ts">
 	import { session, type ClientUser } from '$lib/session.svelte';
 	import { ambient } from '$lib/ambient.svelte';
@@ -88,6 +88,11 @@
 			<img src="/games/engine-icon.png" alt="" width="22" height="22" />
 			<span>Play</span>
 		</button>
+		<!-- SpeakEase AI: the app, playable on the site. -->
+		<a class="speakease" href="/speakeaseai" aria-label="Try SpeakEase AI" title="SpeakEase AI: practise speaking 16 languages">
+			<img src="/images/speakease/icon.png" alt="" width="22" height="22" />
+			<span>SpeakEase AI</span>
+		</a>
 		<button class="link" onclick={() => (session.experienceOpen = true)}>Experience</button>
 		<button class="link" onclick={() => (session.projectsOpen = true)}>Projects</button>
 		{#if user}
@@ -229,6 +234,31 @@
 		-webkit-background-clip: text;
 		background-clip: text;
 		color: transparent;
+	}
+	.speakease {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 3px 12px 3px 3px;
+		border-radius: 999px;
+		border: 2px solid transparent;
+		background:
+			linear-gradient(#0b1022, #0b1022) padding-box,
+			linear-gradient(90deg, #316ccd, #1db1fd) border-box;
+		color: #e0f2fe;
+		font-size: 0.85rem;
+		font-weight: 650;
+		text-decoration: none;
+		white-space: nowrap;
+		transition: box-shadow 0.2s;
+	}
+	.speakease:hover {
+		box-shadow: 0 0 14px -2px rgba(29, 177, 253, 0.7);
+	}
+	.speakease img {
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
 	}
 	.login {
 		padding: 7px 16px;
@@ -426,7 +456,8 @@
 			border-radius: 12px;
 			font-size: 0.95rem;
 		}
-		.play {
+		.play,
+		.speakease {
 			order: 2;
 			padding: 5px 12px 5px 5px;
 			border-radius: 12px;

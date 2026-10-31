@@ -91,12 +91,14 @@ function parseNode(file: string, folderType: NodeType): OntologyNode {
 			? data.links
 					.map((l: any) => ({ ...l, url: fromEnv(l?.url) }))
 					.filter((l: any) => l && l.url)
-					.map((l: any) => ({ label: String(l.label ?? l.url), url: String(l.url), kind: l.kind }))
+					.map((l: any) => ({ label: String(l.label ?? l.url), url: String(l.url), kind: l.kind, ...(l.disabled === true ? { disabled: true } : {}) }))
 			: [],
+		notice: data.notice ? String(data.notice) : undefined,
+		action: data.action?.label && data.action?.url ? { label: String(data.action.label), url: String(data.action.url) } : undefined,
 		related: asStringArray(data.related),
 		author: data.author ? String(data.author) : undefined,
 		wip: data.wip === true || data.status === 'wip',
-		ring: data.ring === true,
+		ring: data.ring === true || (typeof data.ring === 'string' && /^#[0-9a-f]{6}$/i.test(data.ring) ? data.ring : false),
 		membersOnly: data.membersOnly === true,
 		playlist: fromEnv(data.playlist),
 		weight: typeof data.weight === 'number' ? data.weight : 1,

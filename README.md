@@ -131,6 +131,18 @@ older than 90 days are deleted automatically (hourly).
 Data lives in `data/app.db` (SQLite, git-ignored). Behind a proxy, set adapter-node's
 `ADDRESS_HEADER=X-Forwarded-For` so visitors are told apart by their real IP.
 
+## SpeakEase AI (/speakeaseai)
+
+A web edition of the SpeakEase mobile app (end of support on iOS and Android) on the same
+`GEMINI_API_KEY`: replies, speech recognition with per-word pronunciation scores, corrections,
+suggestions, translations, Phrase Quest phrases and the dictionary use the text model. Easso speaks
+with a Gemini TTS voice; every other character is Cortex and speaks with Cortex's browser voice, which
+also takes over (with a note) when Easso's voice is out of quota. Gemini's free tier allows only ~10
+TTS requests a day per model, so turn on billing for Easso's voice to last. Prompts are in
+`src/lib/server/speakease-prompts.ts`, the characters in `src/lib/speakease/data.ts`, and the API is
+`src/routes/api/speakease/[action]`, rate limited per visitor. Progress (chats for 30 days, goals,
+streak, XP, badges, energy, phrase levels) is kept in the visitor's browser.
+
 ## Notes
 
 - **Browser support:** speech recognition works in Chrome, Edge and Safari. Chrome sends the

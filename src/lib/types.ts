@@ -19,6 +19,8 @@ export interface NodeLink {
 	url: string;
 	/** Optional icon hint: github | paper | website | demo | video | linkedin | other */
 	kind?: string;
+	/** Shown greyed out and can't be clicked (e.g. an app that's no longer available). */
+	disabled?: boolean;
 }
 
 export interface OntologyNode {
@@ -62,6 +64,10 @@ export interface OntologyNode {
 	/** Optional captions, keyed by image/video src. */
 	captions: Record<string, string>;
 	links: NodeLink[];
+	/** A note shown at the top of the text (e.g. "This app has reached end of support"). */
+	notice?: string;
+	/** A big button under the links (e.g. "Try SpeakEase AI" → /speakeaseai). */
+	action?: { label: string; url: string };
 	/** Explicit connections to other node ids (in addition to similarity edges). */
 	related: string[];
 	/** For quotes: who said it. */
@@ -72,8 +78,11 @@ export interface OntologyNode {
 	playlist?: string;
 	/** `wip: true` in frontmatter: shown as "Work in progress" (dashed neuron, banner in the panel). */
 	wip: boolean;
-	/** `ring: true` in frontmatter: a solid ring around the neuron (to make it stand out). */
-	ring?: boolean;
+	/**
+	 * `ring: true` in frontmatter: a solid ring around the neuron (to make it stand out), in the
+	 * neuron's colour; or `ring: "#38bdf8"` for a ring in that colour.
+	 */
+	ring?: boolean | string;
 	/** Bigger number = bigger neuron. Defaults to 1. */
 	weight: number;
 	/** Markdown body — long-form detail, also chunked into the vector DB. */

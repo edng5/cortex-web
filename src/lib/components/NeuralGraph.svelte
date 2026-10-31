@@ -687,7 +687,7 @@
 			for (const n of nodes) {
 				const p = pos(n);
 				const haloR = n.r * (2 + n.glow * 4);
-				const fade = n.dim * n.dim;
+				const fade = n.dim * n.dim * wipFade(n);
 				const grad = ctx.createRadialGradient(p.x, p.y, n.r * 0.3, p.x, p.y, haloR);
 				grad.addColorStop(0, hexA(n.color, (0.25 + n.glow * 0.55) * fade));
 				grad.addColorStop(1, hexA(n.color, 0));
@@ -699,7 +699,7 @@
 			ctx.globalCompositeOperation = 'source-over';
 			for (const n of nodes) {
 				const p = pos(n);
-				const dim = n.dim;
+				const dim = n.dim * wipFade(n);
 				ctx.fillStyle = hexA(n.color, (0.75 + n.glow * 0.25) * dim);
 				ctx.beginPath();
 				ctx.arc(p.x, p.y, n.r, 0, Math.PI * 2);
@@ -722,10 +722,12 @@
 					ctx.stroke();
 					ctx.restore();
 				} else if (n.data.ring) {
-					ctx.strokeStyle = hexA(n.color, 0.6 + 0.3 * Math.sin(t * 2));
-					ctx.lineWidth = 2 / view.k;
+					// Set off from the neuron by a gap that grows with it, so big neurons' rings clear their glow too.
+					const ringColor = typeof n.data.ring === 'string' ? n.data.ring : n.color;
+					ctx.strokeStyle = hexA(ringColor, 0.7 + 0.3 * Math.sin(t * 2));
+					ctx.lineWidth = 2.2 / view.k;
 					ctx.beginPath();
-					ctx.arc(p.x, p.y, n.r + 5, 0, Math.PI * 2);
+					ctx.arc(p.x, p.y, n.r + Math.max(5, n.r * 0.3), 0, Math.PI * 2);
 					ctx.stroke();
 				}
 			}
@@ -887,6 +889,18 @@
 		let s = text;
 		while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
 		return s.trimEnd() + '…';
+	}
+
+	/**
+	 * Work in progress: every so often the neuron dims for a few seconds, then lights up again
+	 * (1 when lit). Each WIP neuron keeps its own rhythm.
+	 */
+	function wipFade(n: SimNode): number {
+		if (!n.data.wip) return 1;
+		const w = Math.sin(performance.now() / 1000 / 2.2 + n.phase * 3);
+		// Lit most of the time; dims to ~35% at the bottom of each slow wave.
+		const low = Math.max(0, -w - 0.2) / 0.8;
+		return 1 - 0.65 * low * low * (3 - 2 * low);
 	}
 
 	function hexA(hex: string, a: number): string {

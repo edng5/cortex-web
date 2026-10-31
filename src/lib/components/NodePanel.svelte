@@ -157,6 +157,13 @@
 		</div>
 	{/if}
 
+	{#if node.notice}
+		<div class="notice" role="note">
+			<span class="notice-icon" aria-hidden="true">ⓘ</span>
+			<span>{node.notice}</span>
+		</div>
+	{/if}
+
 	{#if node.summary}<p class="summary">{node.summary}</p>{/if}
 
 	{#if inlineReels && node.reels.length}
@@ -179,15 +186,39 @@
 		<div class="links">
 			{#each node.links as link (link.url)}
 				{@const brand = brandFor(link.url)}
-				<a class="link" href={link.url} target="_blank" rel="noopener noreferrer">
-					{#if brand}
-						<img class="brand" src={brand.icon} alt="" width="16" height="16" />
-					{:else}
-						<span class="icon" aria-hidden="true">{icon(link.kind)}</span>
-					{/if}{link.label}
-				</a>
+				{#if link.disabled}
+					<!-- No longer available: shown greyed out, not a link. -->
+					<span class="link disabled" aria-disabled="true" title="{link.label} is no longer available">
+						{#if brand}
+							<img class="brand" src={brand.icon} alt="" width="16" height="16" />
+						{:else}
+							<span class="icon" aria-hidden="true">{icon(link.kind)}</span>
+						{/if}{link.label}
+					</span>
+				{:else}
+					<a class="link" href={link.url} target="_blank" rel="noopener noreferrer">
+						{#if brand}
+							<img class="brand" src={brand.icon} alt="" width="16" height="16" />
+						{:else}
+							<span class="icon" aria-hidden="true">{icon(link.kind)}</span>
+						{/if}{link.label}
+					</a>
+				{/if}
 			{/each}
 		</div>
+	{/if}
+
+	{#if node.action}
+		<a class="action" href={node.action.url}>
+			{#if node.icon}<img class="action-icon" src={node.icon} alt="" width="40" height="40" />{/if}
+			<span class="action-text">
+				<strong>{node.action.label}</strong>
+				<small>Right here in your browser · free</small>
+			</span>
+			<span class="action-go" aria-hidden="true">
+				<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 5v14l11-7z" /></svg>
+			</span>
+		</a>
 	{/if}
 
 	{#if node.body}
@@ -497,6 +528,127 @@
 	}
 	.link:hover {
 		background: color-mix(in srgb, var(--accent) 26%, transparent);
+	}
+	.link.disabled {
+		background: rgba(148, 163, 184, 0.08);
+		border-color: rgba(148, 163, 184, 0.22);
+		color: #64748b;
+		cursor: not-allowed;
+	}
+	.link.disabled .brand {
+		filter: grayscale(1);
+		opacity: 0.45;
+	}
+	/* "Try it" call to action: an app-store style tile in the app's own blues, with a soft shine. */
+	.action {
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin: 6px 0 18px;
+		padding: 10px 12px 10px 10px;
+		border-radius: 16px;
+		overflow: hidden;
+		isolation: isolate;
+		background: linear-gradient(120deg, #1e4fae 0%, #316ccd 45%, #1db1fd 100%);
+		color: #fff;
+		text-decoration: none;
+		box-shadow:
+			0 0 0 1px rgba(125, 211, 252, 0.35) inset,
+			0 14px 30px -14px rgba(29, 177, 253, 0.85);
+		transition:
+			transform 0.18s ease,
+			box-shadow 0.18s ease;
+	}
+	.action::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.28) 50%, transparent 65%);
+		transform: translateX(-120%);
+		animation: action-shine 4.5s ease-in-out infinite;
+	}
+	@keyframes action-shine {
+		0%,
+		55% {
+			transform: translateX(-120%);
+		}
+		85%,
+		100% {
+			transform: translateX(120%);
+		}
+	}
+	.action:hover {
+		transform: translateY(-2px);
+		box-shadow:
+			0 0 0 1px rgba(186, 230, 253, 0.6) inset,
+			0 18px 36px -14px rgba(29, 177, 253, 1);
+	}
+	.action:active {
+		transform: translateY(0);
+	}
+	.action-icon {
+		flex: none;
+		width: 40px;
+		height: 40px;
+		border-radius: 11px;
+		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+	}
+	.action-text {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+	}
+	.action-text strong {
+		font-size: 1rem;
+		letter-spacing: 0.01em;
+	}
+	.action-text small {
+		font-size: 0.78rem;
+		opacity: 0.85;
+	}
+	.action-go {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.95);
+		color: #316ccd;
+		transition: transform 0.18s ease;
+	}
+	.action:hover .action-go {
+		transform: scale(1.08);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.action::after {
+			animation: none;
+		}
+	}
+	.notice {
+		display: flex;
+		gap: 10px;
+		align-items: flex-start;
+		margin: 14px 0;
+		padding: 11px 14px;
+		border-radius: 12px;
+		border: 1px solid rgba(251, 191, 36, 0.45);
+		background: rgba(251, 191, 36, 0.08);
+		color: #fde68a;
+		font-size: 0.92rem;
+		line-height: 1.45;
+	}
+	/* A notice can run over several lines (a newline in the text starts a new one). */
+	.notice span:last-child {
+		white-space: pre-line;
+	}
+	.notice-icon {
+		flex: none;
+		font-size: 1.05rem;
+		line-height: 1.3;
 	}
 	.body {
 		line-height: 1.6;

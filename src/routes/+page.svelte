@@ -24,6 +24,7 @@
 	import { NODE_TYPES, type NodeType } from '$lib/types';
 	import { rankBySize } from '$lib/graph-rank';
 	import { onMount } from 'svelte';
+	import { afterNavigate, replaceState } from '$app/navigation';
 
 	let { data } = $props();
 
@@ -43,6 +44,14 @@
 	onMount(() => {
 		cortex.init();
 		ambient.init();
+	});
+	// `/?node=<id>` opens that node (e.g. Back from SpeakEase AI returns to its node), then tidies
+	// the address once the router has finished starting (replaceState needs it).
+	afterNavigate(() => {
+		const id = new URL(location.href).searchParams.get('node');
+		if (!id) return;
+		if (graph.nodes.some((n) => n.id === id)) cortex.select(id);
+		setTimeout(() => replaceState(location.pathname, {}));
 	});
 	// Background music dips while Cortex talks, and while it listens (so the mic hears the question, not the music).
 	$effect(() => {
