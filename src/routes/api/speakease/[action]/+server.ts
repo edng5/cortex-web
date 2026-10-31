@@ -10,12 +10,13 @@
 //   POST /api/speakease/attempt?botId=…&locale=…&target=…  (body: the recording) → { heard, words, score }
 //   POST /api/speakease/pronounce { word, locale, explainIn }           → { sounds, ipa, how }
 //   POST /api/speakease/dictionary { word, from, locale }               → { entries: [...] }
+//   POST /api/speakease/phonetics  { text, locale }                     → { romanization, words: [{ word, sounds, ipa }] }
 // Open to everyone (like the app), so it's rate limited per visitor. Signed-in players are called
 // by their site nickname (looked up here, never taken from the page).
 import { error, json } from '@sveltejs/kit';
 import { rateLimit } from '$lib/server/ratelimit';
 import { LlmError } from '$lib/server/llm-error';
-import { assess, correct, lookUp, phrases, pronounce, reply, speak, suggest, transcribe, translate, type Turn } from '$lib/server/speakease';
+import { assess, correct, lookUp, phonetics, phrases, pronounce, reply, speak, suggest, transcribe, translate, type Turn } from '$lib/server/speakease';
 import { getPlayerName } from '$lib/server/player-name';
 import { EASSO_VOICE, LANGUAGE_NAMES, TRANSLATE_OPTIONS, friendById, scenarioById } from '$lib/speakease/data';
 import type { RequestHandler } from './$types';
@@ -116,6 +117,8 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 				if (!word || word.length > 60) error(400, 'Invalid word.');
 				return json(await pronounce(word, locale(body.locale), explainIn(body.explainIn)));
 			}
+			case 'phonetics':
+				return json(await phonetics(textOf(body.text), locale(body.locale)));
 			case 'dictionary': {
 				const word = typeof body.word === 'string' ? body.word.trim() : '';
 				if (!word || word.length > 80) error(400, 'Type a word to look up.');

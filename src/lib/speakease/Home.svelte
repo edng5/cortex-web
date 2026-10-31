@@ -4,7 +4,9 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import Avatar from './Avatar.svelte';
+	import LangIcon from './LangIcon.svelte';
 	import { app, load, store, type ThemeSetting } from './app.svelte';
+	import { sideways } from './sideways';
 	import { quest } from './quest.svelte';
 	import { BADGES, ENERGY_MAX, game, starsFor } from './game.svelte';
 	import { FRIENDS, SCENARIOS, TRANSLATE_OPTIONS, type Friend } from './data';
@@ -24,19 +26,6 @@
 	const sceneStars = $derived(SCENARIOS.reduce((n, sc) => n + starsFor(game.saved.scenes[sc.id] ?? 0), 0));
 
 	const rank = $derived(game.rank);
-	/** A mouse wheel scrolls the favourites sideways (until an end is reached, then the page). */
-	function sideways(el: HTMLElement) {
-		const wheel = (e: WheelEvent) => {
-			if (Math.abs(e.deltaX) >= Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
-			const max = el.scrollWidth - el.clientWidth;
-			if ((e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max - 1)) return;
-			e.preventDefault();
-			el.scrollLeft += e.deltaY;
-		};
-		// Not passive, so it can stop the page scrolling instead.
-		el.addEventListener('wheel', wheel, { passive: false });
-		return { destroy: () => el.removeEventListener('wheel', wheel) };
-	}
 	const mmss = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor((ms % 60_000) / 1000)).padStart(2, '0')}`;
 
 	const favorites = $derived(app.favorites.map((id) => FRIENDS.find((f) => f.id === id)!).filter(Boolean));
@@ -163,10 +152,10 @@
 	</button>
 
 	<h2 class="section">Favorite Languages</h2>
-	<div class="row" data-swipe-ignore use:sideways>
+	<div class="row hscroll" data-swipe-ignore use:sideways>
 		{#each favorites as f (f.id)}
 			<div class="fav">
-				<Avatar look={f.persona} size={52} name={f.name} />
+				<LangIcon locale={f.locale} size={52} label={f.language} />
 				<p><b>{f.language}</b><span>with {f.name}</span></p>
 				<button class="btn fav-start" onclick={() => onopen('chat', f.id)}>Start</button>
 				<button class="link" onclick={() => app.toggleFavorite(f.id)}>Remove from Favorites</button>
@@ -182,7 +171,7 @@
 			{@const fav = app.favorites.includes(f.id)}
 			<div class="lang">
 				<button class="lang-main" onclick={() => onopen('chat', f.id)} aria-label="Practise {f.language} with {f.name}">
-					<Avatar look={f.persona} size={44} name={f.name} />
+					<LangIcon locale={f.locale} size={44} label={f.language} />
 					<span><b>{f.language}</b><small>with {f.name}</small></span>
 				</button>
 				<button class="star" class:on={fav} onclick={() => app.toggleFavorite(f.id)} aria-pressed={fav} aria-label={fav ? `Remove ${f.language} from favorites` : `Add ${f.language} to favorites`}>
@@ -251,7 +240,7 @@
 				{#each SCENARIOS.filter((x) => x.group === group) as sc (sc.id)}
 					{@const stars = starsFor(game.saved.scenes[sc.id] ?? 0)}
 					<button class="scene" onclick={() => ((scenePicker = false), onopen('practice', sc.id))}>
-						<Avatar look="cortex" size={40} name="Cortex" />
+						<span class="scene-icon" aria-hidden="true">{sc.icon}</span>
 						<span>
 							<b>{sc.name}</b><small>{sc.role}</small>
 							<span class="stars" aria-label="{stars} of 3 stars">{#each [1, 2, 3] as n (n)}<i class:on={n <= stars}>★</i>{/each}</span>
@@ -272,7 +261,7 @@
 		<div class="grid">
 			{#each FRIENDS as f (f.id)}
 				<button class="lang-main pick" class:on={quest.locale === f.locale} onclick={() => startQuest(f)}>
-					<Avatar look={f.persona} size={36} name={f.name} />
+					<LangIcon locale={f.locale} size={36} label={f.language} />
 					<span><b>{f.language}</b><small>Level {quest.levelOf(f.locale)}</small></span>
 				</button>
 			{/each}
@@ -523,38 +512,9 @@
 	.row {
 		display: flex;
 		gap: 12px;
-		overflow-x: auto;
 		scroll-snap-type: x mandatory;
-		scrollbar-width: none;
 		margin: 0 -16px;
 		padding: 0 16px 6px;
-	}
-	.row::-webkit-scrollbar {
-		display: none;
-	}
-	/* With a mouse (desktop), favourites get a slim scrollbar; phones swipe without one. */
-	@media (hover: hover) and (pointer: fine) {
-		.row {
-			scrollbar-width: thin;
-			scrollbar-color: color-mix(in srgb, var(--se-primary-2) 55%, transparent) transparent;
-			padding-bottom: 10px;
-		}
-		.row::-webkit-scrollbar {
-			display: block;
-			height: 8px;
-		}
-		.row::-webkit-scrollbar-track {
-			margin: 0 16px;
-			border-radius: 4px;
-			background: var(--se-surface-2);
-		}
-		.row::-webkit-scrollbar-thumb {
-			border-radius: 4px;
-			background: color-mix(in srgb, var(--se-primary-2) 55%, transparent);
-		}
-		.row::-webkit-scrollbar-thumb:hover {
-			background: var(--se-primary-2);
-		}
 	}
 	.fav {
 		flex: none;
@@ -826,6 +786,16 @@
 	}
 	.tile:hover {
 		background: var(--se-surface-2);
+	}
+	.scene-icon {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 40px;
+		height: 40px;
+		border-radius: 30%;
+		background: var(--se-surface-2);
+		font-size: 22px;
 	}
 	.tile-icon.scenes {
 		background: linear-gradient(135deg, #f59e0b, #ef4444);

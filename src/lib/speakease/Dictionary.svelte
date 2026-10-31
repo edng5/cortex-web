@@ -2,10 +2,11 @@
      how to say it, an example, and the tutor's voice. Recent lookups are kept on this device. -->
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import Avatar from './Avatar.svelte';
+	import LangIcon from './LangIcon.svelte';
 	import { app, load, post, store } from './app.svelte';
 	import { game } from './game.svelte';
 	import { quest } from './quest.svelte';
+	import { sideways } from './sideways';
 	import { FRIENDS, TRANSLATE_OPTIONS } from './data';
 
 	let { onback }: { onback: () => void } = $props();
@@ -101,10 +102,10 @@
 	</form>
 
 	<p class="label">Translate into</p>
-	<div class="langs" data-swipe-ignore>
+	<div class="langs hscroll" data-swipe-ignore use:sideways>
 		{#each FRIENDS as f (f.id)}
 			<button class="lang" class:on={f.locale === locale} onclick={() => pickLanguage(f.locale)} title={f.language}>
-				<Avatar look={f.persona} size={30} name={f.name} />
+				<LangIcon locale={f.locale} size={30} label={f.language} />
 				<span>{f.language}</span>
 			</button>
 		{/each}
@@ -204,13 +205,8 @@
 	.langs {
 		display: flex;
 		gap: 8px;
-		overflow-x: auto;
-		scrollbar-width: none;
 		margin: 0 -14px;
 		padding: 0 14px 4px;
-	}
-	.langs::-webkit-scrollbar {
-		display: none;
 	}
 	.lang {
 		flex: none;

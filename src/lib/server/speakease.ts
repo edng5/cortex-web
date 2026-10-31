@@ -372,6 +372,52 @@ export async function pronounce(word: string, locale: string, explainIn: string)
 	return { sounds: String(j.sounds ?? ''), ipa: String(j.ipa ?? ''), how: String(j.how ?? '') };
 }
 
+// ── Phonetics (under a chat bubble) ────────────────────────────────────────────────
+
+/** How to say a whole message, word by word: a sound-it-out spelling and IPA for each word. */
+export async function phonetics(textIn: string, locale: string): Promise<{ romanization: string; words: { word: string; sounds: string; ipa: string }[] }> {
+	const lang = languageOf(locale);
+	const out = await text(
+		`You are a friendly ${lang} pronunciation coach.`,
+		[
+			{
+				role: 'user',
+				parts: [
+					{
+						text:
+							`Show a learner how to pronounce this ${lang} message, word by word (for Chinese or Japanese, short words): ` +
+							`${JSON.stringify(textIn)}. For each word give "word" (as written), "sounds" (an easy sound-it-out spelling for an ` +
+							`English speaker, syllables split with hyphens, the stressed one in CAPITALS, tones marked for tonal languages) and ` +
+							`"ipa". Skip punctuation. Also give "romanization" for the whole message if ${lang} isn't written in Latin letters ` +
+							`(pinyin, jyutping, romaji, revised romanization…), else "".`
+					}
+				]
+			}
+		],
+		{
+			type: 'OBJECT',
+			properties: {
+				romanization: { type: 'STRING' },
+				words: {
+					type: 'ARRAY',
+					items: {
+						type: 'OBJECT',
+						properties: { word: { type: 'STRING' }, sounds: { type: 'STRING' }, ipa: { type: 'STRING' } },
+						required: ['word', 'sounds', 'ipa']
+					}
+				}
+			},
+			required: ['romanization', 'words']
+		}
+	);
+	const j = JSON.parse(out) as { romanization?: string; words?: { word: string; sounds: string; ipa: string }[] };
+	const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+	return {
+		romanization: str(j.romanization),
+		words: (j.words ?? []).filter((w) => str(w.word)).slice(0, 80).map((w) => ({ word: str(w.word), sounds: str(w.sounds), ipa: str(w.ipa).replace(/^\/|\/$/g, '') }))
+	};
+}
+
 // ── Dictionary ─────────────────────────────────────────────────────────────────────
 
 export interface DictEntry {

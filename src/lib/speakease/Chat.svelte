@@ -26,6 +26,8 @@
 	/** Messages showing their translation. */
 	let translated = $state<Record<string, boolean>>({});
 	let copied = $state<string | null>(null);
+	/** Messages showing how to pronounce them (the /ə/ button). */
+	let sounding = $state<Record<string, boolean>>({});
 
 	const shown = $derived(app.messages.filter((m) => !m.hidden));
 	const lastBot = $derived([...shown].reverse().find((m) => m.role === 'assistant')?.id);
@@ -110,14 +112,36 @@
 					<button onclick={() => openCheck(m)} aria-label="Check this sentence" title="Check"><Icon name="check" size={20} /></button>
 					<button onclick={() => copy(m)} aria-label="Copy" title="Copy">{#if copied === m.id}<span class="copied">Copied</span>{:else}<Icon name="copy" size={18} />{/if}</button>
 					<button onclick={() => m.text && app.play(m.text)} aria-label="Play" title="Play"><Icon name="volume" size={20} /></button>
+					<button class="ipa-btn" class:on={sounding[m.id]} onclick={() => m.text && (sounding[m.id] = !sounding[m.id])} aria-pressed={!!sounding[m.id]} aria-label="How to pronounce it" title="How to pronounce it">/ə/</button>
 				{:else}
 					<button onclick={() => app.play(m.text)} aria-label="Play" title="Play"><Icon name="volume" size={20} /></button>
 					<button onclick={() => copy(m)} aria-label="Copy" title="Copy">{#if copied === m.id}<span class="copied">Copied</span>{:else}<Icon name="copy" size={18} />{/if}</button>
+					<button class="ipa-btn" class:on={sounding[m.id]} onclick={() => m.text && (sounding[m.id] = !sounding[m.id])} aria-pressed={!!sounding[m.id]} aria-label="How to pronounce it" title="How to pronounce it">/ə/</button>
 					{#if m.id === lastBot && !app.waiting}
 						<button class="idea" onclick={() => app.suggest()} aria-label="Suggest a reply" title="Not sure what to say?"><Icon name="bulb" size={18} />Idea</button>
 					{/if}
 				{/if}
 			</div>
+			{#if sounding[m.id] && m.text}
+				<div class="phon">
+					{#await app.phoneticsOf(m)}
+						<p class="phon-wait">Working out how to say it…</p>
+					{:then ph}
+						{#if ph}
+							{#if ph.romanization}<p class="phon-roman">{ph.romanization}</p>{/if}
+							<div class="phon-words">
+								{#each ph.words as w, i (i)}
+									<button class="phon-word" onclick={() => app.play(w.word, { slow: true })} title="Hear “{w.word}” slowly">
+										<span dir="auto">{w.word}</span>
+										<b>{w.sounds}</b>
+										{#if w.ipa}<small>/{w.ipa}/</small>{/if}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					{/await}
+				</div>
+			{/if}
 		</div>
 	{/each}
 
@@ -332,6 +356,68 @@
 		font-weight: 600;
 	}
 	.copied {
+		font-size: 12px;
+	}
+	.tools .ipa-btn {
+		font-family: 'Charis SIL', 'Doulos SIL', 'Segoe UI', serif;
+		font-size: 14px;
+		font-weight: 700;
+	}
+	.tools .ipa-btn.on {
+		background: var(--se-surface-2);
+		color: var(--se-primary-2);
+	}
+	/* How to say it: each word with its sounds-like spelling and IPA (tap one to hear it slowly). */
+	.phon {
+		max-width: 100%;
+		margin-top: 4px;
+		padding: 10px;
+		border-radius: 14px;
+		background: var(--se-surface);
+		border: 1px solid var(--se-border);
+		animation: se-pop 0.15s ease-out;
+	}
+	.phon-wait {
+		margin: 0;
+		color: var(--se-muted);
+		font-size: 13px;
+	}
+	.phon-roman {
+		margin: 0 0 8px;
+		color: var(--se-primary-2);
+		font-size: 14px;
+		font-weight: 600;
+	}
+	.phon-words {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.phon-word {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1px;
+		padding: 6px 9px;
+		border: none;
+		border-radius: 10px;
+		background: var(--se-surface-2);
+		color: var(--se-text);
+		font: inherit;
+		font-size: 13px;
+		line-height: 1.25;
+		cursor: pointer;
+	}
+	.phon-word:hover {
+		outline: 1px solid var(--se-primary-2);
+	}
+	.phon-word b {
+		font-size: 13px;
+		letter-spacing: 0.02em;
+	}
+	.phon-word small {
+		color: var(--se-muted);
+		font-family: 'Charis SIL', 'Doulos SIL', 'Segoe UI', serif;
 		font-size: 12px;
 	}
 	/* Listening: the app's sound-wave bubble. */

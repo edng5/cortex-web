@@ -220,6 +220,37 @@
 		opacity: 0.5;
 		cursor: default;
 	}
+	/* Rows that scroll sideways: a slim scrollbar with a mouse (desktop); phones swipe without one. */
+	.se :global(.hscroll) {
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.se :global(.hscroll::-webkit-scrollbar) {
+		display: none;
+	}
+	@media (hover: hover) and (pointer: fine) {
+		.se :global(.hscroll) {
+			scrollbar-width: thin;
+			scrollbar-color: color-mix(in srgb, var(--se-primary-2) 55%, transparent) transparent;
+			padding-bottom: 10px;
+		}
+		.se :global(.hscroll::-webkit-scrollbar) {
+			display: block;
+			height: 8px;
+		}
+		.se :global(.hscroll::-webkit-scrollbar-track) {
+			margin: 0 16px;
+			border-radius: 4px;
+			background: var(--se-surface-2);
+		}
+		.se :global(.hscroll::-webkit-scrollbar-thumb) {
+			border-radius: 4px;
+			background: color-mix(in srgb, var(--se-primary-2) 55%, transparent);
+		}
+		.se :global(.hscroll::-webkit-scrollbar-thumb:hover) {
+			background: var(--se-primary-2);
+		}
+	}
 	.se :global(.chip-row) {
 		display: flex;
 		flex-wrap: wrap;

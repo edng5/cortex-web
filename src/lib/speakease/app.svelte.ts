@@ -19,6 +19,12 @@ export interface Msg {
 	hidden?: boolean;
 }
 
+/** How to say a message: romanization (other scripts) and each word's sounds-like spelling and IPA. */
+export interface Phonetics {
+	romanization: string;
+	words: { word: string; sounds: string; ipa: string }[];
+}
+
 export type Screen = 'home' | 'chat' | 'practice' | 'phrases' | 'dictionary';
 export type ThemeSetting = 'system' | 'light' | 'dark';
 
@@ -473,6 +479,23 @@ class SpeakEase {
 			this.say((err as Error).message);
 			return null;
 		}
+	}
+
+	private phoneticsCache = new Map<string, Promise<Phonetics | null>>();
+	/** How to say a message, word by word (the "/ə/" button under a bubble), fetched once. */
+	phoneticsOf(m: Msg): Promise<Phonetics | null> {
+		const key = `${this.locale}|${m.text}`;
+		if (!this.phoneticsCache.has(key)) {
+			this.phoneticsCache.set(
+				key,
+				post<Phonetics>('phonetics', { text: m.text.slice(0, 1000), locale: this.locale }).catch((err) => {
+					this.phoneticsCache.delete(key);
+					this.say((err as Error).message);
+					return null;
+				})
+			);
+		}
+		return this.phoneticsCache.get(key)!;
 	}
 
 	private guides = new Map<string, Promise<{ sounds: string; ipa: string; how: string } | null>>();

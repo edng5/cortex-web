@@ -30,10 +30,15 @@ export interface Scenario {
 	/** Who you're talking to, for the card. */
 	role: string;
 	group: 'Everyday' | 'Travel';
+	icon: string;
 }
 
 /** Easso's Gemini voice (male, checked by ear); everyone else is Cortex. */
 export const EASSO_VOICE = 'Achird';
+
+/** Languages in alphabetical order, English first (every language list in the app). */
+const englishFirst = <T>(list: T[], name: (x: T) => string): T[] =>
+	[...list].sort((a, b) => (name(a) === 'English' ? -1 : name(b) === 'English' ? 1 : name(a).localeCompare(name(b))));
 
 const cortex = (id: string, locale: string, language: string, greeting: string, greetingNamed: string): Friend => ({
 	id,
@@ -46,7 +51,7 @@ const cortex = (id: string, locale: string, language: string, greeting: string, 
 	greetingNamed
 });
 
-export const FRIENDS: Friend[] = [
+export const FRIENDS: Friend[] = englishFirst<Friend>([
 	{
 		id: '0', name: 'Easso', gender: 'male', persona: 'easso', locale: 'en-US', language: 'English',
 		greeting: "Hey there! I'm Easso, a friendly chatbot. Nice to meet you, friend! Talk to me about anything that's on your mind.",
@@ -67,28 +72,28 @@ export const FRIENDS: Friend[] = [
 	cortex('13', 'ar-JO', 'Arabic', 'مرحبا، أنا Cortex، تشرفت بلقائك! كيف حالك اليوم؟', 'مرحبا {name}، أنا Cortex، تشرفت بلقائك! كيف حالك اليوم؟'),
 	cortex('20', 'he-IL', 'Hebrew', "שלום לך! אני Cortex, צ'אט בוט ידידותי. נעים להכיר אותך! דברו איתי על כל דבר שעולה על דעתכם.", "שלום {name}! אני Cortex, צ'אט בוט ידידותי. נעים להכיר אותך! דברו איתי על כל דבר שעולה על דעתכם."),
 	cortex('15', 'ru-RU', 'Russian', 'Здравствуйте! Меня зовут Cortex, приятно познакомиться. О чем бы Вы хотели сегодня поговорить?', 'Здравствуйте, {name}! Меня зовут Cortex, приятно познакомиться. О чем бы Вы хотели сегодня поговорить?')
-];
+], (f) => f.language);
 
 export const SCENARIOS: Scenario[] = [
 	// From the app
-	{ id: '16', name: 'Greeting!', role: 'Meet a stranger', group: 'Everyday' },
-	{ id: '17', name: 'Farewell!', role: 'Say goodbye', group: 'Everyday' },
-	{ id: '18', name: 'Order!', role: 'At a restaurant', group: 'Everyday' },
-	{ id: '19', name: 'Small Talk!', role: 'Elevator chat', group: 'Everyday' },
+	{ id: '16', name: 'Greeting!', role: 'Meet a stranger', group: 'Everyday', icon: '👋' },
+	{ id: '17', name: 'Farewell!', role: 'Say goodbye', group: 'Everyday', icon: '🫶' },
+	{ id: '18', name: 'Order!', role: 'At a restaurant', group: 'Everyday', icon: '🍽️' },
+	{ id: '19', name: 'Small Talk!', role: 'Elevator chat', group: 'Everyday', icon: '💬' },
 	// Everyday life
-	{ id: '26', name: 'Café!', role: 'Order a coffee', group: 'Everyday' },
-	{ id: '25', name: 'Pharmacy!', role: 'Get something for a cold', group: 'Everyday' },
-	{ id: '28', name: 'Shopping!', role: 'Buy clothes', group: 'Everyday' },
+	{ id: '26', name: 'Café!', role: 'Order a coffee', group: 'Everyday', icon: '☕' },
+	{ id: '25', name: 'Pharmacy!', role: 'Get something for a cold', group: 'Everyday', icon: '💊' },
+	{ id: '28', name: 'Shopping!', role: 'Buy clothes', group: 'Everyday', icon: '🛍️' },
 	// Travel
-	{ id: '21', name: 'Airport!', role: 'Check in for a flight', group: 'Travel' },
-	{ id: '22', name: 'Hotel!', role: 'Check in at the desk', group: 'Travel' },
-	{ id: '23', name: 'Directions!', role: 'Find your way', group: 'Travel' },
-	{ id: '24', name: 'Taxi!', role: 'Take a ride', group: 'Travel' },
-	{ id: '27', name: 'Train!', role: 'Buy a ticket', group: 'Travel' }
+	{ id: '21', name: 'Airport!', role: 'Check in for a flight', group: 'Travel', icon: '✈️' },
+	{ id: '22', name: 'Hotel!', role: 'Check in at the desk', group: 'Travel', icon: '🏨' },
+	{ id: '23', name: 'Directions!', role: 'Find your way', group: 'Travel', icon: '🗺️' },
+	{ id: '24', name: 'Taxi!', role: 'Take a ride', group: 'Travel', icon: '🚕' },
+	{ id: '27', name: 'Train!', role: 'Buy a ticket', group: 'Travel', icon: '🚆' }
 ];
 
 /** The languages a scenario can be played in (the app's "Select a language" list). */
-export const SCENARIO_LANGUAGES: { label: string; locale: string }[] = [
+export const SCENARIO_LANGUAGES: { label: string; locale: string }[] = englishFirst([
 	{ label: 'English', locale: 'en-US' },
 	{ label: 'French', locale: 'fr-CA' },
 	{ label: 'Mandarin', locale: 'zh-CN' },
@@ -103,10 +108,10 @@ export const SCENARIO_LANGUAGES: { label: string; locale: string }[] = [
 	{ label: 'German', locale: 'de-DE' },
 	{ label: 'Arabic', locale: 'ar-JO' },
 	{ label: 'Russian', locale: 'ru-RU' }
-];
+], (l) => l.label);
 
 /** What a tapped message is translated into (Settings → "Translate to"). */
-export const TRANSLATE_OPTIONS: { lang: string; label: string }[] = [
+export const TRANSLATE_OPTIONS: { lang: string; label: string }[] = englishFirst([
 	{ lang: 'en', label: 'English' },
 	{ lang: 'fr', label: 'French' },
 	{ lang: 'zh', label: 'Mandarin' },
@@ -123,7 +128,7 @@ export const TRANSLATE_OPTIONS: { lang: string; label: string }[] = [
 	{ lang: 'ar', label: 'Arabic' },
 	{ lang: 'he', label: 'Hebrew' },
 	{ lang: 'ru', label: 'Russian' }
-];
+], (o) => o.label);
 
 export const TIPS = [
 	'Hold the mic button while speaking and release when you are done talking.',
@@ -131,7 +136,8 @@ export const TIPS = [
 	'Click the checkmark to get the proper sentence structure of your speech.',
 	'Click on a chat bubble to get the translation in the selected language.',
 	'Click the speaker button to get an audio playback of the sentence.',
-	'Not sure what to say? Click light bulb to generate a reply for that situation.'
+	'Not sure what to say? Click light bulb to generate a reply for that situation.',
+	'Click /ə/ under a message to see how to pronounce each word, and tap a word to hear it slowly.'
 ];
 
 /** Language names by locale (for the model and the speech recogniser). */
