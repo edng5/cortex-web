@@ -25,6 +25,9 @@
 
 	let canvas: HTMLCanvasElement;
 	let chart = $state<HTMLCanvasElement>();
+	let chartBox = $state<HTMLDivElement>();
+	/** Each generation gets at least this much of the chart; past the box's width it scrolls sideways. */
+	const GEN_PX = 10;
 	let root: HTMLElement;
 
 	// Settings apply as they change.
@@ -204,12 +207,18 @@
 		const c = chart.getContext('2d');
 		if (!c) return;
 		const dpr = Math.min(1.5, window.devicePixelRatio || 1);
-		const w = Math.round(chart.clientWidth * dpr);
+		const pts = history;
+		// Wider than its box once there are many generations; stay at the newest end if already there.
+		const box = chartBox;
+		const atEnd = !box || box.scrollLeft + box.clientWidth >= box.scrollWidth - 4;
+		const cssW = Math.max(box?.clientWidth ?? 0, pts.length * GEN_PX);
+		chart.style.width = `${cssW}px`;
+		const w = Math.round(cssW * dpr);
 		const h = Math.round(chart.clientHeight * dpr);
 		chart.width = w;
 		chart.height = h;
 		c.clearRect(0, 0, w, h);
-		const pts = history.slice(-80);
+		if (box && atEnd) box.scrollLeft = box.scrollWidth;
 		if (pts.length < 2) {
 			c.fillStyle = 'rgba(148, 163, 184, 0.8)';
 			c.font = `${12 * dpr}px system-ui, sans-serif`;
@@ -303,6 +312,7 @@
 		{#if note}<p class="note">{note}<button aria-label="Dismiss" onclick={() => (note = '')}>✕</button></p>{/if}
 	</div>
 
+	<div class="side-box">
 	<div class="side">
 		<div class="tabs" role="tablist">
 			<button role="tab" aria-selected={tab === 'stats'} class:on={tab === 'stats'} onclick={() => (tab = 'stats')}>Stats</button>
@@ -328,16 +338,18 @@
 				{#if cfg.algo === 'neat'}<div><span>Species</span><b>{live.species}</b></div>{/if}
 			</div>
 			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population</div>
-			<canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas>
+			<div class="chart-box" bind:this={chartBox}><canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas></div>
 			{#if history.length}
+				<div class="table-box">
 				<table>
 					<thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Alive</th><th>Total</th><th>Born</th></tr></thead>
 					<tbody>
-						{#each history.slice(-8).toReversed() as h (h.gen)}
+						{#each history.toReversed() as h (h.gen)}
 							<tr><td>{h.gen}</td><td>{h.best}</td><td>{h.avg.toFixed(2)}</td><td>{h.alive}</td><td>{h.total}</td><td>{h.born}</td></tr>
 						{/each}
 					</tbody>
 				</table>
+				</div>
 			{/if}
 		{:else if tab === 'settings'}
 			<div class="sliders">
@@ -391,6 +403,7 @@
 			</fieldset>
 			<p class="hint">Changes apply straight away; the world keeps going.</p>
 		{/if}
+	</div>
 	</div>
 	</div>
 </section>
@@ -554,11 +567,30 @@
 		height: 8px;
 		background: rgba(148, 163, 184, 0.3);
 	}
-	.chart {
-		width: 100%;
-		height: 120px;
+	.chart-box {
+		flex: none;
+		overflow-x: auto;
+		overflow-y: hidden;
 		border-radius: 8px;
 		background: rgba(255, 255, 255, 0.03);
+		scrollbar-width: thin;
+	}
+	.chart {
+		display: block;
+		width: 100%;
+		height: 120px;
+	}
+	/* Every generation's row, in its own scrolling box. */
+	.table-box {
+		flex: none;
+		max-height: 170px;
+		overflow-y: auto;
+		scrollbar-width: thin;
+	}
+	thead th {
+		position: sticky;
+		top: 0;
+		background: #0b1020;
 	}
 	table {
 		width: 100%;
@@ -663,10 +695,15 @@
 	@container (min-width: 720px) {
 		.grid {
 			grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-			align-items: start;
+		}
+		/* As tall as the world beside it, scrolling inside rather than stretching the card. */
+		.side-box {
+			position: relative;
+			min-height: 360px;
 		}
 		.side {
-			max-height: min(calc(100svh - 80px), 720px);
+			position: absolute;
+			inset: 0;
 			overflow-y: auto;
 			scrollbar-width: thin;
 		}
