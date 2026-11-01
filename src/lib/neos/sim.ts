@@ -30,6 +30,8 @@ const ATTRACT_NEAR = 0.6;
 const ATTRACT_FAR = 2.5;
 /** Fitness for getting away from a hunter (food is worth 1). */
 const ESCAPE_FIT = 0.5;
+/** Steps a hunter spends digesting after a kill, before it can hunt again. */
+const DIGEST = 120;
 /** Body evolution: energy from a food particle, a full store (× size), and the smallest size. */
 const FOOD_E = 20;
 const STORE_E = 70;
@@ -141,7 +143,7 @@ export const DEFAULTS: Config = {
 	drMax: 720,
 	dvMax: 0.25,
 	cooldown: 80,
-	breedCost: 2,
+	breedCost: 1,
 	genTime: 50,
 	hidden: 5,
 	addNode: 0.05,
@@ -154,7 +156,7 @@ export const DEFAULTS: Config = {
 	foodLimit: false,
 	foodRegrow: 6,
 	preyValue: 4,
-	predSpeed: 1.15,
+	predSpeed: 1,
 	senseR: 0.8,
 	starve: 400,
 	body: false,
@@ -260,6 +262,8 @@ export interface Neo {
 	meat: number;
 	/** Being chased right now (a hunter close by): getting away counts as fitness. */
 	chased: boolean;
+	/** Steps left digesting its last kill (it won't hunt until then). */
+	digest: number;
 	/** Body genes: size (1 = the original's) and speed (× the max speed); and energy left. */
 	size: number;
 	sp: number;
@@ -433,6 +437,8 @@ export class Sim {
 	/** This generation so far: the NEOS that died (their fitness), births, food. */
 	private cur = { deadFit: [] as number[], born: 0, died: 0, food: 0, eaten: 0 };
 	private threshold = 0;
+	/** How much of the population eats meat (refreshed every step): a check on predators' numbers. */
+	private meatShare = 0;
 	/** Limited food: how many are eaten and waiting to regrow, and regrowth owed. */
 	private waiting = 0;
 	private regrow = 0;
@@ -464,7 +470,13 @@ export class Sim {
 		this.cur = { deadFit: [], born: 0, died: 0, food: 0, eaten: 0 };
 		this.regrow = 0;
 		this.setFood(this.cfg.foodNum, true);
-		for (let i = 0; i < this.cfg.popSize; i++) this.neos.push(this.spawn());
+		// The first NEOS start at mixed ages (as a real population would), so they don't all die of
+		// old age together.
+		for (let i = 0; i < this.cfg.popSize; i++) {
+			const n = this.spawn();
+			n.age = randInt(0, Math.round(n.life * 0.6));
+			this.neos.push(n);
+		}
 	}
 
 	/** Change settings on the fly (food appears or goes; the rest applies from now on). */
@@ -593,6 +605,7 @@ export class Sim {
 			hunger: 0,
 			meat: 0,
 			chased: false,
+			digest: 0,
 			size,
 			sp: this.cfg.body ? (g?.sp ?? 1) : 1,
 			// Babies from a big litter start with less energy (the parents' investment is shared).
@@ -775,13 +788,18 @@ export class Sim {
 		// How short food is across the world: none when it's plentiful (or regrows at once), so
 		// one unlucky hungry NEOS in a well-fed world doesn't start a line of predators.
 		const scarce = c.foodLimit && this.fx.length ? 1 - this.foodLeft() / this.fx.length : 0;
-		const push = scarce * Math.max(hunger * hunger, meaty);
 		const r = Math.random();
 		const step = c.omnivores ? 1 : 2;
-		// Starving outright when food is short, a herbivore's baby can skip straight to carnivore now and then.
-		if (d === 0 && c.omnivores && hunger >= 1 && scarce > 0.5 && r < c.predMutate * 0.25) return 2;
-		if (d < 2 && r < c.predMutate * push) return d + step > 2 ? 2 : d + step;
-		if (d > 0 && r > 1 - c.predMutate * (1 - hunger * scarce) * 0.3) return Math.max(0, d - step);
+		// Meatier: only when plant food is short, the parent is going hungry (or, an omnivore, lives
+		// off hunting), and there's plenty of prey about (few meat-eaters already).
+		const prey = 1 - this.meatShare;
+		const up = this.meatShare < 0.3 ? scarce * Math.max(hunger * hunger, meaty) * prey * prey : 0;
+		// Back toward plants (a strong pull, so predators can't overrun the prey): more likely the
+		// more common meat-eaters are, when this one is struggling to catch any (hungry), and when
+		// plant food is plentiful again.
+		const down = Math.min(0.6, c.predMutate * (1 - scarce) + Math.max(0, this.meatShare - 0.15) * 1.5 + 0.25 * hunger);
+		if (d < 2 && r < c.predMutate * up) return Math.min(2, d + step);
+		if (d > 0 && r < down) return Math.max(0, d - step);
 		return c.omnivores || d !== 1 ? d : 0;
 	}
 
@@ -1006,8 +1024,10 @@ export class Sim {
 			const dy = this.fy[f] - n.y;
 			// (A bigger body doesn't reach food any further: size only costs a herbivore, unless there are hunters.)
 			if (dx * dx + dy * dy <= EAT_R * EAT_R) {
-				n.fit++;
-				n.store++;
+				// Omnivores are generalists: plants are worth half as much to them as to a herbivore.
+				const worth = n.diet === 1 ? 0.5 : 1;
+				n.fit += worth;
+				n.store += worth;
 				n.hunger = 0;
 				n.energy = Math.min(STORE_E * n.size, n.energy + FOOD_E);
 				this.cur.food++;
@@ -1028,6 +1048,10 @@ export class Sim {
 			n.foodD = Math.hypot(this.fx[f] - n.x, this.fy[f] - n.y);
 			n.input = heading(n, this.fx[f], this.fy[f]);
 		}
+
+		let meaters = 0;
+		for (const n of neos) if (n.diet) meaters++;
+		this.meatShare = neos.length ? meaters / neos.length : 0;
 
 		// Who counts as fit: the fitness at the elitism percentile (rechecked every few steps).
 		if (this.totals.steps % 5 === 0 && neos.length) {
@@ -1065,10 +1089,11 @@ export class Sim {
 							if (this.walls.length && !this.sees(n.x, n.y, o.x, o.y)) continue;
 							const d = Math.sqrt((o.x - n.x) ** 2 + (o.y - n.y) ** 2);
 							const same = o.spc === n.spc;
-							// How far it can be seen: further the fitter it is; the elite of its own species, from afar.
-							const range = same && o.fit >= elite ? ATTRACT_FAR : ATTRACT_NEAR * (1 + o.fit / top);
-							if (d > range) continue;
-							const score = ((same ? 2 : 1) * (1 + (2 * o.fit) / top)) / (d + 0.1);
+							// Any willing mate in sight will do, but attraction picks: its own species, fitter, and
+							// closer; the elite of its species draw it from furthest away.
+							if (d > ATTRACT_FAR) continue;
+							const reach = same && o.fit >= elite ? ATTRACT_FAR : ATTRACT_NEAR * (1 + o.fit / top);
+							const score = ((same ? 2 : 1) * (1 + (2 * o.fit) / top) * (d <= reach ? 3 : 1)) / (d + 0.1);
 							if (score > bs) {
 								bs = score;
 								bd = d;
@@ -1164,6 +1189,7 @@ export class Sim {
 				}
 			}
 			n.hunger++;
+			if (n.digest > 0) n.digest--;
 			// Energy: bigger and faster burns more.
 			if (c.body) n.energy -= c.energyUse * n.size * n.size * (0.3 + 0.7 * (n.v / c.vMax) ** 2);
 			const rad = (n.r * Math.PI) / 180;
@@ -1247,6 +1273,9 @@ export class Sim {
 				for (const t of this.tallies(n)) t.escapes++;
 			}
 			if (!prey) continue;
+			// Still digesting its last kill: not hunting (an omnivore keeps eating plants). Omnivores
+			// mostly graze, and only hunt once they've gone a while without eating.
+			if (n.digest > 0 || (n.diet === 1 && n.hunger < c.starve * 0.25)) continue;
 			const d = Math.sqrt(pd);
 			if (d <= this.touch(n, prey)) this.bite(n, prey);
 			if (!prey.eaten && (n.diet === 2 || d < n.foodD)) n.input = heading(n, prey.x, prey.y);
@@ -1282,7 +1311,10 @@ export class Sim {
 			// Bigger prey is a bigger meal, shared by the pack; omnivores get half.
 			const v = ((o.diet === 2 ? c.preyValue : Math.max(1, c.preyValue / 2)) * prey.size) / pack.length;
 			o.fit += v;
-			o.store += v;
+			// Prey converts poorly into babies: a kill pays a carnivore's half of one baby (an
+			// omnivore needs two), however much fitness it gives, so predators breed slower than they hunt.
+			o.store += (c.breedCost * (o.diet === 2 ? 0.5 : 0.25) * prey.size) / pack.length;
+			o.digest = DIGEST;
 			o.meat += v;
 			o.hunger = 0;
 			o.energy = Math.min(STORE_E * o.size, o.energy + FOOD_E * 2 * prey.size);

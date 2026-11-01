@@ -481,8 +481,9 @@
 		const maxFit = Math.max(1, ...pts.map((p) => p.best));
 		const maxPop = Math.max(1, ...pts.map((p) => p.alive));
 		const x = (i: number) => (i / (pts.length - 1)) * (w - 4) + 2;
-		const line = (vals: number[], max: number, color: string, fill = false) => {
+		const line = (vals: number[], max: number, color: string, fill = false, dash = false) => {
 			c.beginPath();
+			c.setLineDash(dash ? [6 * dpr, 4 * dpr] : []);
 			vals.forEach((v, i) => (i ? c.lineTo(x(i), h - 4 - (v / max) * (h - 12)) : c.moveTo(x(i), h - 4 - (v / max) * (h - 12))));
 			if (fill) {
 				c.lineTo(x(vals.length - 1), h);
@@ -498,6 +499,8 @@
 		line(pts.map((p) => p.alive), maxPop, 'rgba(148, 163, 184, 0.15)', true);
 		line(pts.map((p) => p.avg), maxFit, '#38bdf8');
 		line(pts.map((p) => p.best), maxFit, '#4ade80');
+		// Herbivores: everyone who isn't an omnivore or carnivore (shown once predators are on).
+		if (cfg.predators) line(pts.map((p) => p.alive - (p.omnis ?? 0) - (p.preds ?? 0)), maxPop, '#86efac', false, true);
 		if (pts.some((p) => p.omnis)) line(pts.map((p) => p.omnis ?? 0), maxPop, '#818cf8');
 		if (pts.some((p) => p.preds)) line(pts.map((p) => p.preds ?? 0), maxPop, '#f87171');
 	}
@@ -652,7 +655,7 @@
 					<div class="pred"><span>Eaten</span><b>{totals.eaten.toLocaleString()}</b></div>
 				{/if}
 			</div>
-			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population{#if cfg.predators}{#if cfg.omnivores}<i style="--c: #818cf8"></i>Omnivores{/if}<i style="--c: #f87171"></i>Carnivores{/if}</div>
+			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population{#if cfg.predators}<i class="dash" style="--c: #86efac"></i>Herbivores{#if cfg.omnivores}<i style="--c: #818cf8"></i>Omnivores{/if}<i style="--c: #f87171"></i>Carnivores{/if}</div>
 			<div class="chart-box" bind:this={chartBox}><canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas></div>
 			<div class="table-box">
 				<table>
@@ -1112,6 +1115,9 @@
 		margin-right: -6px;
 		border-radius: 2px;
 		background: var(--c);
+	}
+	.legend i.dash {
+		background: repeating-linear-gradient(90deg, var(--c) 0 5px, transparent 5px 8px);
 	}
 	.legend i.area {
 		height: 8px;

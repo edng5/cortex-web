@@ -108,14 +108,22 @@ by elitism.)
 option), and nothing brings an extinct world back. Babies cost food, so NEOS must eat before they
 can breed; a NEOS ready to breed goes after a mate it can see (its own species and fitter ones
 first; the fittest attract their species from far away) and slows down to meet it. With the
-defaults (maturity at 120 steps, 80 steps' rest between births) populations grow until they fill
-the world; random search, which can't learn, dies out, and so does any population with too little
-food or too short a life. The original's settings (maturity at 200, rest of 150) die out within two
+defaults (maturity at 120 steps, 80 steps' rest between births, one food a baby) populations grow
+until they fill the world (random search too, on numbers alone, though it doesn't get any better at
+eating), while any population with too little food, too short a life or too dear babies dies out. The original's settings (maturity at 200, rest of 150) die out within two
 generations, the same collapse the original hit at generation 6. When litter size, maturity and
 rest evolve, NEOS settle on litters of about 3, mature later (around 400 steps, buying a longer
 life) and rest less. Blending both parents' weights (the original's
 crossover) does worse than taking each weight whole, because averaging pulls every baby toward the
 middle.
+
+**Predators in balance.** Predators used to overrun the prey and the whole world collapsed. Five
+checks fixed it, as in real ecosystems: a hunter digests after a kill before hunting again, prey
+converts poorly into babies (a carnivore needs two kills per baby share), omnivores get half as much
+from plants and only hunt when hungry, predators are no faster than prey, and meat-eaters' babies
+drift back to eating plants the more common meat-eaters get. With food regrowing at 6–20 a second,
+every run held an equilibrium without topping up: herbivores the majority, and carnivores rising
+and falling (about 4–30) in predator–prey cycles over 60 generations.
 
 **Predators.** With plenty of food, no predators take hold. With food regrowing at 3 a second,
 omnivores appear (1–16 at a time) and some become carnivores (up to 5); with omnivores turned off,
