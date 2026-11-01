@@ -142,6 +142,8 @@ interface Placed {
 }
 export interface SaleTank extends Placed {
 	id: number;
+	/** The player's own name for it (shown instead of the usual label). */
+	name?: string;
 	tier: TankTier;
 	water: Water;
 	temp: Temp;
@@ -151,6 +153,8 @@ export interface SaleTank extends Placed {
 }
 export interface ShowTank extends Placed {
 	id: number;
+	/** The player's own name for it (shown instead of the usual label). */
+	name?: string;
 	level: number;
 	seg: number;
 	water: Water;
@@ -653,6 +657,16 @@ export class FishStore {
 			breeder: s.breeder ? { x: s.breeder.x, y: s.breeder.y } : null,
 			staff: s.staff.map((p) => p.role)
 		};
+	}
+	/** Name a tank (an empty name goes back to the usual label). Kept in your store only, not the showcase. */
+	renameTank(loc: Loc, name: string): Result {
+		const t = this.tankAt(loc);
+		if (!t) return no('No such tank.');
+		const clean = name.replace(/\s+/g, ' ').trim().slice(0, 24);
+		if (clean) t.name = clean;
+		else delete t.name;
+		this.save();
+		return ok(clean ? `Renamed to “${clean}”.` : 'Back to its usual name.');
 	}
 	setFav(id: number): Result {
 		if (!this.s.show.some((t) => t.id === id)) return no('No such tank.');

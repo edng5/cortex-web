@@ -329,9 +329,15 @@
 		if (loc === 'hold') return 'Backroom';
 		const t = store.tankAt(loc);
 		if (!t) return '?';
-		if ('tier' in t) return `${tier(t.tier).name} (${t.water === 'salt' ? 'salt' : t.temp === 'cold' ? 'cold fresh' : 'fresh'}) #${t.id}`;
-		return `${t === store.main ? 'Main show tank' : 'Show tank'} #${t.id}${t.id === store.favTank.id ? ' ♥' : ''}`;
+		if ('tier' in t) return t.name ? `${t.name} (${t.water === 'salt' ? 'salt' : t.temp === 'cold' ? 'cold fresh' : 'fresh'})` : `${tier(t.tier).name} (${t.water === 'salt' ? 'salt' : t.temp === 'cold' ? 'cold fresh' : 'fresh'}) #${t.id}`;
+		return `${t.name ?? `${t === store.main ? 'Main show tank' : 'Show tank'} #${t.id}`}${t.id === store.favTank.id ? ' ♥' : ''}`;
 	};
+	/** Renaming a tank: which one, and the name being typed. */
+	let renaming = $state<{ loc: Loc; draft: string } | null>(null);
+	function saveRename() {
+		if (!renaming) return;
+		if (act(store.renameTank(renaming.loc, renaming.draft), 'click')) renaming = null;
+	}
 	const locs = $derived<Loc[]>(['hold', ...s.sale.map((t) => `sale:${t.id}` as Loc), ...s.show.map((t) => `show:${t.id}` as Loc)]);
 	const show = $derived(s.show.find((t) => t.id === showId) ?? s.show[0]);
 	const isMain = $derived(show === store.main);
@@ -866,6 +872,29 @@
 	</li>
 {/snippet}
 
+{#snippet tankTitle(loc: Loc, name: string | undefined, label: string)}
+	{#if renaming?.loc === loc}
+		<form
+			class="rename"
+			onsubmit={(e) => {
+				e.preventDefault();
+				saveRename();
+			}}
+		>
+			<!-- svelte-ignore a11y_autofocus -->
+			<input bind:value={renaming.draft} maxlength="24" placeholder={label} aria-label="Tank name" autofocus />
+			<button class="primary" type="submit">Save</button>
+			<button type="button" onclick={() => (renaming = null)}>Cancel</button>
+		</form>
+		<p class="muted small">Leave it empty to go back to “{label}”.</p>
+	{:else}
+		<h3 class="tanktitle">
+			{name ?? label}
+			<button class="pen" title="Rename this tank" aria-label="Rename this tank" onclick={() => (renaming = { loc, draft: name ?? '' })}>✏️</button>
+		</h3>
+	{/if}
+{/snippet}
+
 {#snippet sex(f: Fish)}
 	{#if f.g}<span class="sex {f.g}" title={f.g === 'm' ? 'Male' : 'Female'}>{f.g === 'm' ? '♂' : '♀'}</span>{/if}
 {/snippet}
@@ -1088,7 +1117,8 @@
 				{@const t = pickedSale}
 				{@const task = tasksFor(t.id)}
 				<section class="card">
-					<h3>{tier(t.tier).name} · {tier(t.tier).gallons} gal · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater fresh' : 'Tropical fresh'}</h3>
+					{@render tankTitle(`sale:${t.id}`, t.name, `${tier(t.tier).name} · ${tier(t.tier).gallons} gal · ${t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater fresh' : 'Tropical fresh'}`)}
+					{#if t.name}<p class="muted small">{tier(t.tier).name} · {tier(t.tier).gallons} gal · {t.water === 'salt' ? 'Saltwater' : t.temp === 'cold' ? 'Coldwater fresh' : 'Tropical fresh'}</p>{/if}
 					{#if !t.ready}
 						<p>Being set up{task ? `: ${time(task.end - store.now)} left` : '…'}</p>
 					{:else}
@@ -1138,10 +1168,10 @@
 				<div class="hud tl">
 					{#if s.show.length > 1}
 						{#each s.show as t (t.id)}
-							<button class:on={t.id === show.id} onclick={() => ((showId = t.id), (panel = null))} title={`${t === store.main ? 'Main show tank' : `Show tank #${t.id}`}${t.id === store.favTank.id ? ' (favourite)' : ''}`}>{t === store.main ? '★' : '#' + t.id}{t.id === store.favTank.id ? ' ♥' : ''}</button>
+							<button class:on={t.id === show.id} onclick={() => ((showId = t.id), (panel = null))} title={`${t.name ?? (t === store.main ? 'Main show tank' : `Show tank #${t.id}`)}${t.id === store.favTank.id ? ' (favourite)' : ''}`}>{t === store.main ? '★' : '#' + t.id}{t.id === store.favTank.id ? ' ♥' : ''}</button>
 						{/each}
 					{:else}
-						<span class="tname">★ {isMain ? 'Main show tank' : 'Show tank'} · Lv {show.level}{isFav ? ' · ♥' : ''}</span>
+						<span class="tname">★ {show.name ?? (isMain ? 'Main show tank' : 'Show tank')} · Lv {show.level}{isFav ? ' · ♥' : ''}</span>
 					{/if}
 				</div>
 				{#if show.ready}
@@ -1184,7 +1214,8 @@
 					<div class="pop">
 						<button class="x" aria-label="Close" onclick={() => ((panel = null), (styleDraft = null))}>✕</button>
 						{#if panel === 'stats'}
-							<h3>{isMain ? 'Main show tank' : `Show tank #${show.id}`}{isFav ? ' ♥' : ''}</h3>
+							{@render tankTitle(`show:${show.id}`, show.name, `${isMain ? 'Main show tank' : `Show tank #${show.id}`}${isFav ? ' ♥' : ''}`)}
+							{#if show.name}<p class="muted small">{isMain ? 'Main show tank' : `Show tank #${show.id}`}{isFav ? ' ♥' : ''}</p>{/if}
 							<p class="muted small">Level {show.level}{show.seg > 1 ? ` · ${show.seg} tanks combined` : ''} · {show.water === 'salt' ? 'Saltwater' : show.temp === 'cold' ? 'Coldwater' : 'Tropical fresh'} · {TANK_SHAPES.find((x) => x.id === lk.shape)?.name}</p>
 							{@render bar('Niceness', store.niceness(show), '#fbbf24')}
 							{@render bar('Clean', show.clean, '#38bdf8')}
@@ -2434,6 +2465,35 @@
 		color: #7dd3fc;
 		padding: 0 4px !important;
 		text-decoration: underline;
+	}
+	.tanktitle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.pen {
+		padding: 2px 6px !important;
+		font-size: 0.8rem;
+		background: none !important;
+		border-color: transparent !important;
+		opacity: 0.7;
+	}
+	.pen:hover {
+		opacity: 1;
+	}
+	.rename {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 4px;
+	}
+	.rename input {
+		flex: 1 1 160px;
+		min-width: 0;
+		padding: 7px 10px;
+		border-radius: 9px;
+		border: 1px solid rgba(148, 163, 184, 0.35);
+		background: #0f2f45;
 	}
 	.layoutsell {
 		margin-top: 8px;
