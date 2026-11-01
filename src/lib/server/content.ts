@@ -77,7 +77,7 @@ function parseNode(file: string, folderType: NodeType): OntologyNode {
 		cover: data.cover ? String(data.cover) : undefined,
 		videos: asStringArray(data.videos),
 		reels: asStringArray(data.reels),
-		mediaLayout: ['float', 'carousel', 'gallery', 'portrait', 'arcade'].includes(data.mediaLayout) ? data.mediaLayout : undefined,
+		mediaLayout: ['float', 'carousel', 'gallery', 'portrait', 'arcade', 'sim'].includes(data.mediaLayout) ? data.mediaLayout : undefined,
 		portrait: asPortrait(data.portrait),
 		carousels:
 			data.carousels && typeof data.carousels === 'object'
@@ -170,6 +170,16 @@ function tagEdges(nodes: OntologyNode[]): GraphEdge[] {
 	return edges;
 }
 
+/**
+ * Every neuron is linked to About Me (a light link, so the graph keeps its shape; a stronger
+ * similarity or `related:` link between the two wins).
+ */
+function aboutEdges(nodes: OntologyNode[]): GraphEdge[] {
+	const about = nodes.find((n) => n.type === 'about');
+	if (!about) return [];
+	return nodes.filter((n) => n !== about).map((n) => ({ source: about.id, target: n.id, weight: 0.2, kind: 'similarity' as const }));
+}
+
 /** Merge edges, dropping duplicates (undirected) and dangling ids. */
 export function mergeEdges(nodes: OntologyNode[], ...lists: GraphEdge[][]): GraphEdge[] {
 	const ids = new Set(nodes.map((n) => n.id));
@@ -203,5 +213,5 @@ export function loadGraph(isMember = false): GraphData {
 	} else {
 		similarity = tagEdges(nodes);
 	}
-	return { nodes, edges: mergeEdges(nodes, explicitEdges(nodes), similarity) };
+	return { nodes, edges: mergeEdges(nodes, explicitEdges(nodes), similarity, aboutEdges(nodes)) };
 }
