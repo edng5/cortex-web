@@ -9,7 +9,7 @@
 	import { sideways } from './sideways';
 	import { quest } from './quest.svelte';
 	import { BADGES, ENERGY_MAX, countdown, game, starsFor } from './game.svelte';
-	import { FRIENDS, SCENARIOS, TRANSLATE_OPTIONS, type Friend } from './data';
+	import { FRIENDS, HOW_TO, HOW_TO_NOTE, SCENARIOS, TRANSLATE_OPTIONS, type Friend } from './data';
 
 	/** `signedIn`: the games need an account (opening one signed out asks to sign in). */
 	let {
@@ -22,6 +22,7 @@
 	let questPicker = $state(false);
 	let badgesOpen = $state(false);
 	let scenePicker = $state(false);
+	let howOpen = $state(false);
 	/** Today's goals folded up (remembered on this device). */
 	let goalsOpen = $state(load('goals-open', true));
 	function toggleGoals() {
@@ -66,6 +67,8 @@
 	<span class="streak" class:lit={app.practisedToday} title={app.practisedToday ? 'Practised today' : streak ? 'Practise today to keep your streak' : 'Practise today to start a streak'}>
 		<Icon name="flame" size={18} />{streak}
 	</span>
+	<!-- Phones only: on a computer this is beside the phone. -->
+	<button class="icon-btn how-btn" onclick={() => (howOpen = true)} aria-label="How to use SpeakEase" title="How to use SpeakEase"><Icon name="help" size={22} /></button>
 	<button class="icon-btn" onclick={() => (settingsOpen = true)} aria-label="Settings"><Icon name="settings" size={22} /></button>
 </header>
 
@@ -238,6 +241,20 @@
 			{/each}
 		</div>
 		<button class="btn wide" onclick={() => (badgesOpen = false)}>Done</button>
+	</div>
+{/if}
+
+{#if howOpen}
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="overlay" onclick={() => (howOpen = false)}></div>
+	<div class="sheet" role="dialog" aria-modal="true" aria-label="How to use SpeakEase">
+		<div class="grabber"></div>
+		<h3>How to use SpeakEase</h3>
+		<ul class="how">
+			{#each HOW_TO as h (h.name)}<li><b>{h.name}</b>{h.text}</li>{/each}
+		</ul>
+		<p class="fine">{HOW_TO_NOTE}</p>
+		<button class="btn wide" onclick={() => (howOpen = false)}>Got it</button>
 	</div>
 {/if}
 
@@ -807,6 +824,33 @@
 		font-size: 12px;
 		font-weight: 700;
 		white-space: nowrap;
+	}
+	/* Specific enough to beat the shared .icon-btn rule. */
+	header.bar .icon-btn.how-btn {
+		display: none;
+	}
+	@media (max-width: 760px) {
+		header.bar .icon-btn.how-btn {
+			display: grid;
+		}
+	}
+	.how {
+		margin: 4px 0 12px;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		font-size: 14px;
+		line-height: 1.45;
+		color: var(--se-muted);
+	}
+	.how li {
+		padding-left: 12px;
+		border-left: 2px solid var(--se-primary-2);
+	}
+	.how b {
+		color: var(--se-text);
 	}
 	.quest .locked {
 		background: rgba(255, 255, 255, 0.22);

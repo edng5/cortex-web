@@ -130,6 +130,16 @@ export const TRANSLATE_OPTIONS: { lang: string; label: string }[] = englishFirst
 	{ lang: 'ru', label: 'Russian' }
 ], (o) => o.label);
 
+/** What the app does and how to use it: beside the phone on a computer, the "?" pop-up on a phone. */
+export const HOW_TO: { name: string; text: string }[] = [
+	{ name: 'Chat', text: ' with friends in 16 languages. Hold the mic and talk.' },
+	{ name: 'Phrase Quest', text: ': hear a phrase, say it, get scored word by word.' },
+	{ name: 'Scenarios', text: ': role-play ordering food, checking in, and more.' },
+	{ name: 'Dictionary', text: ": look up a word and hear how it's said." },
+	{ name: 'Tap a message', text: ' to translate it, or /ə/ to see how to pronounce it.' }
+];
+export const HOW_TO_NOTE = 'Chats are free. Sign in to play the games and keep your progress on every device.';
+
 export const TIPS = [
 	'Hold the mic button while speaking and release when you are done talking.',
 	'Words highlighted in yellow and red mean incorrect pronunciation.',

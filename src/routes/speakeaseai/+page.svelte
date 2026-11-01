@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import { site } from '$lib/config/site';
 	import { session } from '$lib/session.svelte';
+	import { HOW_TO, HOW_TO_NOTE } from '$lib/speakease/data';
 
 	let { data } = $props();
 	$effect.pre(() => session.init({ user: data.user, quota: null, auth: data.auth }));
@@ -31,13 +32,9 @@
 			<h1>SpeakEase AI</h1>
 		</div>
 		<ul class="features">
-			<li><b>Chat</b> with friends in 16 languages. Hold the mic and talk.</li>
-			<li><b>Phrase Quest</b>: hear a phrase, say it, get scored word by word.</li>
-			<li><b>Scenarios</b>: role-play ordering food, checking in, and more.</li>
-			<li><b>Dictionary</b>: look up a word and hear how it's said.</li>
-			<li><b>Tap a message</b> to translate it, or <b>/ə/</b> to see how to pronounce it.</li>
+			{#each HOW_TO as h (h.name)}<li><b>{h.name}</b>{h.text}</li>{/each}
 		</ul>
-		<p class="note">Chats are free. Sign in to play the games and keep your progress on every device.</p>
+		<p class="note">{HOW_TO_NOTE}</p>
 	</div>
 	<div class="phone">
 		<div class="screen"><SpeakEase nickname={data.nickname} account={data.account} {back} /></div>
