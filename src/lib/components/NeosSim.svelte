@@ -8,6 +8,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Modal from './Modal.svelte';
+	import NeosDetails from './NeosDetails.svelte';
 	import { portal } from '$lib/actions/portal';
 	import { ALGOS, DEFAULTS, DT, MAX_WALLS, colorOf, RANGES, Sim, WALL_T, WORLD, wallDist2, type Algo, type Config, type Crossover, type Selection } from '$lib/neos/sim';
 
@@ -35,6 +36,8 @@
 	/** The saves pop-up: naming a new save (and, when full, picking one to delete), or loading. */
 	let savesOpen = $state<null | 'save' | 'load'>(null);
 	let saveName = $state('');
+	/** The draggable details window (species, diets, sizes). */
+	let detailsOpen = $state(false);
 	let note = $state('');
 
 	let canvas: HTMLCanvasElement;
@@ -508,6 +511,7 @@
 			</label>
 			<button onclick={reset} title="A fresh world with these settings, waiting for Play (walls can be changed again)">↺ New world</button>
 			<button onclick={openSave} title="Name and keep this run (settings, walls, stats, genes) in this browser: up to {MAX_SAVES}">💾 Save</button>
+			<button onclick={() => (detailsOpen = !detailsOpen)} class:on={detailsOpen} title="How each species, diet and size has done (opens a window you can drag around)">📊 Details</button>
 			<button onclick={() => (savesOpen = 'load')} disabled={!saves.length} title={saves.length ? 'Load one of your saved runs' : 'Nothing saved yet'}>📂 Load</button>
 		</div>
 		{#if note}<p class="note">{note}<button aria-label="Dismiss" onclick={() => (note = '')}>✕</button></p>{/if}
@@ -642,6 +646,8 @@
 	</div>
 	</div>
 </section>
+
+{#if detailsOpen}<NeosDetails {sim} onclose={() => (detailsOpen = false)} />{/if}
 
 {#if savesOpen}
 	<div use:portal>
@@ -907,6 +913,10 @@
 		padding: 6px 4px;
 		font-size: 0.78rem;
 	}
+	.bar button.on {
+		border-color: #4ade80;
+		background: rgba(74, 222, 128, 0.16);
+	}
 	.tabs button.on {
 		border-color: #4ade80;
 		background: rgba(74, 222, 128, 0.16);
@@ -953,6 +963,24 @@
 	.legend i.area {
 		height: 8px;
 		background: rgba(148, 163, 184, 0.3);
+	}
+	/* Desktop (a mouse): the chart's scroll bar always shows, thick enough to grab. */
+	@media (hover: hover) and (pointer: fine) {
+		.chart-box {
+			overflow-x: scroll !important;
+			scrollbar-width: auto !important;
+			scrollbar-color: rgba(74, 222, 128, 0.55) rgba(255, 255, 255, 0.06);
+		}
+		.chart-box::-webkit-scrollbar {
+			height: 10px;
+		}
+		.chart-box::-webkit-scrollbar-thumb {
+			border-radius: 5px;
+			background: rgba(74, 222, 128, 0.55);
+		}
+		.chart-box::-webkit-scrollbar-track {
+			background: rgba(255, 255, 255, 0.06);
+		}
 	}
 	.chart-box {
 		flex: none;

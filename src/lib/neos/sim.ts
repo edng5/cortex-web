@@ -221,6 +221,8 @@ export interface Neo {
 	nh: number;
 	/** Diet: 0 herbivore (food), 1 omnivore (food and herbivores), 2 carnivore (other NEOS only). */
 	diet: number;
+	/** Its species' id. */
+	spc: number;
 	/** Steps since it last ate. */
 	hunger: number;
 	/** Fitness that came from eating other NEOS. */
@@ -285,6 +287,47 @@ export interface GenStat {
 	/** Average size alive at the end. */
 	size?: number;
 }
+/** How a group of NEOS (a species, a diet, a size class) has done over the run. */
+export interface Tally {
+	born: number;
+	died: number;
+	/** Most alive at once (checked each generation and whenever the details are read). */
+	peak: number;
+	food: number;
+	/** NEOS it ate, and how many of its own were eaten. */
+	prey: number;
+	eatenBy: number;
+	escapes: number;
+	/** Summed over the dead: fitness and age, for averages. */
+	fitSum: number;
+	lifeSum: number;
+}
+/** A species: NEOS whose genes are within the species threshold of its founder's. */
+export interface Species extends Tally {
+	id: number;
+	name: string;
+	diet: number;
+	/** Generations it was first and (if extinct) last seen. */
+	first: number;
+	last: number | null;
+	sizeSum: number;
+	/** Its albino subspecies (the rare 1-in-1,000 white babies), tallied on their own too. */
+	albino: Tally;
+	/** The founder's genes, which newcomers are compared against. */
+	rep: { wih: Float32Array; who: Float32Array; nh: number; diet: number; size: number };
+}
+const tally = (): Tally => ({ born: 0, died: 0, peak: 0, food: 0, prey: 0, eatenBy: 0, escapes: 0, fitSum: 0, lifeSum: 0 });
+/** Size classes for the details: small, medium, large. */
+export const SIZE_CLASSES = ['Small (< ×0.8)', 'Medium', 'Large (> ×1.25)'];
+const sizeClass = (s: number) => (s < 0.8 ? 0 : s > 1.25 ? 2 : 1);
+// Species names: two made-up syllables from the id (e.g. "Corlia"), so each is easy to tell apart.
+const SYL_A = ['Ala', 'Bri', 'Cor', 'Del', 'Eri', 'Fen', 'Gal', 'Hal', 'Ira', 'Jun', 'Kel', 'Lum', 'Mor', 'Nix', 'Ori', 'Pel', 'Qua', 'Ros', 'Syl', 'Tor', 'Umb', 'Val', 'Wyn', 'Xan', 'Yor', 'Zel'];
+const SYL_B = ['ba', 'cis', 'dra', 'nex', 'fin', 'gor', 'lia', 'mus', 'nox', 'pha', 'ria', 'tus', 'vel', 'zor'];
+const NAMES = 182; // 26 × 14 / gcd: the two syllables don't repeat together before this
+const speciesName = (id: number) => SYL_A[id % SYL_A.length] + SYL_B[(id * 5) % SYL_B.length] + (id >= NAMES ? ` ${Math.floor(id / NAMES) + 1}` : '');
+/** Most species kept (the extinct ones that did least are dropped first). */
+const MAX_SPECIES = 300;
+
 export interface Totals {
 	steps: number;
 	born: number;
@@ -330,6 +373,13 @@ export class Sim {
 	history: GenStat[] = [];
 	totals: Totals = { steps: 0, born: 0, died: 0, food: 0, extinctions: 0, bestEver: 0, lineage: 0, eaten: 0, escapes: 0 };
 	hall: Genome[] = [];
+	/** Every species seen this run, by id; and how each diet and size class has done. */
+	species = new Map<number, Species>();
+	byDiet: Tally[] = [tally(), tally(), tally()];
+	bySize: Tally[] = [tally(), tally(), tally()];
+	/** Each generation: how many of each species were alive at its end. */
+	speciesHistory: { gen: number; counts: Record<number, number> }[] = [];
+	private nextSpecies = 1;
 	extinct = false;
 	/** Walls stay put across new worlds (they can only be changed before a run starts). */
 	walls: Wall[] = [];
@@ -347,7 +397,17 @@ export class Sim {
 		this.reset();
 	}
 
+	/** Forget every species (a new world). */
+	private clearSpecies() {
+		this.species = new Map();
+		this.byDiet = [tally(), tally(), tally()];
+		this.bySize = [tally(), tally(), tally()];
+		this.speciesHistory = [];
+		this.nextSpecies = 1;
+	}
+
 	reset() {
+		this.clearSpecies();
 		this.neos = [];
 		this.gen = 0;
 		this.genStep = 0;
@@ -439,7 +499,8 @@ export class Sim {
 			who[MAX_H + h] = go && h < half ? go[half + h] : rand(-1, 1);
 		}
 		const [fx, fy] = x === undefined || y === undefined ? this.freeSpot() : [x, y];
-		return {
+		const n: Neo = {
+			spc: 0,
 			x: fx,
 			y: fy,
 			r: rand(0, 360),
@@ -464,6 +525,122 @@ export class Sim {
 			cool: 0,
 			input: 0,
 			danger: 0
+		};
+		this.classify(n);
+		return n;
+	}
+
+	/** How different a NEOS is from a species' founder: genes, plus diet and size. */
+	private speciesDist(n: Neo, s: Species) {
+		return this.distance(n, s.rep as unknown as Genome) + Math.abs(n.diet - s.rep.diet) * 2 + Math.abs(n.size - s.rep.size) * 2;
+	}
+	/** Put a newborn into the closest living species within the threshold, or found a new one. */
+	private classify(n: Neo) {
+		const alive = new Set(this.neos.map((o) => o.spc));
+		let best: Species | null = null;
+		let bd = this.cfg.compat;
+		for (const s of this.species.values()) {
+			if (s.last !== null && !alive.has(s.id)) continue;
+			const d = this.speciesDist(n, s);
+			if (d <= bd) {
+				bd = d;
+				best = s;
+			}
+		}
+		if (!best) {
+			const id = this.nextSpecies++;
+			best = {
+				...tally(),
+				id,
+				name: speciesName(id),
+				diet: n.diet,
+				first: this.gen,
+				last: null,
+				sizeSum: 0,
+				albino: tally(),
+				rep: { wih: n.wih.slice(), who: n.who.slice(), nh: n.nh, diet: n.diet, size: n.size }
+			};
+			this.species.set(id, best);
+			this.pruneSpecies();
+		}
+		best.last = null;
+		n.spc = best.id;
+		best.sizeSum += n.size;
+		for (const t of this.tallies(n)) t.born++;
+	}
+	/** The species, diet and size-class tallies a NEOS counts toward. */
+	private tallies(n: Neo): Tally[] {
+		const s = this.species.get(n.spc);
+		const out = [this.byDiet[n.diet], this.bySize[sizeClass(n.size)]];
+		if (s) out.push(s);
+		if (s && n.color === ALBINO) out.push(s.albino);
+		return out;
+	}
+	private pruneSpecies() {
+		if (this.species.size <= MAX_SPECIES) return;
+		const alive = new Set(this.neos.map((o) => o.spc));
+		const gone = [...this.species.values()].filter((s) => !alive.has(s.id)).sort((a, b) => a.born - b.born);
+		for (const s of gone.slice(0, this.species.size - MAX_SPECIES)) this.species.delete(s.id);
+	}
+	/** Alive counts per species, diet and size class right now (and peaks updated). */
+	private countAlive() {
+		const sp = new Map<number, number>();
+		const albino = new Map<number, number>();
+		const diet = [0, 0, 0];
+		const size = [0, 0, 0];
+		for (const n of this.neos) {
+			sp.set(n.spc, (sp.get(n.spc) ?? 0) + 1);
+			if (n.color === ALBINO) albino.set(n.spc, (albino.get(n.spc) ?? 0) + 1);
+			diet[n.diet]++;
+			size[sizeClass(n.size)]++;
+		}
+		for (const [id, c] of sp) {
+			const s = this.species.get(id);
+			if (s && c > s.peak) s.peak = c;
+		}
+		for (const [id, c] of albino) {
+			const s = this.species.get(id);
+			if (s && c > s.albino.peak) s.albino.peak = c;
+		}
+		diet.forEach((c, i) => (this.byDiet[i].peak = Math.max(this.byDiet[i].peak, c)));
+		size.forEach((c, i) => (this.bySize[i].peak = Math.max(this.bySize[i].peak, c)));
+		return { sp, albino, diet, size };
+	}
+	/** Everything the details panel shows. */
+	details() {
+		const alive = this.countAlive();
+		const species = [...this.species.values()].map((s) => ({
+			id: s.id,
+			name: s.name,
+			diet: s.diet,
+			first: s.first,
+			last: s.last,
+			alive: alive.sp.get(s.id) ?? 0,
+			size: s.born ? s.sizeSum / s.born : 1,
+			born: s.born,
+			died: s.died,
+			peak: s.peak,
+			food: s.food,
+			prey: s.prey,
+			eatenBy: s.eatenBy,
+			escapes: s.escapes,
+			avgFit: s.died ? s.fitSum / s.died : 0,
+			avgLife: s.died ? s.lifeSum / s.died : 0,
+			albino: s.albino.born
+				? {
+						...s.albino,
+						alive: alive.albino.get(s.id) ?? 0,
+						avgFit: s.albino.died ? s.albino.fitSum / s.albino.died : 0,
+						avgLife: s.albino.died ? s.albino.lifeSum / s.albino.died : 0
+					}
+				: null
+		}));
+		const group = (t: Tally, n: number) => ({ ...t, alive: n, avgFit: t.died ? t.fitSum / t.died : 0, avgLife: t.died ? t.lifeSum / t.died : 0 });
+		return {
+			species,
+			diets: this.byDiet.map((t, i) => group(t, alive.diet[i])),
+			sizes: this.bySize.map((t, i) => group(t, alive.size[i])),
+			history: this.speciesHistory
 		};
 	}
 
@@ -692,6 +869,7 @@ export class Sim {
 				n.energy = Math.min(STORE_E * n.size, n.energy + FOOD_E);
 				this.cur.food++;
 				this.totals.food++;
+				for (const t of this.tallies(n)) t.food++;
 				const old = this.foodGrid[cellOf(this.fy[f]) * GRID + cellOf(this.fx[f])];
 				old.splice(old.indexOf(f), 1);
 				if (c.foodLimit) {
@@ -783,6 +961,12 @@ export class Sim {
 				this.cur.died++;
 				this.totals.died++;
 				this.remember(n);
+				for (const t of this.tallies(n)) {
+					t.died++;
+					t.fitSum += n.fit;
+					t.lifeSum += n.age;
+					if (n.eaten) t.eatenBy++;
+				}
 				continue;
 			}
 			let dv = 0;
@@ -884,6 +1068,7 @@ export class Sim {
 				n.chased = false;
 				n.fit += ESCAPE_FIT;
 				this.totals.escapes++;
+				for (const t of this.tallies(n)) t.escapes++;
 			}
 			if (!prey) continue;
 			const d = Math.sqrt(pd);
@@ -914,6 +1099,7 @@ export class Sim {
 			if (pack.reduce((s, o) => s + o.size, 0) < prey.size) return;
 		}
 		prey.eaten = true;
+		for (const t of this.tallies(n)) t.prey++;
 		this.cur.eaten++;
 		this.totals.eaten++;
 		for (const o of pack) {
@@ -929,6 +1115,10 @@ export class Sim {
 	/** Record this generation's stats. */
 	private endGeneration() {
 		const fits = [...this.cur.deadFit, ...this.neos.map((n) => n.fit)];
+		const alive = this.countAlive();
+		for (const s of this.species.values()) if (s.last === null && !alive.sp.has(s.id)) s.last = this.gen;
+		this.speciesHistory.push({ gen: this.gen, counts: Object.fromEntries(alive.sp) });
+		if (this.speciesHistory.length > 500) this.speciesHistory.shift();
 		this.history.push({
 			gen: this.gen,
 			best: fits.length ? Math.max(...fits) : 0,
@@ -998,11 +1188,16 @@ export class Sim {
 		this.history = s.history ?? [];
 		this.totals = { ...this.totals, ...s.totals };
 		this.hall = s.hall ?? [];
-		if (s.neos?.length) this.neos = s.neos.map((g) => ({ ...this.spawn(g), fit: g.fit }));
+		if (s.neos?.length) {
+			// The loaded NEOS are sorted into species afresh.
+			this.clearSpecies();
+			this.neos = [];
+			for (const g of s.neos) this.neos.push({ ...this.spawn(g), fit: g.fit });
+		}
 	}
 
 	/** NEAT's species: NEOS grouped with the first representative they're compatible with. */
-	private species() {
+	private speciesCount() {
 		if (this.cfg.algo !== 'neat') return 0;
 		const reps: Neo[] = [];
 		for (const n of this.neos) if (!reps.some((r) => this.distance(r, n) <= this.cfg.compat)) reps.push(n);
@@ -1044,7 +1239,7 @@ export class Sim {
 			sizeMeat: preds + omnis ? sizeM / (preds + omnis) : 0,
 			speedGene: n ? speed / n : 1,
 			foodLeft: this.foodLeft(),
-			species: this.species(),
+			species: this.speciesCount(),
 			progress: this.genStep / Math.round(this.cfg.genTime / DT),
 			time: this.totals.steps * DT
 		};
