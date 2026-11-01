@@ -474,7 +474,10 @@
 		if (j.listings) market = j.listings;
 		return { ...j, ok: r.ok && !!j.ok };
 	}
-	async function loadMarket() {
+	let marketLoading = $state(false);
+	/** Load the listings and collect anything of yours that sold; returns how many sold (-1: unreachable). */
+	async function loadMarket(): Promise<number> {
+		let sold = 0;
 		try {
 			const r = await fetch('/api/games/ifish/market');
 			market = ((await r.json()) as { listings: Listing[] }).listings;
@@ -485,11 +488,28 @@
 					store.pay(sale.price, sale.currency, 1);
 					toasts = [...toasts, { id: ++toastSeq, text: `Sold your ${species(sale.species).name} on the market for ${sale.currency === 'gems' ? `💎 ${sale.price}` : money(sale.price)}!` }].slice(-4);
 					sfx('coin');
+					sold++;
 				}
 			}
+			return sold;
 		} catch {
 			marketMsg = 'Could not reach the market.';
+			return -1;
 		}
+	}
+	/** The ↻ button: pull the latest listings and collect any sales. */
+	async function refreshMarket() {
+		if (marketLoading) return;
+		marketLoading = true;
+		marketMsg = '';
+		sfx('click');
+		const sold = await loadMarket();
+		marketLoading = false;
+		if (sold < 0) return;
+		const mine = market?.filter((l) => l.mine).length ?? 0;
+		marketMsg = sold
+			? `Collected payment for ${sold} sold fish.`
+			: `Up to date: ${market?.length ?? 0} fish for sale.${loggedIn && mine ? ` Your ${mine} listed fish ${mine === 1 ? "hasn't" : "haven't"} sold yet.` : ''}`;
 	}
 	function listFish() {
 		const f = myFish.find((x) => x.u === sellUid);
@@ -1528,8 +1548,11 @@
 				{#if showcase && showcase.length < showcaseTotal}<button onclick={() => loadShowcase(true)}>Show more stores ({showcaseTotal - showcase.length} left)</button>{/if}
 			</section>
 			<section class="card">
-				<h3>🛒 Fish market</h3>
-				<p class="muted small">Sell your rare (or rarer) fish to other players for cash or gems, at your price. A listed fish leaves your store; if it sells, you collect the money next time you're here. Bought fish arrive in your backroom.</p>
+				<div class="markethead">
+					<h3>🛒 Fish market</h3>
+					<button disabled={marketLoading} onclick={refreshMarket} title="Get the latest fish for sale{loggedIn ? ' and collect payment for any of yours that sold' : ''}">{marketLoading ? 'Refreshing…' : '↻ Refresh'}</button>
+				</div>
+				<p class="muted small">Sell your rare (or rarer) fish to other players for cash or gems, at your price. A listed fish leaves your store; if it sells, you collect the money next time you're here (or tap ↻ Refresh). Bought fish arrive in your backroom.</p>
 				{#if loggedIn}
 					<div class="row">
 						<select bind:value={sellUid}>
@@ -2520,6 +2543,12 @@
 		flex: none;
 		accent-color: #ef4444;
 		cursor: pointer;
+	}
+	.markethead {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
 	}
 	.holdfilter {
 		display: flex;
