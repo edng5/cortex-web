@@ -295,6 +295,19 @@ export interface Wall {
 	y2: number;
 }
 
+/** Does the segment (x1, y1)-(x2, y2) cross a wall's centre line? */
+function crosses(x1: number, y1: number, x2: number, y2: number, w: Wall) {
+	const d1x = x2 - x1;
+	const d1y = y2 - y1;
+	const d2x = w.x2 - w.x1;
+	const d2y = w.y2 - w.y1;
+	const den = d1x * d2y - d1y * d2x;
+	if (!den) return false;
+	const t = ((w.x1 - x1) * d2y - (w.y1 - y1) * d2x) / den;
+	const u = ((w.x1 - x1) * d1y - (w.y1 - y1) * d1x) / den;
+	return t > 0 && t < 1 && u >= 0 && u <= 1;
+}
+
 /** Squared distance from (px, py) to a wall's centre line. */
 export function wallDist2(w: Wall, px: number, py: number) {
 	const dx = w.x2 - w.x1;
@@ -478,6 +491,22 @@ export class Sim {
 	blocked(x: number, y: number, gap = WALL_GAP) {
 		for (const w of this.walls) if (wallDist2(w, x, y) < gap * gap) return true;
 		return false;
+	}
+	/** Nothing in the way between two points: walls block sight (food, mates, prey and hunters behind them go unseen). */
+	sees(x1: number, y1: number, x2: number, y2: number) {
+		for (const w of this.walls) if (crosses(x1, y1, x2, y2, w)) return false;
+		return true;
+	}
+	/** How far ahead (up to `look`) a NEOS heading `deg` from (x, y) can go before a wall. */
+	private clearance(x: number, y: number, deg: number, look: number) {
+		const a = (deg * Math.PI) / 180;
+		for (let s = 1; s <= 4; s++) {
+			const t = (look * s) / 4;
+			const px = x + Math.cos(a) * t;
+			const py = y + Math.sin(a) * t;
+			if (this.blocked(px, py) || !this.sees(x, y, px, py)) return t - look / 4;
+		}
+		return look;
 	}
 	/** A random spot clear of the walls. */
 	private freeSpot(): [number, number] {
@@ -923,6 +952,7 @@ export class Sim {
 	}
 
 	private nearestFood(n: Neo): number {
+		const walled = this.walls.length > 0;
 		const cx = cellOf(n.x);
 		const cy = cellOf(n.y);
 		let best = -1;
@@ -938,7 +968,7 @@ export class Sim {
 						const dx = this.fx[i] - n.x;
 						const dy = this.fy[i] - n.y;
 						const d = dx * dx + dy * dy;
-						if (d < bd) {
+						if (d < bd && (!walled || this.sees(n.x, n.y, this.fx[i], this.fy[i]))) {
 							bd = d;
 							best = i;
 						}
@@ -1032,6 +1062,7 @@ export class Sim {
 					for (let gx = Math.max(0, cx - r); gx <= Math.min(GRID - 1, cx + r); gx++)
 						for (const o of this.neoGrid[gy * GRID + gx]) {
 							if (o === n || !this.ready(o) || !fit(o) || !this.compatible(n, o)) continue;
+							if (this.walls.length && !this.sees(n.x, n.y, o.x, o.y)) continue;
 							const d = Math.sqrt((o.x - n.x) ** 2 + (o.y - n.y) ** 2);
 							const same = o.spc === n.spc;
 							// How far it can be seen: further the fitter it is; the elite of its own species, from afar.
@@ -1121,6 +1152,17 @@ export class Sim {
 				n.r = (n.r + Math.tanh(dr) * turn + 360) % 360;
 				n.v = Math.min(top, Math.max(0, n.v + Math.tanh(dv) * push));
 			}
+			// Walls ahead (a reflex, not the network): look a little way ahead; if a wall's coming,
+			// turn toward whichever side is clearer, and slow down.
+			if (this.walls.length) {
+				const look = 0.15 + n.v * 0.5;
+				if (this.clearance(n.x, n.y, n.r, look) < look) {
+					const left = this.clearance(n.x, n.y, n.r + 50, look);
+					const right = this.clearance(n.x, n.y, n.r - 50, look);
+					n.r = (n.r + (left >= right ? turn : -turn) + 360) % 360;
+					n.v *= 0.85;
+				}
+			}
 			n.hunger++;
 			// Energy: bigger and faster burns more.
 			if (c.body) n.energy -= c.energyUse * n.size * n.size * (0.3 + 0.7 * (n.v / c.vMax) ** 2);
@@ -1178,6 +1220,7 @@ export class Sim {
 					for (const o of this.neoGrid[gy * GRID + gx]) {
 						if (o === n || o.eaten) continue;
 						const d = (o.x - n.x) ** 2 + (o.y - n.y) ** 2;
+						if ((d < pd || d < td) && this.walls.length && !this.sees(n.x, n.y, o.x, o.y)) continue;
 						if (d < pd && this.eats(n, o)) {
 							pd = d;
 							prey = o;
