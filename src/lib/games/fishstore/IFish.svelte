@@ -401,6 +401,19 @@
 	}
 	const pickedSale = $derived(!layout && picked?.kind === 'sale' ? (s.sale.find((t) => t.id === picked!.id) ?? null) : null);
 
+	/** Layout mode: sell the picked tank (only once it's empty). */
+	function sellPicked(kind: 'sale' | 'show', id: number) {
+		if (kind === 'sale') {
+			const t = s.sale.find((x) => x.id === id);
+			if (!t) return;
+			ask({ title: 'Sell this sale tank?', body: `You get ${money(Math.round(store.tankCost(t.tier, t.water) * 0.4))} back. It is empty, so no fish are affected.`, fish: [], yes: 'Sell', run: () => act(store.sellTank(id), 'coin') && (picked = null) });
+		} else {
+			const t = s.show.find((x) => x.id === id);
+			if (!t) return;
+			ask({ title: `Sell show tank #${t.id}?`, body: `You get ${money(store.showSellValue(t))} back.${t.decor.length ? ' Its decorations go with it.' : ''} It is empty, so no fish are affected.`, fish: [], yes: 'Sell', run: () => act(store.sellShow(id), 'coin') && (picked = null) });
+		}
+	}
+
 	async function submitName() {
 		if (!naming) return;
 		const n = naming;
@@ -861,6 +874,22 @@
 	{/if}
 {/snippet}
 
+{#snippet layoutSell(kind: 'sale' | 'show', id: number)}
+	{@const t = kind === 'sale' ? s.sale.find((x) => x.id === id) : s.show.find((x) => x.id === id)}
+	{#if t}
+		<div class="row layoutsell">
+			<span>{kind === 'sale' ? `${tier((t as SaleTank).tier).name} sale tank` : tankName(`show:${id}`)}</span>
+			{#if kind === 'show' && t === store.main}
+				<span class="muted small">Your main show tank can't be sold.</span>
+			{:else if t.fish.length}
+				<span class="muted small">Move its fish out to sell it.</span>
+			{:else}
+				<button class="danger" onclick={() => sellPicked(kind, id)}>Sell tank ({money(kind === 'sale' ? Math.round(store.tankCost((t as SaleTank).tier, t.water) * 0.4) : store.showSellValue(t as ShowTank))})</button>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet bar(label: string, v: number, color = '#4ade80')}
 	<div class="bar"><span>{label}</span><i><em style="width: {Math.round(v)}%; background: {v < 30 ? '#f87171' : v < 60 ? '#facc15' : color}"></em></i><b>{Math.round(v)}</b></div>
 {/snippet}
@@ -920,6 +949,9 @@
 				<span class="muted">{layout ? 'Drag something to move it, or tap it and then tap where it should go.' : 'Tap a tank, the supply shelf or the lab to manage it. ★ = show tank.'}</span>
 			</div>
 			<div class="floorbox"><StoreFloor {store} {layout} {picked} ontap={tapFloor} onpress={pressFloor} ondragby={dragFloor} /></div>
+			{#if layout && (picked?.kind === 'sale' || picked?.kind === 'show')}
+				{@render layoutSell(picked.kind, picked.id)}
+			{/if}
 			<p class="muted small">Popularity {pop}/100 · about {Math.round(store.customersPerHour())} customers an hour · {s.sold} fish sold · {money(s.earned)} earned</p>
 			{#if !layout && (picked?.kind === 'shelf' || picked?.kind === 'lab' || picked?.kind === 'breeder' || pickedSale)}
 				<div class="pop storepop">
@@ -2298,6 +2330,12 @@
 		color: #7dd3fc;
 		padding: 0 4px !important;
 		text-decoration: underline;
+	}
+	.layoutsell {
+		margin-top: 8px;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(15, 23, 42, 0.6);
 	}
 	.row {
 		display: flex;

@@ -1425,6 +1425,25 @@ export class FishStore {
 		this.save();
 		return r;
 	}
+	/** What selling a show tank pays back: 40% of building it and its upgrades. */
+	showSellValue(t: ShowTank) {
+		let spent = NEW_SHOW_COST;
+		for (let l = 1; l < t.level; l++) spent += showUpgradeCost(l);
+		return Math.round(spent * t.seg * 0.4);
+	}
+	sellShow(id: number): Result {
+		const t = this.s.show.find((x) => x.id === id);
+		if (!t) return no('No such tank.');
+		if (t === this.main) return no('Your main show tank stays: it is the heart of your store.');
+		if (t.fish.length) return no('Move the fish out first.');
+		if (this.s.tasks.some((x) => x.ref === id || x.ref2 === id)) return no('Someone is working on it.');
+		const cash = this.showSellValue(t);
+		this.s.cash += cash;
+		this.s.show = this.s.show.filter((x) => x !== t);
+		if (this.s.fav === id) this.s.fav = null;
+		this.save();
+		return ok(`Sold for $${cash}.`);
+	}
 	upgradeShow(id: number): Result {
 		const t = this.s.show.find((x) => x.id === id);
 		if (!t) return no('No such tank.');
