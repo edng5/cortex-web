@@ -3,6 +3,8 @@
 
 /** Global high scores as the server returns them: top players per board, plus your own bests. */
 export interface Board {
+	/** This month's board, or all-time. */
+	period?: 'month' | 'all';
 	missions: Record<number, { name: string; score: number }[]>;
 	you?: Record<number, number>;
 }
@@ -181,7 +183,7 @@ export function drawRecord(
 	}
 	if (list.length === 0) {
 		g.setColor(dim);
-		put('no global record yet', yy);
+		put(global.period === 'all' ? 'no global record yet' : 'no record this month yet', yy);
 		yy += size + 5;
 	}
 	list.slice(0, rows).forEach((e, i) => {
@@ -192,7 +194,7 @@ export function drawRecord(
 	g.setColor(dim);
 	g.font(size - 2, family, false);
 	const mine = opts.loggedIn ? (global.you?.[board] ?? 0) : opts.local;
-	put(opts.loggedIn ? `you: ${mine}` : `this browser: ${mine} · log in to rank`, yy);
+	put(opts.loggedIn ? `you${global.period === 'all' ? '' : ' this month'}: ${mine}` : `this browser: ${opts.local} · log in to rank`, yy);
 }
 
 /**

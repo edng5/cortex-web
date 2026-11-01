@@ -1,26 +1,34 @@
 <!--
-  E.Ngine Games monthly leaders: this month's top score on every game's boards. A game nobody
-  has played this month shows its most recent month with scores; nothing at all shows "-".
+  E.Ngine Games leaders: this month's top score on every game's boards (a game nobody has played
+  this month shows its most recent month with scores), or switched to all-time. Nothing at all
+  shows "-".
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { GAMES } from '$lib/games/registry';
+	import { boardPeriod } from '$lib/games/board-period.svelte';
+	import BoardToggle from './BoardToggle.svelte';
 
 	type Entry = { name: string; score: number } | null;
-	type Monthly = { month: string; games: Partial<Record<string, { month: string | null; boards: Record<number, Entry> }>> };
+	type Monthly = { period?: 'month' | 'all'; month: string; games: Partial<Record<string, { month: string | null; boards: Record<number, Entry> }>> };
 
 	let data = $state<Monthly | null>(null);
 	let failed = $state(false);
 
-	onMount(async () => {
-		try {
-			const res = await fetch('/api/games/monthly');
-			if (res.ok) data = (await res.json()) as Monthly;
-			else failed = true;
-		} catch {
-			failed = true;
-		}
+	$effect(() => {
+		const period = boardPeriod.value;
+		let gone = false;
+		data = null;
+		failed = false;
+		fetch(`/api/games/monthly?period=${period}`)
+			.then(async (res) => {
+				if (gone) return;
+				if (res.ok) data = (await res.json()) as Monthly;
+				else failed = true;
+			})
+			.catch(() => !gone && (failed = true));
+		return () => (gone = true);
 	});
+	const allTime = $derived(boardPeriod.value === 'all');
 
 	const monthName = (m: string) => {
 		const [y, mo] = m.split('-').map(Number);
@@ -28,17 +36,18 @@
 	};
 </script>
 
-<aside class="monthly" aria-label="Monthly leaderboard">
+<aside class="monthly" aria-label={allTime ? 'All-time leaderboard' : 'Monthly leaderboard'}>
 	<header>
-		<h3>Monthly leaders</h3>
-		<span class="month">{data ? monthName(data.month) : ' '}</span>
+		<h3>{allTime ? 'All-time leaders' : 'Monthly leaders'}</h3>
+		<span class="month">{allTime ? '' : data ? monthName(data.month) : ' '}</span>
 	</header>
+	<BoardToggle />
 	{#each GAMES.filter((g) => Object.keys(g.boards).length) as g (g.id)}
 		{@const row = data?.games[g.id]}
 		<section style="--accent: {g.accent}">
 			<h4>
 				<img src={g.icon} alt="" width="20" height="20" />{g.title}
-				{#if row?.month && data && row.month !== data.month}<span class="from">from {monthName(row.month)}</span>{/if}
+				{#if !allTime && row?.month && data && row.month !== data.month}<span class="from">from {monthName(row.month)}</span>{/if}
 			</h4>
 			<dl>
 				{#each Object.entries(g.boards) as [b, label] (b)}

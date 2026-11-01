@@ -23,10 +23,15 @@ export interface BoardEntry {
 	name: string;
 	score: number;
 }
+/** Which leaderboard: this month's (UTC), or every score ever. */
+export type Period = 'month' | 'all';
+export const periodOf = (v: string | null): Period => (v === 'all' ? 'all' : 'month');
+
 export interface Board {
+	period: Period;
 	/** Top players per board ("missions" for Top Gun's sake), best first. */
 	missions: Record<number, BoardEntry[]>;
-	/** The signed-in player's own bests (absent when signed out). */
+	/** The signed-in player's own bests in this period (absent when signed out). */
 	you?: Record<number, number>;
 }
 
@@ -70,10 +75,44 @@ function rowName(r: { name: string | null; email_enc: string }): string {
 }
 
 export interface Monthly {
+	period: Period;
 	/** The current month, 'YYYY-MM'. */
 	month: string;
-	/** Per game: the month shown (this one, or the latest with scores; null = never played) and each board's leader. */
+	/**
+	 * Per game: the month shown (this one, or the latest with scores; null = never played, or the
+	 * all-time board) and each board's leader.
+	 */
 	games: Record<GameId, { month: string | null; boards: Record<number, BoardEntry | null> }>;
+}
+
+/**
+ * All-time scores: each player's best per board, from the all-time table and every month's board
+ * (October 2026's included), so a score kept only on a monthly board still counts.
+ */
+const ALL_TIME = `(SELECT user_id, game, mission, MAX(best) AS best, MIN(updated_at) AS updated_at FROM (
+	SELECT user_id, game, mission, best, updated_at FROM game_scores
+	UNION ALL SELECT user_id, game, mission, best, updated_at FROM game_monthly
+) GROUP BY user_id, game, mission)`;
+
+/** Every board's all-time leader (the best score ever, every month included). */
+export function getAllTime(): Monthly {
+	const db = getDb();
+	const leader = db.prepare(
+		`SELECT s.best AS score, u.email_enc AS email_enc, p.name AS name
+		 FROM ${ALL_TIME} s JOIN users u ON u.id = s.user_id LEFT JOIN player_names p ON p.user_id = s.user_id
+		 WHERE s.game = ? AND s.mission = ? AND s.best > 0
+		 ORDER BY s.best DESC, s.updated_at ASC LIMIT 1`
+	);
+	const games = {} as Monthly['games'];
+	for (const game of Object.keys(GAMES) as GameId[]) {
+		const boards: Record<number, BoardEntry | null> = {};
+		for (const b of GAMES[game].boards) {
+			const r = leader.get(game, b) as { score: number; email_enc: string; name: string | null } | undefined;
+			boards[b] = r ? { name: rowName(r), score: r.score } : null;
+		}
+		games[game] = { month: null, boards };
+	}
+	return { period: 'all', month: monthOf(Date.now()), games };
 }
 
 /** This month's leader on every board; a game nobody has played this month shows its latest month with scores. */
@@ -97,28 +136,31 @@ export function getMonthly(): Monthly {
 		}
 		games[game] = { month: m, boards };
 	}
-	return { month, games };
+	return { period: 'month', month, games };
 }
 
-export function getBoard(game: GameId, userId: string | null, limit = 5): Board {
+/** A game's top players per board, this month or all-time, and the signed-in player's own bests. */
+export function getBoard(game: GameId, userId: string | null, period: Period = 'all', limit = 5): Board {
 	const db = getDb();
+	// The monthly table has one row per player per month; all-time is each player's best ever.
+	const [table, extra, args] = period === 'month' ? ['game_monthly', ' AND s.month = ?', [monthOf(Date.now())]] : [ALL_TIME, '', []];
 	const top = db.prepare(
 		`SELECT s.best AS score, u.email_enc AS email_enc, p.name AS name
-		 FROM game_scores s JOIN users u ON u.id = s.user_id LEFT JOIN player_names p ON p.user_id = s.user_id
-		 WHERE s.game = ? AND s.mission = ? AND s.best > 0
+		 FROM ${table} s JOIN users u ON u.id = s.user_id LEFT JOIN player_names p ON p.user_id = s.user_id
+		 WHERE s.game = ? AND s.mission = ? AND s.best > 0${extra}
 		 ORDER BY s.best DESC, s.updated_at ASC
 		 LIMIT ?`
 	);
 	const missions: Record<number, BoardEntry[]> = {};
 	for (const m of GAMES[game].boards) {
-		missions[m] = (top.all(game, m, limit) as { score: number; email_enc: string; name: string | null }[]).map((r) => ({
+		missions[m] = (top.all(game, m, ...args, limit) as { score: number; email_enc: string; name: string | null }[]).map((r) => ({
 			name: rowName(r),
 			score: r.score
 		}));
 	}
-	const board: Board = { missions };
+	const board: Board = { period, missions };
 	if (userId) {
-		const mine = db.prepare('SELECT mission, best FROM game_scores WHERE user_id = ? AND game = ?').all(userId, game) as {
+		const mine = db.prepare(`SELECT s.mission, s.best FROM ${table} s WHERE s.user_id = ? AND s.game = ?${extra}`).all(userId, game, ...args) as {
 			mission: number;
 			best: number;
 		}[];

@@ -13,6 +13,8 @@
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import TouchControls from './TouchControls.svelte';
 	import GameLoading from './GameLoading.svelte';
+	import BoardToggle from './BoardToggle.svelte';
+	import { boardPeriod } from '$lib/games/board-period.svelte';
 	import { accountTag, pullSave, watchSave } from '$lib/games/cloud-save';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
@@ -158,7 +160,7 @@
 	}
 
 	// ── Global high scores ──
-	const url = $derived(`/api/games/${spec.id}/scores`);
+	const url = $derived(`/api/games/${spec.id}/scores?period=${boardPeriod.value}`);
 	async function loadBoard() {
 		try {
 			const res = await fetch(url);
@@ -203,9 +205,10 @@
 	$effect(() => {
 		if (playing) resumeLoop?.();
 	});
-	// A new leaderboard name: show it on the board.
+	// A new leaderboard name, or Monthly / All-time switched: show it on the board.
 	$effect(() => {
 		void session.playerName;
+		void url;
 		if (game) loadBoard();
 	});
 
@@ -319,6 +322,9 @@
 	{:else if touch && status === 'running' && active}
 		<TouchControls spec={spec.touch} {gestures} disabled={disabled ? disabled.split(' ') : []} press={touchPress} release={touchRelease} />
 	{/if}
+	{#if !spec.ui}
+		<div class="period"><span>Leaderboard</span><BoardToggle /></div>
+	{/if}
 	<ul class="help" class:hidden={touch} aria-label="Controls">
 		{#each spec.help as h (h.label)}
 			<li>{#each h.keys as k (k)}<kbd>{k}</kbd>{/each} {h.label}</li>
@@ -431,6 +437,13 @@
 		100% {
 			transform: rotate(-90deg);
 		}
+	}
+	.period {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.8rem;
+		color: var(--muted, #94a3b8);
 	}
 	.help.hidden {
 		display: none;
