@@ -23,7 +23,7 @@
 		if (wide && n.cover) return n.cover;
 		if (n.icon) return n.icon;
 		const m = nodeMedia(n)[0];
-		if (!m) return null;
+		if (!m) return n.cover ?? null;
 		return m.kind === 'image' ? m.src : m.kind === 'embed' ? (m.thumb ?? null) : null;
 	}
 	/** Vector logos are shown whole (with breathing room), not cropped to fill. */

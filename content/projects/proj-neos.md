@@ -6,9 +6,14 @@ tags: [neuroevolution, neat, genetic-algorithms, simulation, python, artificial-
 start: 2023-04
 end: 2024-03
 weight: 2
-# Desktop: show the generation GIFs in a carousel instead of the floating pile.
-mediaLayout: carousel
-images:
+# A ring makes it stand out on the graph (the simulator runs on the site).
+ring: true
+# The live simulator: centred beside the panel on desktop, at the top of the panel on phones.
+# The original run's GIFs sit under Results.
+mediaLayout: sim
+cover: /images/neos/neos1.gif
+carousels:
+  generations:
   - /images/neos/neos1.gif
   - /images/neos/neos2.gif
   - /images/neos/gen-0.gif
@@ -30,6 +35,11 @@ related: [edu-queens, skill-ml]
 ---
 
 ## Introduction
+**Try it live:** the simulator runs right here. It's one continuous world (generations never cut it
+off), and you can pick the evolution algorithm (NEAT, the original genetic algorithm, an evolution
+strategy, differential evolution or random search), switch selection, crossover and mutations on and
+off, tune the hyperparameters, watch the stats, and save a run to pick up later.
+
 An evolution simulator using the NEAT (NeuroEvolution of Augmenting Topologies) algorithm. It
 observes a population of simple organisms (NEOS) learning to eat food. NEOS can reproduce within a
 generation to create offspring with shared genes, and at the end of each generation the fittest
@@ -57,3 +67,5 @@ grew too large, the ecosystem collapsed.
 | 4 | 37 | 13.34 | 4 | 113 |
 | 5 | 40 | 11.63 | 21 | 137 |
 | 6 | 33 | 12.52 | 0 (final) | 83 |
+
+<!-- carousel: generations -->

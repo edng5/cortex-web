@@ -54,6 +54,7 @@ Put an image at the start of a heading to show a small icon beside it:
 
 ### Floating vs. carousel
 On desktop, a node's pictures float as a draggable pile. Add `mediaLayout: carousel` to a
-node's frontmatter to show them in a carousel instead (NEOS does this).
+node's frontmatter to show them in a carousel instead.
 Use `mediaLayout: gallery` to open a large centred photo gallery instead of the info panel
-(Photography does this).
+(Photography does this). `mediaLayout: sim` puts the NEOS simulator there instead (centred
+beside the panel on desktop, at the top of the panel on phones).

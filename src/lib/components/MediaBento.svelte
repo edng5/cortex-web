@@ -1,5 +1,5 @@
 <!--
-  Free-floating pictures for a node (desktop default; NEOS opts into the carousel instead). Tiles start in a composed
+  Free-floating pictures for a node (desktop default; a node can opt into the carousel instead). Tiles start in a composed
   "bento" layout sized from each item's real aspect ratio, then wander gently on
   their own and can be dragged anywhere on screen. A click (no drag) on a picture
   opens it in the lightbox.

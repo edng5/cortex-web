@@ -54,9 +54,10 @@ export interface OntologyNode {
 	/**
 	 * Picture style: 'float' (draggable pile, the default), 'carousel' (beside the panel),
 	 * 'gallery' (clicking the node opens a large centred gallery instead of the panel), or
-	 * 'portrait' (frameless cut-outs placed by `portrait`, e.g. a team photo of PNGs).
+	 * 'portrait' (frameless cut-outs placed by `portrait`, e.g. a team photo of PNGs), or 'sim'
+	 * (the NEOS simulator: centred beside the panel on desktop, at the top of the panel on phones).
 	 */
-	mediaLayout?: 'float' | 'carousel' | 'gallery' | 'portrait' | 'arcade';
+	mediaLayout?: 'float' | 'carousel' | 'gallery' | 'portrait' | 'arcade' | 'sim';
 	/** For `mediaLayout: portrait`: where each image (by src) sits. See PortraitSpot. */
 	portrait?: Record<string, PortraitSpot>;
 	/** Named in-text carousels: put `<!-- carousel: name -->` in the body to place one. */

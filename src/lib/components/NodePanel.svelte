@@ -10,6 +10,7 @@
 	import MediaItem from './MediaItem.svelte';
 	import MediaCarousel from './MediaCarousel.svelte';
 	import ReelPlayer from './ReelPlayer.svelte';
+	import NeosSim from './NeosSim.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { brandFor } from '$lib/brand';
 	import type { GraphData, OntologyNode } from '$lib/types';
@@ -29,8 +30,10 @@
 		videosOnly?: boolean;
 		/** Show the node's reels inside the panel too (screens without room for them on the left). */
 		inlineReels?: boolean;
+		/** `mediaLayout: sim` (NEOS): the simulator at the top of the panel (no room for it beside). */
+		inlineSim?: boolean;
 	}
-	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true, videosOnly = false, inlineReels = true }: Props = $props();
+	let { node, graph, onclose, onselect, onstep, enterFrom = 1, inlineMedia = true, videosOnly = false, inlineReels = true, inlineSim = true }: Props = $props();
 	const media = $derived(nodeMedia(node, true).filter((m) => !videosOnly || m.kind !== 'image'));
 
 	// Body markdown is your own trusted content from /content.
@@ -136,6 +139,10 @@
 				{#if dates}<p class="dates">{dates}</p>{/if}
 			</div>
 		</div>
+	{/if}
+
+	{#if inlineSim && node.mediaLayout === 'sim'}
+		<div class="sim-inline"><NeosSim compact /></div>
 	{/if}
 
 	<!-- Desktop shows the games menu on the left already; smaller screens (phones included, with
@@ -283,6 +290,9 @@
 </script>
 
 <style>
+	.sim-inline {
+		margin: 0 0 14px;
+	}
 	.panel {
 		position: fixed;
 		top: 16px;

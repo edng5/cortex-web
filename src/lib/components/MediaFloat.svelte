@@ -28,7 +28,7 @@
 		portrait?: Record<string, PortraitSpot>;
 	} = $props();
 	// Desktop default is floating, draggable pictures; a node opts into the carousel
-	// with `mediaLayout: carousel` (e.g. NEOS's simulation GIFs).
+	// with `mediaLayout: carousel`.
 	const carousel = $derived(layout === 'carousel');
 </script>
 

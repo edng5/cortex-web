@@ -16,6 +16,7 @@
 	import GamePopup from '$lib/components/GamePopup.svelte';
 	import EngineMenu from '$lib/components/EngineMenu.svelte';
 	import ReelPlayer from '$lib/components/ReelPlayer.svelte';
+	import NeosSim from '$lib/components/NeosSim.svelte';
 	import { session } from '$lib/session.svelte';
 	import { nodeMedia } from '$lib/media';
 	import { cortex } from '$lib/cortex.svelte';
@@ -99,7 +100,9 @@
 	// Nodes with `reels` (SpeakEase AI): a tall portrait player on the left, and the node's
 	// pictures and videos in the info panel.
 	const hasReels = $derived(!!selected?.reels.length);
-	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade || hasReels));
+	// `mediaLayout: sim` (NEOS): the simulator, centred in the space beside the info panel.
+	const sim = $derived(selected?.mediaLayout === 'sim');
+	const floatMedia = $derived(innerWidth > 1024 && (media.length > 0 || arcade || hasReels || sim));
 	const reelHeight = $derived(Math.round(Math.min(760, innerHeight - 110)));
 	const mediaWidth = $derived(Math.round(Math.min(600, Math.max(380, innerWidth * 0.38))));
 	// Wide screens: the games menu and its monthly leaderboard side by side (laid out at
@@ -112,8 +115,10 @@
 	);
 	const arcadeWidth = $derived(innerWidth >= 1480 ? Math.round(ARCADE_BASE * arcadeScale) : mediaWidth);
 	const arcadeLeft = $derived(innerWidth >= 1480 ? Math.round(64 + Math.max(0, arcadeRoom - arcadeWidth) * 0.6) : 64);
+	const simWidth = $derived(Math.round(Math.min(1040, arcadeRoom)));
+	const simLeft = $derived(Math.round(64 + Math.max(0, arcadeRoom - simWidth) / 2));
 	// Media may overlap the graph a little, so only shift the graph by about half its width.
-	const insetLeft = $derived(floatMedia ? Math.round((arcade ? arcadeLeft - 64 + arcadeWidth : mediaWidth) * 0.5) : 0);
+	const insetLeft = $derived(floatMedia ? Math.round((arcade ? arcadeLeft - 64 + arcadeWidth : sim ? simLeft - 64 + simWidth : mediaWidth) * 0.5) : 0);
 	const presentTypes = $derived(NODE_TYPES.filter((t) => graph.nodes.some((n) => n.type === t)));
 
 	// Legend filter: click a type to line its neurons up on the left, click again to clear.
@@ -215,6 +220,10 @@
 					<EngineMenu onpick={(id) => session.openGames(id)} onlogin={() => (session.loginOpen = true)} />
 				</div>
 			</section>
+		{:else if floatMedia && sim}
+			<section class="sim-dock" style="width: {simWidth}px; left: {simLeft}px" aria-label="NEOS simulator">
+				<NeosSim />
+			</section>
 		{:else if floatMedia && hasReels}
 			<section class="reel-dock" style="--media-w: {mediaWidth}px" aria-label="{selected.title} videos">
 				<ReelPlayer reels={selected.reels} captions={selected.captions} title={selected.title} height="{reelHeight}px" autoplay />
@@ -237,7 +246,8 @@
 			onselect={(id) => cortex.select(id)}
 			onstep={step}
 			{enterFrom}
-			inlineMedia={!floatMedia || arcade || hasReels}
+			inlineMedia={!floatMedia || arcade || hasReels || sim}
+			inlineSim={!floatMedia}
 			inlineReels={!floatMedia}
 			videosOnly={floatMedia && arcade}
 		/>
@@ -317,6 +327,22 @@
 		overflow-y: auto;
 		scrollbar-width: none;
 		animation: dock-in 0.25s ease-out;
+	}
+	/* NEOS: the simulator, centred in the space beside the info panel. */
+	.sim-dock {
+		position: fixed;
+		top: 20px;
+		bottom: 20px;
+		z-index: 25;
+		display: flex;
+		align-items: safe center;
+		overflow-y: auto;
+		scrollbar-width: none;
+		animation: dock-in 0.25s ease-out;
+	}
+	.sim-dock > :global(*) {
+		flex: 1;
+		margin: auto 0;
 	}
 	/* Reels: the portrait player centred where pictures would float. */
 	.reel-dock {
