@@ -69,14 +69,18 @@
 			{#if card.romanization}<p class="roman">{card.romanization}</p>{/if}
 			<p class="meaning">{card.meaning}</p>
 			{#if card.opposite && !card.review}
-				<div class="opposite">
-					<span><small>Opposite</small><b dir="auto">{card.opposite.text}</b> <em>{card.opposite.meaning}</em></span>
-					{#if card.oppositeQueued}
-						<span class="queued">Up next</span>
-					{:else}
-						<button class="btn ghost small" onclick={() => quest.learnOpposite()}>Learn the opposite too</button>
-					{/if}
-				</div>
+				<!-- Collapsed to start with, for every new phrase. -->
+				{#key card.id}
+					<details class="opposite">
+						<summary>Opposite{#if card.oppositeQueued}<span class="queued">Up next</span>{/if}</summary>
+						<div class="opp-body">
+							<span><b dir="auto">{card.opposite.text}</b> <em>{card.opposite.meaning}</em></span>
+							{#if !card.oppositeQueued}
+								<button class="btn ghost small" onclick={() => quest.learnOpposite()}>Learn the opposite too</button>
+							{/if}
+						</div>
+					</details>
+				{/key}
 			{/if}
 			<div class="say">
 				<div>
@@ -234,29 +238,57 @@
 		cursor: default;
 	}
 	.opposite {
-		display: flex;
-		align-items: center;
-		gap: 10px;
 		margin-top: 10px;
-		padding: 8px 10px;
 		border-radius: 12px;
 		border: 1px dashed color-mix(in srgb, var(--se-primary-2) 50%, transparent);
 	}
-	.opposite > span:first-child {
+	.opposite summary {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 10px;
+		list-style: none;
+		color: var(--se-muted);
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		cursor: pointer;
+	}
+	.opposite summary::-webkit-details-marker {
+		display: none;
+	}
+	/* A chevron that turns when open. */
+	.opposite summary::after {
+		content: '';
+		width: 6px;
+		height: 6px;
+		margin-left: auto;
+		border-right: 2px solid currentColor;
+		border-bottom: 2px solid currentColor;
+		transform: rotate(45deg);
+		transition: transform 0.15s;
+	}
+	.opposite[open] summary::after {
+		transform: rotate(-135deg);
+	}
+	.opposite summary .queued {
+		text-transform: none;
+		letter-spacing: 0;
+	}
+	.opp-body {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 0 10px 8px;
+	}
+	.opp-body > span {
 		flex: 1;
 		min-width: 0;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 4px 6px;
-	}
-	.opposite small {
-		width: 100%;
-		color: var(--se-muted);
-		font-size: 11px;
-		font-weight: 700;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
 	}
 	.opposite em {
 		color: var(--se-muted);
