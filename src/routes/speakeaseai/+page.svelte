@@ -28,11 +28,16 @@
 		<a class="home" href={back}>← {fromHome ? `Back to ${site.fullName}` : 'Back to SpeakEase AI'}</a>
 		<div class="brand">
 			<img src="/images/speakease/icon.png" alt="" width="44" height="44" />
-			<div>
-				<h1>SpeakEase AI</h1>
-				<p>The iOS and Android apps have reached end of support. Here it is on the web: hold the mic and talk.</p>
-			</div>
+			<h1>SpeakEase AI</h1>
 		</div>
+		<ul class="features">
+			<li><b>Chat</b> with friends in 16 languages. Hold the mic and talk.</li>
+			<li><b>Phrase Quest</b>: hear a phrase, say it, get scored word by word.</li>
+			<li><b>Scenarios</b>: role-play ordering food, checking in, and more.</li>
+			<li><b>Dictionary</b>: look up a word and hear how it's said.</li>
+			<li><b>Tap a message</b> to translate it, or <b>/ə/</b> to see how to pronounce it.</li>
+		</ul>
+		<p class="note">Chats are free. Sign in to play the games and keep your progress on every device.</p>
 	</div>
 	<div class="phone">
 		<div class="screen"><SpeakEase nickname={data.nickname} account={data.account} {back} /></div>
@@ -68,7 +73,7 @@
 	.brand {
 		display: flex;
 		gap: 14px;
-		align-items: flex-start;
+		align-items: center;
 		margin-top: 18px;
 	}
 	.brand img {
@@ -76,14 +81,33 @@
 		border-radius: 12px;
 	}
 	h1 {
-		margin: 0 0 6px;
+		margin: 0;
 		font-size: 1.6rem;
 		color: #e2e8f0;
 	}
-	.brand p {
-		margin: 0;
+	.features {
+		margin: 18px 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
 		color: #94a3b8;
-		line-height: 1.5;
+		font-size: 0.92rem;
+		line-height: 1.45;
+	}
+	.features li {
+		padding-left: 14px;
+		border-left: 2px solid rgba(49, 108, 205, 0.6);
+	}
+	.features b {
+		color: #e2e8f0;
+	}
+	.note {
+		margin: 16px 0 0;
+		color: #64748b;
+		font-size: 0.85rem;
+		line-height: 1.45;
 	}
 	.phone {
 		flex: none;
