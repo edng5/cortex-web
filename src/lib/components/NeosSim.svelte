@@ -297,8 +297,11 @@
 <section class="neos" class:compact bind:this={root} data-swipe-ignore aria-label="NEOS simulator">
 	<div class="grid">
 	<div class="stage">
-		<canvas bind:this={canvas} aria-label="NEOS swimming, eating and breeding"></canvas>
-		{#if extinct}<div class="extinct">Extinct! Turn on “Revive after extinction” or start a new world.</div>{/if}
+		<!-- A fixed square box with the canvas drawn inside it, so the canvas's pixel size never feeds back into the layout. -->
+		<div class="view">
+			<canvas bind:this={canvas} aria-label="NEOS swimming, eating and breeding"></canvas>
+			{#if extinct}<div class="extinct">Extinct! Turn on “Revive after extinction” or start a new world.</div>{/if}
+		</div>
 		<div class="bar">
 			<button class="play" onclick={() => (running = !running)} aria-label={running ? 'Pause' : 'Play'}>{running ? '❚❚' : '▶'}</button>
 			<label class="speed" title="Simulation steps per frame">
@@ -339,18 +342,18 @@
 			</div>
 			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population</div>
 			<div class="chart-box" bind:this={chartBox}><canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas></div>
-			{#if history.length}
-				<div class="table-box">
+			<div class="table-box">
 				<table>
 					<thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Alive</th><th>Total</th><th>Born</th></tr></thead>
 					<tbody>
 						{#each history.toReversed() as h (h.gen)}
 							<tr><td>{h.gen}</td><td>{h.best}</td><td>{h.avg.toFixed(2)}</td><td>{h.alive}</td><td>{h.total}</td><td>{h.born}</td></tr>
+						{:else}
+							<tr><td colspan="6" class="none">Each generation’s stats appear here.</td></tr>
 						{/each}
 					</tbody>
 				</table>
-				</div>
-			{/if}
+			</div>
 		{:else if tab === 'settings'}
 			<div class="sliders">
 				{#each SLIDERS.filter((s) => !s.only || s.only.includes(cfg.algo)) as s (s.key)}
@@ -432,12 +435,19 @@
 		gap: 8px;
 		min-width: 0;
 	}
-	canvas:not(.chart) {
-		display: block;
+	.view {
+		position: relative;
 		width: 100%;
 		aspect-ratio: 1;
 		border-radius: 10px;
+		overflow: hidden;
 		background: #cfe0f2;
+	}
+	.view canvas {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
 	}
 	.extinct {
 		position: absolute;
@@ -505,6 +515,9 @@
 		border: none;
 		background: none;
 	}
+	.side-box {
+		min-width: 0;
+	}
 	.side {
 		display: flex;
 		flex-direction: column;
@@ -569,6 +582,8 @@
 	}
 	.chart-box {
 		flex: none;
+		height: 120px;
+		min-width: 0;
 		overflow-x: auto;
 		overflow-y: hidden;
 		border-radius: 8px;
@@ -578,12 +593,17 @@
 	.chart {
 		display: block;
 		width: 100%;
-		height: 120px;
+		height: 100%;
+	}
+	.none {
+		text-align: center;
+		color: #94a3b8;
+		padding: 12px 4px;
 	}
 	/* Every generation's row, in its own scrolling box. */
 	.table-box {
 		flex: none;
-		max-height: 170px;
+		height: 170px;
 		overflow-y: auto;
 		scrollbar-width: thin;
 	}
@@ -699,6 +719,7 @@
 		/* As tall as the world beside it, scrolling inside rather than stretching the card. */
 		.side-box {
 			position: relative;
+			min-width: 0;
 			min-height: 360px;
 		}
 		.side {
