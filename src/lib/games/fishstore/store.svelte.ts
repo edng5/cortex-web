@@ -593,6 +593,19 @@ export class FishStore {
 		return ok(`+$${cash}`);
 	}
 
+	/** Wholesale several backroom fish at once (favourites are skipped). */
+	wholesaleMany(uids: number[]): Result {
+		const want = new Set(uids);
+		const gone = this.s.hold.filter((f) => want.has(f.u) && !f.fav);
+		if (!gone.length) return no('Nothing to wholesale.');
+		const cash = gone.reduce((a, f) => a + Math.round(priceOf(species(f.s)) * WHOLESALE), 0);
+		this.s.hold = this.s.hold.filter((f) => !gone.includes(f));
+		this.s.cash += cash;
+		this.say(`Sold ${gone.length} fish to a wholesaler for $${cash}.`);
+		this.save();
+		return ok(`+$${cash}`);
+	}
+
 	// ── The show tank and its centrepiece ─────────────────────────────────────────────
 	get main(): ShowTank {
 		return this.s.show[0];

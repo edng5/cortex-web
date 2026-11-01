@@ -39,6 +39,7 @@
 		GIFT_HOURS,
 		GIFT_NAMES,
 		RARITIES,
+		SIZES,
 		RESEARCH_MAX,
 		orderPrice,
 		researchCost,
@@ -87,6 +88,7 @@
 		type Temp,
 		type Water
 	} from './data';
+	import type { Rarity, Size } from './data';
 	import { FishStore, BREED_REF, EXPAND_REF, SHELF_REF, type Fish, type Loc, type Result, type SaleTank, type ShowTank } from './store.svelte';
 	import { gameAudio } from '../audio.svelte';
 	import TankCanvas from './TankCanvas.svelte';
@@ -733,6 +735,48 @@
 	const decorBeauty = (t: ShowTank) => t.decor.reduce((a, d) => a + TANK_DECOR.find((x) => x.id === d)!.beauty, 0);
 	/** The backroom, favourites first. */
 	const holdFish = $derived([...s.hold].sort((a, b) => +!!b.fav - +!!a.fav));
+	// Backroom filters, and the fish ticked for a bulk wholesale.
+	let holdQ = $state('');
+	let holdRarity = $state<'' | Rarity>('');
+	let holdWater = $state<'' | 'fresh' | 'cold' | 'salt'>('');
+	let holdSize = $state<'' | Size>('');
+	let holdPicks = $state<number[]>([]);
+	const holdShown = $derived.by(() => {
+		const q = holdQ.trim().toLowerCase();
+		return holdFish.filter((f) => {
+			const sp = species(f.s);
+			if (holdRarity && sp.rarity !== holdRarity) return false;
+			if (holdWater && (sp.water === 'salt' ? 'salt' : sp.temp === 'cold' ? 'cold' : 'fresh') !== holdWater) return false;
+			if (holdSize && sp.size !== holdSize) return false;
+			return !q || sp.name.toLowerCase().includes(q) || !!f.n?.toLowerCase().includes(q);
+		});
+	});
+	const holdFiltered = $derived(!!(holdQ.trim() || holdRarity || holdWater || holdSize));
+	/** Ticked fish still in the backroom and not starred (favourites can't be sold). */
+	const holdSel = $derived(s.hold.filter((f) => holdPicks.includes(f.u) && !f.fav));
+	const holdSelValue = $derived(holdSel.reduce((a, f) => a + Math.round(priceOf(species(f.s)) * 0.4), 0));
+	const holdSelectable = $derived(holdShown.filter((f) => !f.fav));
+	const holdAllPicked = $derived(holdSelectable.length > 0 && holdSelectable.every((f) => holdPicks.includes(f.u)));
+	function togglePick(uid: number) {
+		holdPicks = holdPicks.includes(uid) ? holdPicks.filter((u) => u !== uid) : [...holdPicks, uid];
+	}
+	function pickAllShown() {
+		const ids = holdSelectable.map((f) => f.u);
+		holdPicks = holdAllPicked ? holdPicks.filter((u) => !ids.includes(u)) : [...new Set([...holdPicks, ...ids])];
+		sfx('click');
+	}
+	function wholesalePicked() {
+		const fish = holdSel;
+		if (!fish.length) return;
+		ask({
+			title: `Wholesale ${fish.length} fish?`,
+			body: `A wholesaler pays ${money(holdSelValue)} for them. They're gone for good.`,
+			fish,
+			leaving: true,
+			yes: 'Wholesale all',
+			run: () => act(store.wholesaleMany(fish.map((f) => f.u)), 'coin') && (holdPicks = [])
+		});
+	}
 </script>
 
 <svelte:window onkeydown={viewKeys} />
@@ -768,7 +812,8 @@
 
 {#snippet fishRow(f: Fish, from: Loc)}
 	{@const sp = species(f.s)}
-	<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
+	<li class="fish" class:picked={from === 'hold' && holdPicks.includes(f.u) && !f.fav} style="--rc: {RARITY_COLOR[sp.rarity]}">
+		{#if from === 'hold'}<input type="checkbox" class="pick" checked={holdPicks.includes(f.u) && !f.fav} disabled={f.fav} title={f.fav ? 'Favourites are safe from selling' : 'Select'} aria-label="Select {f.n ?? sp.name}" onchange={() => togglePick(f.u)} />{/if}
 		<button class="star" class:on={f.fav} title={f.fav ? 'Favourite: safe from selling. Tap to unstar.' : 'Favourite: keep it safe from selling'} aria-label={f.fav ? 'Unstar' : 'Mark as favourite'} onclick={() => (store.toggleFav(f.u), sfx('click'))}>{f.fav ? '★' : '☆'}</button>
 		<FishIcon id={sp.id} size={58} />
 		<div class="fi">
@@ -788,7 +833,7 @@
 			<span class="price">{money(priceOf(sp))}</span>
 		</div>
 		<div class="fa">
-			<button onclick={() => (moving = { uid: f.u, from })}>Move</button>
+			<button disabled={from === 'hold' && holdSel.length > 1} title={from === 'hold' && holdSel.length > 1 ? 'Move one fish at a time: clear the selection first' : undefined} onclick={() => (moving = { uid: f.u, from })}>Move</button>
 			{#if from === 'hold' && !f.fav}<button class="sellred" onclick={() => ask({ title: `Wholesale your ${f.n ?? sp.name}?`, body: `A wholesaler pays ${money(priceOf(sp) * 0.4)} for it. It's gone for good.`, fish: [f], leaving: true, yes: 'Wholesale', run: () => act(store.wholesale(f.u), 'coin') })}>Wholesale</button>{/if}
 		</div>
 	</li>
@@ -1248,8 +1293,37 @@
 				<p class="muted small">New fish wait here. Stock them in sale tanks (customers buy them), show them off in a show tank, or sell to a wholesaler for 40% of their price.</p>
 				{#if s.holdCap < holdMax(store.size)}<button onclick={() => buy('Add more backroom shelving?', HOLDING_COST, () => act(store.buyHolding()), { note: 'Room for 5 more fish.' })}>More shelving +5 ({money(HOLDING_COST)})</button>
 				{:else if store.size < EXPAND_MAX}<p class="muted small">The backroom is full of shelving: expand the store (Build &amp; buy) to fit {HOLD_PER_EXPAND} more.</p>{/if}
-				<ul class="list">{#each holdFish as f (f.u)}{@render fishRow(f, 'hold')}{/each}</ul>
-				{#if !holdFish.length}<p class="muted">Empty. Open a shipment or go fishing!</p>{/if}
+				{#if holdFish.length}
+					<div class="holdfilter">
+						<input type="search" placeholder="Search by name…" bind:value={holdQ} aria-label="Search the backroom" />
+						<select bind:value={holdRarity} aria-label="Rarity">
+							<option value="">Any rarity</option>
+							{#each RARITIES as r (r)}<option value={r}>{RARITY_LABEL[r]}</option>{/each}
+						</select>
+						<select bind:value={holdWater} aria-label="Water">
+							<option value="">Any water</option>
+							<option value="fresh">💧 Fresh tropical</option>
+							<option value="cold">❄️ Coldwater</option>
+							<option value="salt">🌊 Saltwater</option>
+						</select>
+						<select bind:value={holdSize} aria-label="Size">
+							<option value="">Any size</option>
+							{#each SIZES as z (z)}<option value={z}>{SIZE_LABEL[z]}</option>{/each}
+						</select>
+						{#if holdFiltered}<button onclick={() => ((holdQ = ''), (holdRarity = ''), (holdWater = ''), (holdSize = ''))}>Clear filters</button>{/if}
+					</div>
+					<div class="row holdbulk">
+						<button disabled={!holdSelectable.length} onclick={pickAllShown}>{holdAllPicked ? 'Deselect all' : holdFiltered ? `Select all shown (${holdSelectable.length})` : 'Select all'}</button>
+						{#if holdSel.length}
+							<button class="sellred" onclick={wholesalePicked}>Wholesale {holdSel.length} selected ({money(holdSelValue)})</button>
+							<button onclick={() => (holdPicks = [])}>Clear selection</button>
+						{/if}
+						{#if holdFiltered}<span class="muted small">Showing {holdShown.length} of {holdFish.length}</span>{/if}
+					</div>
+				{/if}
+				<ul class="list">{#each holdShown as f (f.u)}{@render fishRow(f, 'hold')}{/each}</ul>
+				{#if !holdFish.length}<p class="muted">Empty. Open a shipment or go fishing!</p>
+				{:else if !holdShown.length}<p class="muted">No fish match these filters.</p>{/if}
 			</section>
 		{:else if tab === 'storage'}
 			<section class="card">
@@ -2429,6 +2503,33 @@
 		border-radius: 10px;
 		background: rgba(255, 255, 255, 0.04);
 		border-left: 4px solid var(--rc, #334155);
+	}
+	.fish.picked {
+		background: rgba(239, 68, 68, 0.1);
+	}
+	.pick {
+		width: 18px;
+		height: 18px;
+		flex: none;
+		accent-color: #ef4444;
+		cursor: pointer;
+	}
+	.holdfilter {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 8px 0 6px;
+	}
+	.holdfilter input[type='search'] {
+		padding: 7px 12px;
+		border-radius: 9px;
+		border: 1px solid rgba(148, 163, 184, 0.35);
+		background: #0f2f45;
+		flex: 1 1 160px;
+		min-width: 0;
+	}
+	.holdbulk {
+		margin-bottom: 8px;
 	}
 	.fish.mine {
 		background: rgba(42, 176, 232, 0.12);
