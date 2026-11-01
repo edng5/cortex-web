@@ -734,6 +734,13 @@
 	const tasksFor = (ref: number) => s.tasks.find((t) => t.ref === ref || t.ref2 === ref);
 	const decorBeauty = (t: ShowTank) => t.decor.reduce((a, d) => a + TANK_DECOR.find((x) => x.id === d)!.beauty, 0);
 	/** The backroom, favourites first. */
+	/** A show tank's fish: the partner first, then rarest first, then A–Z by species (and nickname). */
+	const showOrder = (fish: Fish[], partner: number | null) =>
+		fish.toSorted((a, b) => {
+			const sa = species(a.s);
+			const sb = species(b.s);
+			return +(b.u === partner) - +(a.u === partner) || RARITIES.indexOf(sb.rarity) - RARITIES.indexOf(sa.rarity) || sa.name.localeCompare(sb.name) || (a.n ?? '').localeCompare(b.n ?? '');
+		});
 	const holdFish = $derived([...s.hold].sort((a, b) => +!!b.fav - +!!a.fav));
 	// Backroom filters, and the fish ticked for a bulk wholesale.
 	let holdQ = $state('');
@@ -801,7 +808,7 @@
 		</div>
 		{#if Math.round(cm * PX_PER_CM) > 600}<p class="muted small">↔ A big tank: scroll sideways to see all of it.</p>{/if}
 		<ul class="rarelist">
-			{#each t.fish.toSorted((a, b) => RARITIES.indexOf(species(b.s).rarity) - RARITIES.indexOf(species(a.s).rarity)) as f (f.u)}
+			{#each showOrder(t.fish, viewTank.center) as f (f.u)}
 				{@const sp = species(f.s)}
 				<li style="--rc: {RARITY_COLOR[sp.rarity]}"><FishIcon id={sp.id} size={34} /><span>{f.n ? `${f.n} the ` : ''}{sp.name}{f.u === viewTank.center ? ' 💗' : ''}</span><b>{RARITY_LABEL[sp.rarity]}</b></li>
 			{/each}
@@ -1169,7 +1176,7 @@
 							{#if plants}<p class="muted small">🌿 Live plants grow every hour (faster under a bright light). Lush plants add niceness; past {OVERGROWN}% they're overgrown and look messy until trimmed.</p>{/if}
 						{:else if panel === 'fish'}
 							<h3>Fish · {show.fish.length}</h3>
-							<ul class="list">{#each show.fish as f (f.u)}{@render fishRow(f, `show:${show.id}`)}{/each}</ul>
+							<ul class="list">{#each showOrder(show.fish, s.center) as f (f.u)}{@render fishRow(f, `show:${show.id}`)}{/each}</ul>
 							{#if !show.fish.length}<p class="muted">No fish yet.</p>{/if}
 							<button onclick={() => (adding = `show:${show.id}`)}>➕ Add fish</button>
 						{:else if panel === 'pet'}
@@ -1815,7 +1822,7 @@
 				<h3>Choose your partner fish</h3>
 				<p class="muted small">Your partner fish is a pet: feed it, keep its tank clean and decorated the way it likes, and play with it. A happy, bonded partner makes its show tank (and your store) shine. Choosing a new one starts a new bond.</p>
 				<ul class="list">
-					{#each show.fish as f (f.u)}
+					{#each showOrder(show.fish, s.center) as f (f.u)}
 						{@const sp = species(f.s)}
 						<li class="fish" style="--rc: {RARITY_COLOR[sp.rarity]}">
 							<FishIcon id={sp.id} size={48} />
