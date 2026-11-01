@@ -10,7 +10,7 @@
 	import Modal from './Modal.svelte';
 	import NeosDetails from './NeosDetails.svelte';
 	import { portal } from '$lib/actions/portal';
-	import { ALGOS, DEFAULTS, DT, MAX_WALLS, colorOf, RANGES, Sim, WALL_T, WORLD, wallDist2, type Algo, type Config, type Crossover, type Selection } from '$lib/neos/sim';
+	import { ALGOS, DEFAULTS, DT, MAX_WALLS, SHADES, colorOf, type Neo, RANGES, Sim, WALL_T, WORLD, wallDist2, type Algo, type Config, type Crossover, type Selection } from '$lib/neos/sim';
 
 	let { compact = false }: { compact?: boolean } = $props();
 
@@ -226,9 +226,73 @@
 		drawing = { x1: x, y1: y, x2: x, y2: y };
 	}
 	function wallMove(e: PointerEvent) {
-		if (!drawing) return;
+		if (!drawing) return hoverAt(e);
 		[drawing.x2, drawing.y2] = worldAt(e);
 		dirty = true;
+	}
+
+	// ── Hovering (or tapping) a NEOS: what species it is ──
+	/** The pointer over the world (css px in the view, and world units), or null when it's off. */
+	let pointer: { px: number; py: number; wx: number; wy: number } | null = null;
+	// (Not reactive state: that would wrap the NEOS in a proxy, and it must stay the simulator's own object.)
+	let hovered: Neo | null = null;
+	let hoverInfo = $state<{ px: number; py: number; flip: boolean; species: string; lines: string[]; diet: number; albino: boolean } | null>(null);
+	function hoverAt(e: PointerEvent) {
+		const r = canvas.getBoundingClientRect();
+		const [wx, wy] = worldAt(e);
+		pointer = { px: e.clientX - r.left, py: e.clientY - r.top, wx, wy };
+		pickHover();
+	}
+	function hoverOff() {
+		pointer = null;
+		if (hovered) dirty = true;
+		hovered = null;
+		hoverInfo = null;
+	}
+	/** The NEOS under the pointer (the nearest within a little more than its body). */
+	function pickHover() {
+		if (!pointer) return;
+		let best: Neo | null = null;
+		let bd = Infinity;
+		for (const n of sim.neos) {
+			const d = (n.x - pointer.wx) ** 2 + (n.y - pointer.wy) ** 2;
+			const reach = 0.05 * n.size + 0.05;
+			if (d < bd && d <= reach * reach) {
+				bd = d;
+				best = n;
+			}
+		}
+		if (best !== hovered) dirty = true;
+		hovered = best;
+		describe();
+	}
+	/** The label for the hovered NEOS, next to it (refreshed as it swims). */
+	function describe() {
+		const n = hovered;
+		if (!n || !sim.neos.includes(n)) {
+			hovered = null;
+			hoverInfo = null;
+			return;
+		}
+		const r = canvas.getBoundingClientRect();
+		const span = WORLD * 2 + PAD * 2;
+		const px = ((n.x + WORLD + PAD) / span) * r.width;
+		const py = ((WORLD + PAD - n.y) / span) * r.height;
+		const albino = colorOf(n) === '#f5fffa';
+		const sp = sim.species.get(n.spc);
+		hoverInfo = {
+			px,
+			py,
+			flip: px > r.width * 0.6,
+			species: `${albino ? 'Albino ' : ''}${sp?.name ?? 'Unknown species'}`,
+			diet: n.diet,
+			albino,
+			lines: [
+				`${['Herbivore', 'Omnivore', 'Carnivore'][n.diet]}${sim.cfg.body ? ` · size ×${n.size.toFixed(2)} · speed ×${n.sp.toFixed(2)}` : ''}`,
+				`Generation ${n.gen} · ${n.nh} hidden node${n.nh === 1 ? '' : 's'}`,
+				`Fitness ${num(n.fit)} · age ${Math.round(n.age * DT)}s of ${Math.round(n.life * DT)}s`
+			]
+		};
 	}
 	function wallUp() {
 		if (!drawing) return;
@@ -363,6 +427,17 @@
 			ctx.stroke();
 		}
 
+		// The hovered NEOS: a ring so it's clear which one the label is about.
+		if (hovered && sim.neos.includes(hovered)) {
+			ctx.beginPath();
+			ctx.arc(sx(hovered.x), sy(hovered.y), r * hovered.size * 2.2, 0, Math.PI * 2);
+			ctx.strokeStyle = '#0f172a';
+			ctx.lineWidth = Math.max(1.5, k * 0.01);
+			ctx.setLineDash([4, 3]);
+			ctx.stroke();
+			ctx.setLineDash([]);
+		}
+
 		ctx.fillStyle = '#1e3a5f';
 		ctx.font = `600 ${Math.round(size * 0.032)}px system-ui, sans-serif`;
 		ctx.textBaseline = 'top';
@@ -453,6 +528,10 @@
 				draw();
 				dirty = false;
 			}
+			if (running && pointer) {
+				if (hovered && sim.neos.includes(hovered)) describe();
+				else pickHover();
+			}
 			if (t - lastSync > 250) {
 				lastSync = t;
 				sync();
@@ -482,11 +561,18 @@
 				bind:this={canvas}
 				class:drawable={phase === 'ready'}
 				aria-label="NEOS swimming, eating and breeding"
-				onpointerdown={wallDown}
+				onpointerdown={(e) => (phase === 'ready' ? wallDown(e) : hoverAt(e))}
 				onpointermove={wallMove}
 				onpointerup={wallUp}
 				onpointercancel={wallUp}
+				onpointerleave={(e) => e.pointerType === 'mouse' && hoverOff()}
 			></canvas>
+			{#if hoverInfo}
+				<div class="tip" class:flip={hoverInfo.flip} style="left: {hoverInfo.px}px; top: {hoverInfo.py}px">
+					<b><i class="dot" style="background: {hoverInfo.albino ? '#f5fffa' : SHADES[hoverInfo.diet][3]}"></i>{hoverInfo.species}</b>
+					{#each hoverInfo.lines as l (l)}<span>{l}</span>{/each}
+				</div>
+			{/if}
 			{#if phase === 'ready' && !drawing}
 				<div class="hint-over">
 					<b>Draw walls</b> by dragging on the world{wallCount ? ' · tap a wall to remove it' : ''}, then press ▶ Play. Walls can only be placed before a run starts.
@@ -797,6 +883,39 @@
 	.del:hover {
 		border-color: #f87171 !important;
 		color: #fca5a5;
+	}
+	/* The hovered NEOS's label: beside it, on its left near the right edge. */
+	.tip {
+		position: absolute;
+		z-index: 2;
+		transform: translate(14px, -50%);
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding: 6px 9px;
+		border-radius: 9px;
+		background: rgba(10, 14, 26, 0.92);
+		border: 1px solid rgba(148, 163, 184, 0.3);
+		font-size: 0.72rem;
+		color: #cbd5e1;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+	.tip.flip {
+		transform: translate(calc(-100% - 14px), -50%);
+	}
+	.tip b {
+		color: #f1f5f9;
+		font-size: 0.8rem;
+	}
+	.tip .dot {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		margin-right: 6px;
+		border-radius: 50%;
+		vertical-align: middle;
+		box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.6);
 	}
 	canvas.drawable {
 		cursor: crosshair;
