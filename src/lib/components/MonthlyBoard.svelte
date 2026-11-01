@@ -1,12 +1,14 @@
 <!--
   E.Ngine Games leaders: this month's top score on every game's boards (a game nobody has played
   this month shows its most recent month with scores), or switched to all-time. Nothing at all
-  shows "-". Click a game to see each of its boards' top 3.
+  shows "-". Click a game (its title or its scores) for a pop-up of each board's top 3.
 -->
 <script lang="ts">
 	import { GAMES } from '$lib/games/registry';
 	import { boardPeriod } from '$lib/games/board-period.svelte';
 	import BoardToggle from './BoardToggle.svelte';
+	import Modal from './Modal.svelte';
+	import { portal } from '$lib/actions/portal';
 
 	type Entry = { name: string; score: number } | null;
 	type Monthly = {
@@ -15,9 +17,9 @@
 		games: Partial<Record<string, { month: string | null; boards: Record<number, Entry>; top?: Record<number, NonNullable<Entry>[]> }>>;
 	};
 
-	/** The games opened up to show their top 3. */
-	let open = $state<string[]>([]);
-	const toggle = (id: string) => (open = open.includes(id) ? open.filter((x) => x !== id) : [...open, id]);
+	/** The game whose top 3 is showing in the pop-up. */
+	let open = $state<string | null>(null);
+	const openGame = $derived(GAMES.find((g) => g.id === open) ?? null);
 
 	let data = $state<Monthly | null>(null);
 	let failed = $state(false);
@@ -52,41 +54,57 @@
 	<BoardToggle />
 	{#each GAMES.filter((g) => Object.keys(g.boards).length) as g (g.id)}
 		{@const row = data?.games[g.id]}
-		{@const isOpen = open.includes(g.id)}
-		<section style="--accent: {g.accent}">
+		<button class="game" style="--accent: {g.accent}" onclick={() => (open = g.id)} title="See the top 3 for {g.title}">
 			<h4>
-				<button class="game" aria-expanded={isOpen} onclick={() => toggle(g.id)} title={isOpen ? 'Show just the leader' : 'Show the top 3'}>
-					<img src={g.icon} alt="" width="20" height="20" />{g.title}
-					<span class="chev" class:up={isOpen} aria-hidden="true">▾</span>
-				</button>
+				<img src={g.icon} alt="" width="20" height="20" />{g.title}
 				{#if !allTime && row?.month && data && row.month !== data.month}<span class="from">from {monthName(row.month)}</span>{/if}
+				<span class="more" aria-hidden="true">Top 3 ›</span>
 			</h4>
 			<dl>
 				{#each Object.entries(g.boards) as [b, label] (b)}
 					{@const e = row?.boards[Number(b)] ?? null}
-					{@const top = row?.top?.[Number(b)] ?? (e ? [e] : [])}
-					{#if isOpen}
-						{#if Object.keys(g.boards).length > 1}<dt class="board">{label}</dt>{/if}
-						{#each [0, 1, 2] as i (i)}
-							{@const t = top[i]}
-							<div class="line top">
-								<dt class="rank">{['🥇', '🥈', '🥉'][i]}</dt>
-								<dd class="who">{t ? t.name : data || failed ? '-' : '…'}</dd>
-								<dd class="score">{t ? t.score.toLocaleString() : ''}</dd>
-							</div>
-						{/each}
-					{:else}
-						<div class="line">
-							{#if Object.keys(g.boards).length > 1}<dt>{label}</dt>{/if}
-							<dd class="who">{e ? e.name : data || failed ? '-' : '…'}</dd>
-							<dd class="score">{e ? e.score.toLocaleString() : data || failed ? '-' : ''}</dd>
-						</div>
-					{/if}
+					<div class="line">
+						{#if Object.keys(g.boards).length > 1}<dt>{label}</dt>{/if}
+						<dd class="who">{e ? e.name : data || failed ? '-' : '…'}</dd>
+						<dd class="score">{e ? e.score.toLocaleString() : data || failed ? '-' : ''}</dd>
+					</div>
 				{/each}
 			</dl>
-		</section>
+		</button>
 	{/each}
 </aside>
+
+{#if openGame}
+	{@const g = openGame}
+	{@const row = data?.games[g.id]}
+	<div use:portal>
+		<Modal title="{g.title} leaders" width="420px" onclose={() => (open = null)}>
+			<div class="pop" style="--accent: {g.accent}">
+				<div class="pophead">
+					<img src={g.icon} alt="" width="40" height="40" />
+					<span>{allTime ? 'All-time' : row?.month ? monthName(row.month) : data ? monthName(data.month) : ''}</span>
+					<BoardToggle />
+				</div>
+				{#each Object.entries(g.boards) as [b, label] (b)}
+					{@const top = row?.top?.[Number(b)] ?? []}
+					<section>
+						{#if Object.keys(g.boards).length > 1}<h4>{label}</h4>{/if}
+						<ol>
+							{#each [0, 1, 2] as i (i)}
+								{@const t = top[i]}
+								<li class:empty={!t}>
+									<span class="medal">{['🥇', '🥈', '🥉'][i]}</span>
+									<span class="who">{t ? t.name : data || failed ? 'No one yet' : '…'}</span>
+									<span class="score">{t ? t.score.toLocaleString() : ''}</span>
+								</li>
+							{/each}
+						</ol>
+					</section>
+				{/each}
+			</div>
+		</Modal>
+	</div>
+{/if}
 
 <style>
 	.monthly {
@@ -119,10 +137,6 @@
 		color: var(--muted, #94a3b8);
 		font-size: 0.75rem;
 	}
-	section {
-		padding-top: 8px;
-		border-top: 1px solid rgba(148, 163, 184, 0.15);
-	}
 	h4 {
 		display: flex;
 		align-items: center;
@@ -132,36 +146,88 @@
 		font-size: 0.8rem;
 		color: var(--accent);
 	}
+	/* The whole game (title and scores) opens its top 3. */
 	.game {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 0;
+		display: block;
+		width: 100%;
+		padding: 8px 6px 4px;
+		margin: 0 -6px;
+		box-sizing: content-box;
 		border: none;
+		border-top: 1px solid rgba(148, 163, 184, 0.15);
+		border-radius: 8px;
 		background: none;
 		color: inherit;
 		font: inherit;
+		text-align: left;
 		cursor: pointer;
 	}
-	.game:hover {
-		filter: brightness(1.2);
+	.game:hover,
+	.game:focus-visible {
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 	}
-	.chev {
-		font-size: 0.7rem;
+	.more {
+		margin-left: auto;
 		color: var(--muted, #94a3b8);
-		transition: transform 0.15s;
+		font-weight: 400;
+		font-size: 0.68rem;
+		opacity: 0;
+		transition: opacity 0.15s;
 	}
-	.chev.up {
-		transform: rotate(180deg);
+	.game:hover .more,
+	.game:focus-visible .more {
+		opacity: 1;
 	}
-	dt.board {
-		margin-top: 4px;
-		font-size: 0.72rem;
+	.pop {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		color: var(--text, #e2e8f0);
+	}
+	.pophead {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		color: var(--muted, #94a3b8);
+	}
+	.pophead img {
+		border-radius: 8px;
+	}
+	.pophead span {
+		flex: 1;
+	}
+	.pop h4 {
+		margin: 0 0 6px;
+		font-size: 0.75rem;
 		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		letter-spacing: 0.08em;
 	}
-	dt.rank {
-		min-width: 0;
+	ol {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	li {
+		display: grid;
+		grid-template-columns: 28px 1fr auto;
+		align-items: center;
+		gap: 8px;
+		padding: 7px 10px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.04);
+	}
+	li:first-child {
+		background: color-mix(in srgb, var(--accent) 16%, transparent);
+	}
+	li.empty {
+		color: var(--muted, #94a3b8);
+	}
+	.medal {
+		font-size: 1.1rem;
 	}
 	h4 img {
 		border-radius: 4px;
