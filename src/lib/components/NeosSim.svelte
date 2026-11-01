@@ -1,26 +1,40 @@
 <!--
   The NEOS simulator: one continuous world of little neural-net organisms that eat, breed and
-  evolve (see $lib/neos/sim). Drawn on a canvas at up to 30 frames a second, and only while it's
-  on screen. Settings, the genetic algorithm's parts, live stats, and one saved run (settings,
-  stats and the NEOS's genes) kept in this browser.
+  evolve (see $lib/neos/sim). A run starts only when Play is pressed; before that, walls can be
+  drawn on the world (and only then). Drawn on a canvas at up to 30 frames a second, only while
+  it's on screen and changing. Settings, the genetic algorithm's parts, predators, live stats, and
+  up to 3 named saved runs (settings, walls, stats and the NEOS's genes) kept in this browser.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ALGOS, DEFAULTS, DT, RANGES, Sim, WORLD, type Algo, type Config, type Crossover, type Selection } from '$lib/neos/sim';
+	import Modal from './Modal.svelte';
+	import { portal } from '$lib/actions/portal';
+	import { ALGOS, DEFAULTS, DT, MAX_WALLS, colorOf, RANGES, Sim, WALL_T, WORLD, wallDist2, type Algo, type Config, type Crossover, type Selection } from '$lib/neos/sim';
 
 	let { compact = false }: { compact?: boolean } = $props();
 
-	const SAVE_KEY = 'neos-sim-save';
+	const SAVES_KEY = 'neos-sim-saves';
+	/** Before named saves there was one, under this key (moved into the list on first visit). */
+	const OLD_KEY = 'neos-sim-save';
+	const MAX_SAVES = 3;
+	type SaveSlot = { id: string; name: string; at: number; gen: number; data: string };
 	const sim = new Sim(DEFAULTS);
 	let cfg = $state<Config>({ ...DEFAULTS });
-	let running = $state(true);
+	/** ready: not started (walls can be drawn) · running · paused · stopped (the run is over). */
+	let phase = $state<'ready' | 'running' | 'paused' | 'stopped'>('ready');
+	let wallCount = $state(0);
+	/** Redraw the world on the next frame (it's only redrawn every frame while running). */
+	let dirty = true;
 	let speed = $state(2);
 	let tab = $state<'settings' | 'algo' | 'stats'>('stats');
 	let live = $state(sim.live());
 	let totals = $state({ ...sim.totals });
 	let history = $state([...sim.history]);
 	let extinct = $state(false);
-	let saved = $state<number | null>(null);
+	let saves = $state<SaveSlot[]>([]);
+	/** The saves pop-up: naming a new save (and, when full, picking one to delete), or loading. */
+	let savesOpen = $state<null | 'save' | 'load'>(null);
+	let saveName = $state('');
 	let note = $state('');
 
 	let canvas: HTMLCanvasElement;
@@ -33,12 +47,14 @@
 	// Settings apply as they change.
 	$effect(() => {
 		sim.configure($state.snapshot(cfg) as Config);
+		dirty = true;
 	});
 
-	const SLIDERS: { key: keyof Config; label: string; fmt?: (v: number) => string; tip: string; only?: Algo[] }[] = [
+	const SLIDERS: { key: keyof Config; label: string; fmt?: (v: number) => string; tip: string; only?: Algo[]; preds?: boolean; limit?: boolean; body?: boolean }[] = [
 		{ key: 'popSize', label: 'Population size', tip: 'NEOS at the start; with elitism refill on, the fittest’s babies keep it from dropping below this.' },
 		{ key: 'popCap', label: 'Population cap', tip: 'No more babies once there are this many (the original stopped at 150).' },
-		{ key: 'foodNum', label: 'Food', tip: 'Food particles in the world; each one eaten reappears somewhere else.' },
+		{ key: 'foodNum', label: 'Food', tip: 'Most food in the world; each one eaten reappears somewhere else (at once, or at the regrowth rate when limited).' },
+		{ key: 'foodRegrow', label: 'Food regrowth', fmt: (v) => `${v}/s`, tip: 'How many eaten food particles come back each second. Scarce food is what pushes NEOS to eat each other.', limit: true },
 		{ key: 'elitism', label: 'Elitism', fmt: (v) => `top ${Math.round(v * 100)}%`, tip: 'Only NEOS this fit may breed, and truncation selection picks parents from them.' },
 		{ key: 'hidden', label: 'Hidden nodes', tip: 'Size of every NEOS’s network (NEAT starts at 1 and grows its own).', only: ['ga', 'es', 'de', 'random'] },
 		{ key: 'addNode', label: 'Add-node chance', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'NEAT: chance a baby grows a new hidden node.', only: ['neat'] },
@@ -54,7 +70,15 @@
 		{ key: 'vMax', label: 'Max speed', fmt: (v) => v.toFixed(2), tip: 'World units a second.' },
 		{ key: 'dvMax', label: 'Max acceleration', fmt: (v) => v.toFixed(2), tip: 'How fast a NEOS can speed up or slow down.' },
 		{ key: 'drMax', label: 'Max turn rate', fmt: (v) => `${v}°/s`, tip: 'How fast a NEOS can turn.' },
-		{ key: 'genTime', label: 'Generation length', fmt: (v) => `${v} s`, tip: 'How often a generation’s stats are recorded. The world never stops.' }
+		{ key: 'genTime', label: 'Generation length', fmt: (v) => `${v} s`, tip: 'How often a generation’s stats are recorded. The world never stops.' },
+		{ key: 'predMutate', label: 'Diet mutation (when starving)', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'Chance a starving parent’s baby eats more meat. Well-fed parents’ babies almost never change.', preds: true },
+		{ key: 'preyValue', label: 'Prey value', fmt: (v) => `${v} food`, tip: 'Fitness a carnivore gets for each NEOS it eats (omnivores get half).', preds: true },
+		{ key: 'predSpeed', label: 'Carnivore speed', fmt: (v) => `×${v.toFixed(2)}`, tip: 'Carnivores’ top speed compared with herbivores (omnivores are in between).', preds: true },
+		{ key: 'senseR', label: 'Danger sense range', fmt: (v) => v.toFixed(1), tip: 'How far away a NEOS senses something that could eat it (hunters see prey twice as far).', preds: true },
+		{ key: 'sizeMutate', label: 'Body mutation', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'Chance a baby’s size, and separately its speed, change a little.', body: true },
+		{ key: 'maxSize', label: 'Size limit', fmt: (v) => `×${v.toFixed(1)}`, tip: 'The biggest a NEOS can grow (×1 is the original size).', body: true },
+		{ key: 'energyUse', label: 'Energy use', fmt: (v) => v.toFixed(2), tip: 'Energy burned a step, × size² and how fast it’s going. Food refills it; empty is death.', body: true },
+		{ key: 'starve', label: 'Starvation', fmt: (v) => `${v} steps`, tip: 'Omnivores and carnivores die if they go this long without eating; hunger is also what makes babies meatier.', preds: true }
 	];
 	const SELECTIONS: [Selection, string, string][] = [
 		['truncation', 'Truncation', 'Parents are random picks from the top elitism % (the original).'],
@@ -79,30 +103,80 @@
 		{ key: 'revive', label: 'Revive after extinction', tip: 'If everyone dies, the hall of fame’s genes start again.', group: 'life' }
 	];
 
+	/** A fresh world, waiting for Play (walls can be drawn again). */
 	function reset() {
 		sim.reset();
-		running = true;
-		note = 'New world started.';
+		sim.settleWalls();
+		phase = 'ready';
+		note = '';
+		dirty = true;
 		sync();
 	}
-	function save() {
+	function play() {
+		if (phase === 'stopped') return;
+		phase = 'running';
+		note = '';
+	}
+	function stop() {
+		phase = 'stopped';
+		dirty = true;
+		sync();
+	}
+	function readSaves(): SaveSlot[] {
 		try {
-			const at = Date.now();
-			localStorage.setItem(SAVE_KEY, JSON.stringify({ at, speed, ...sim.snapshot() }));
-			saved = at;
-			note = 'Saved: settings, stats and every NEOS’s genes.';
+			const list = JSON.parse(localStorage.getItem(SAVES_KEY) ?? '[]') as SaveSlot[];
+			const old = localStorage.getItem(OLD_KEY);
+			if (old) {
+				const o = JSON.parse(old);
+				list.unshift({ id: String(o.at), name: 'My run', at: o.at, gen: o.gen ?? 0, data: old });
+				localStorage.setItem(SAVES_KEY, JSON.stringify(list.slice(0, MAX_SAVES)));
+				localStorage.removeItem(OLD_KEY);
+			}
+			return list.slice(0, MAX_SAVES);
 		} catch {
-			note = 'Couldn’t save in this browser.';
+			return [];
 		}
 	}
-	function load() {
+	function writeSaves(list: SaveSlot[]) {
 		try {
-			const s = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null');
-			if (!s) return;
+			localStorage.setItem(SAVES_KEY, JSON.stringify(list));
+			saves = list;
+			return true;
+		} catch {
+			note = 'Couldn’t save in this browser (storage is full or blocked).';
+			return false;
+		}
+	}
+	function openSave() {
+		if (phase === 'running') phase = 'paused';
+		saveName = `Run ${saves.length + 1}`;
+		savesOpen = 'save';
+	}
+	function save() {
+		if (saves.length >= MAX_SAVES) return;
+		const at = Date.now();
+		const name = saveName.trim().slice(0, 40) || `Run ${saves.length + 1}`;
+		const slot: SaveSlot = { id: `${at}`, name, at, gen: sim.gen, data: JSON.stringify({ at, speed, ...sim.snapshot() }) };
+		if (writeSaves([slot, ...saves])) {
+			note = `Saved “${name}”: settings, walls, stats and every NEOS’s genes.`;
+			savesOpen = null;
+		}
+	}
+	function remove(id: string) {
+		writeSaves(saves.filter((s) => s.id !== id));
+	}
+	function load(slot: SaveSlot) {
+		try {
+			const s = JSON.parse(slot.data);
+			savesOpen = null;
 			sim.restore(s);
 			cfg = { ...sim.cfg };
 			speed = s.speed ?? speed;
-			note = `Loaded your run from ${new Date(s.at).toLocaleString()}.`;
+			// A loaded run carries on (paused) from where it was saved.
+			phase = sim.totals.steps ? 'paused' : 'ready';
+			wallCount = sim.walls.length;
+			dirty = true;
+			note = `Loaded “${slot.name}”. Press ▶ to carry on.`;
 			sync();
 		} catch {
 			note = 'That save couldn’t be read.';
@@ -117,6 +191,57 @@
 		totals = { ...sim.totals };
 		extinct = sim.extinct;
 		if (history.length !== sim.history.length || history.at(-1) !== sim.history.at(-1)) history = [...sim.history];
+	}
+
+	// ── Walls (only before a run starts) ──
+	const PAD = WORLD * 0.25;
+	/** Where on the world a pointer is. */
+	function worldAt(e: PointerEvent): [number, number] {
+		const r = canvas.getBoundingClientRect();
+		const span = WORLD * 2 + PAD * 2;
+		const x = ((e.clientX - r.left) / r.width) * span - WORLD - PAD;
+		const y = WORLD + PAD - ((e.clientY - r.top) / r.height) * span;
+		return [Math.max(-WORLD, Math.min(WORLD, x)), Math.max(-WORLD, Math.min(WORLD, y))];
+	}
+	let drawing = $state<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+	function wallDown(e: PointerEvent) {
+		if (phase !== 'ready') return;
+		const [x, y] = worldAt(e);
+		// Tapping a wall removes it.
+		const hit = sim.walls.findIndex((w) => wallDist2(w, x, y) < (WALL_T * 2.5) ** 2);
+		if (hit >= 0) {
+			sim.walls.splice(hit, 1);
+			wallCount = sim.walls.length;
+			dirty = true;
+			return;
+		}
+		if (sim.walls.length >= MAX_WALLS) {
+			note = `That's the most walls (${MAX_WALLS}).`;
+			return;
+		}
+		canvas.setPointerCapture(e.pointerId);
+		drawing = { x1: x, y1: y, x2: x, y2: y };
+	}
+	function wallMove(e: PointerEvent) {
+		if (!drawing) return;
+		[drawing.x2, drawing.y2] = worldAt(e);
+		dirty = true;
+	}
+	function wallUp() {
+		if (!drawing) return;
+		// Too short to be a wall: ignore it.
+		if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 0.1) {
+			sim.walls.push({ ...drawing });
+			sim.settleWalls();
+			wallCount = sim.walls.length;
+		}
+		drawing = null;
+		dirty = true;
+	}
+	function clearWalls() {
+		sim.walls = [];
+		wallCount = 0;
+		dirty = true;
 	}
 
 	// ── Drawing ──
@@ -140,10 +265,26 @@
 		ctx.lineWidth = 1;
 		ctx.strokeRect(sx(-WORLD), sy(WORLD), WORLD * 2 * k, WORLD * 2 * k);
 
+		// Walls (and the one being drawn).
+		const walls = drawing ? [...sim.walls, drawing] : sim.walls;
+		if (walls.length) {
+			ctx.beginPath();
+			for (const w of walls) {
+				ctx.moveTo(sx(w.x1), sy(w.y1));
+				ctx.lineTo(sx(w.x2), sy(w.y2));
+			}
+			ctx.lineCap = 'round';
+			ctx.lineWidth = WALL_T * 2 * k;
+			ctx.strokeStyle = '#334155';
+			ctx.stroke();
+			ctx.lineCap = 'butt';
+		}
+
 		// Food: one path for all of it.
 		const fr = Math.max(1.5, 0.03 * k);
 		ctx.beginPath();
 		for (let i = 0; i < sim.fx.length; i++) {
+			if (Number.isNaN(sim.fx[i])) continue; // eaten, not regrown yet
 			const x = sx(sim.fx[i]);
 			const y = sy(sim.fy[i]);
 			ctx.moveTo(x + fr, y);
@@ -152,15 +293,17 @@
 		ctx.fillStyle = '#7b68ee';
 		ctx.fill();
 		ctx.strokeStyle = '#483d8b';
+		ctx.lineWidth = 1;
 		ctx.stroke();
 
 		// NEOS: one fill per colour, then every outline and tail in one stroke.
 		const r = Math.max(2.5, 0.05 * k);
 		const byColor = new Map<string, number[]>();
 		sim.neos.forEach((n, i) => {
-			const l = byColor.get(n.color);
+			const col = colorOf(n);
+			const l = byColor.get(col);
 			if (l) l.push(i);
-			else byColor.set(n.color, [i]);
+			else byColor.set(col, [i]);
 		});
 		for (const [color, ids] of byColor) {
 			ctx.beginPath();
@@ -168,8 +311,8 @@
 				const n = sim.neos[i];
 				const x = sx(n.x);
 				const y = sy(n.y);
-				ctx.moveTo(x + r, y);
-				ctx.arc(x, y, r, 0, Math.PI * 2);
+				ctx.moveTo(x + r * n.size, y);
+				ctx.arc(x, y, r * n.size, 0, Math.PI * 2);
 			}
 			ctx.fillStyle = color;
 			ctx.fill();
@@ -179,22 +322,50 @@
 		for (const n of sim.neos) {
 			const x = sx(n.x);
 			const y = sy(n.y);
-			ctx.moveTo(x + r, y);
-			ctx.arc(x, y, r, 0, Math.PI * 2);
+			ctx.moveTo(x + r * n.size, y);
+			ctx.arc(x, y, r * n.size, 0, Math.PI * 2);
 			const a = (n.r * Math.PI) / 180;
 			ctx.moveTo(x, y);
-			ctx.lineTo(x + Math.cos(a) * tail, y - Math.sin(a) * tail);
+			ctx.lineTo(x + Math.cos(a) * tail * n.size, y - Math.sin(a) * tail * n.size);
 		}
 		ctx.strokeStyle = '#006400';
 		ctx.lineWidth = Math.max(1, k * 0.008);
 		ctx.stroke();
+
+		// Meat-eaters: a ring and fangs, red for carnivores and blue for omnivores.
+		let preds = 0;
+		let omnis = 0;
+		for (const [diet, col] of [
+			[2, '#b91c1c'],
+			[1, '#1d4ed8']
+		] as const) {
+			ctx.beginPath();
+			for (const n of sim.neos) {
+				if (n.diet !== diet) continue;
+				if (diet === 2) preds++;
+				else omnis++;
+				const x = sx(n.x);
+				const y = sy(n.y);
+				const rr = r * n.size;
+				ctx.moveTo(x + rr * 1.5, y);
+				ctx.arc(x, y, rr * 1.5, 0, Math.PI * 2);
+				const a = (n.r * Math.PI) / 180;
+				for (const s of [-0.45, 0.45]) {
+					ctx.moveTo(x + Math.cos(a + s) * rr * 1.5, y - Math.sin(a + s) * rr * 1.5);
+					ctx.lineTo(x + Math.cos(a + s * 0.3) * rr * (diet === 2 ? 2.6 : 2.1), y - Math.sin(a + s * 0.3) * rr * (diet === 2 ? 2.6 : 2.1));
+				}
+			}
+			ctx.strokeStyle = col;
+			ctx.lineWidth = Math.max(1.5, k * 0.012);
+			ctx.stroke();
+		}
 
 		ctx.fillStyle = '#1e3a5f';
 		ctx.font = `600 ${Math.round(size * 0.032)}px system-ui, sans-serif`;
 		ctx.textBaseline = 'top';
 		ctx.fillText(`GENERATION: ${sim.gen}`, size * 0.03, size * 0.025);
 		ctx.textAlign = 'right';
-		ctx.fillText(`${sim.neos.length} NEOS`, size * 0.97, size * 0.025);
+		ctx.fillText(`${sim.neos.length} NEOS${omnis ? ` · ${omnis} omni` : ''}${preds ? ` · ${preds} carni` : ''}`, size * 0.97, size * 0.025);
 		ctx.textAlign = 'left';
 		// This generation's progress along the bottom.
 		ctx.fillStyle = 'rgba(30, 58, 95, 0.35)';
@@ -245,6 +416,8 @@
 		line(pts.map((p) => p.alive), maxPop, 'rgba(148, 163, 184, 0.15)', true);
 		line(pts.map((p) => p.avg), maxFit, '#38bdf8');
 		line(pts.map((p) => p.best), maxFit, '#4ade80');
+		if (pts.some((p) => p.omnis)) line(pts.map((p) => p.omnis ?? 0), maxPop, '#818cf8');
+		if (pts.some((p) => p.preds)) line(pts.map((p) => p.preds ?? 0), maxPop, '#f87171');
 	}
 	$effect(() => {
 		void history;
@@ -254,13 +427,9 @@
 
 	onMount(() => {
 		ctx = canvas.getContext('2d', { alpha: false });
-		try {
-			const s = JSON.parse(localStorage.getItem(SAVE_KEY) ?? 'null');
-			saved = s?.at ?? null;
-		} catch {
-			/* storage blocked */
-		}
+		saves = readSaves();
 		fit();
+		sim.settleWalls();
 		const ro = new ResizeObserver(() => (fit(), draw()));
 		ro.observe(canvas);
 		// Only run while it can be seen.
@@ -274,8 +443,13 @@
 			raf = requestAnimationFrame(frame);
 			if (!visible || t - last < 33) return; // ~30 fps is plenty
 			last = t;
-			if (running && !sim.extinct) for (let i = 0; i < speed; i++) sim.step();
-			draw();
+			const running = phase === 'running' && !sim.extinct;
+			if (running) for (let i = 0; i < speed; i++) sim.step();
+			// Not running: only redraw when something changed.
+			if (running || dirty) {
+				draw();
+				dirty = false;
+			}
 			if (t - lastSync > 250) {
 				lastSync = t;
 				sync();
@@ -290,6 +464,8 @@
 	});
 
 	const pct = (v: number) => `${Math.round(v * 100)}%`;
+	/** Fitness can be fractional (escapes, shared kills): one decimal at most. */
+	const num = (v: number) => String(Math.round(v * 10) / 10);
 	const when = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 	const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 </script>
@@ -299,18 +475,40 @@
 	<div class="stage">
 		<!-- A fixed square box with the canvas drawn inside it, so the canvas's pixel size never feeds back into the layout. -->
 		<div class="view">
-			<canvas bind:this={canvas} aria-label="NEOS swimming, eating and breeding"></canvas>
-			{#if extinct}<div class="extinct">Extinct! Turn on “Revive after extinction” or start a new world.</div>{/if}
+			<canvas
+				bind:this={canvas}
+				class:drawable={phase === 'ready'}
+				aria-label="NEOS swimming, eating and breeding"
+				onpointerdown={wallDown}
+				onpointermove={wallMove}
+				onpointerup={wallUp}
+				onpointercancel={wallUp}
+			></canvas>
+			{#if phase === 'ready' && !drawing}
+				<div class="hint-over">
+					<b>Draw walls</b> by dragging on the world{wallCount ? ' · tap a wall to remove it' : ''}, then press ▶ Play. Walls can only be placed before a run starts.
+				</div>
+			{:else if phase === 'stopped'}
+				<div class="extinct">Run stopped. Start a new world to place walls and run again.</div>
+			{:else if extinct}
+				<div class="extinct">Extinct! Turn on “Revive after extinction” or start a new world.</div>
+			{/if}
 		</div>
 		<div class="bar">
-			<button class="play" onclick={() => (running = !running)} aria-label={running ? 'Pause' : 'Play'}>{running ? '❚❚' : '▶'}</button>
+			{#if phase === 'running'}
+				<button class="play" onclick={() => (phase = 'paused')} title="Pause">❚❚ Pause</button>
+			{:else}
+				<button class="play" disabled={phase === 'stopped'} onclick={play} title={phase === 'paused' ? 'Carry on' : 'Start the run'}>▶ {phase === 'paused' ? 'Resume' : 'Play'}</button>
+			{/if}
+			<button class="stop" disabled={phase === 'ready' || phase === 'stopped'} onclick={stop} title="End this run">■ Stop</button>
+			{#if phase === 'ready' && wallCount}<button onclick={clearWalls} title="Remove every wall">Clear walls</button>{/if}
 			<label class="speed" title="Simulation steps per frame">
 				<span>Speed ×{speed}</span>
 				<input type="range" min="1" max="10" step="1" bind:value={speed} aria-label="Speed" />
 			</label>
-			<button onclick={reset} title="Start a new world with these settings">↺ New world</button>
-			<button onclick={save} title="Keep this run (settings, stats, genes) in this browser">💾 Save</button>
-			<button onclick={load} disabled={!saved} title={saved ? `Saved ${when(saved)}` : 'Nothing saved yet'}>📂 Load</button>
+			<button onclick={reset} title="A fresh world with these settings, waiting for Play (walls can be changed again)">↺ New world</button>
+			<button onclick={openSave} title="Name and keep this run (settings, walls, stats, genes) in this browser: up to {MAX_SAVES}">💾 Save</button>
+			<button onclick={() => (savesOpen = 'load')} disabled={!saves.length} title={saves.length ? 'Load one of your saved runs' : 'Nothing saved yet'}>📂 Load</button>
 		</div>
 		{#if note}<p class="note">{note}<button aria-label="Dismiss" onclick={() => (note = '')}>✕</button></p>{/if}
 	</div>
@@ -329,9 +527,9 @@
 				<div><span>Generation</span><b>{sim.gen} <small>({pct(live.progress)})</small></b></div>
 				<div><span>Alive</span><b>{live.alive}</b></div>
 				<div><span>Lineage</span><b>gen {live.lineage}</b></div>
-				<div><span>Best now</span><b>{live.best}</b></div>
+				<div><span>Best now</span><b>{num(live.best)}</b></div>
 				<div><span>Average now</span><b>{live.avg.toFixed(2)}</b></div>
-				<div><span>Best ever</span><b>{totals.bestEver}</b></div>
+				<div><span>Best ever</span><b>{num(totals.bestEver)}</b></div>
 				<div><span>Food eaten</span><b>{totals.food.toLocaleString()}</b></div>
 				<div><span>Born</span><b>{totals.born.toLocaleString()}</b></div>
 				<div><span>Died</span><b>{totals.died.toLocaleString()}</b></div>
@@ -339,24 +537,39 @@
 				<div><span>Deepest lineage</span><b>gen {totals.lineage}</b></div>
 				<div><span>Hidden nodes</span><b>{live.hidden.toFixed(1)} <small>avg</small></b></div>
 				{#if cfg.algo === 'neat'}<div><span>Species</span><b>{live.species}</b></div>{/if}
+				{#if cfg.body}
+					<div><span>Size{cfg.predators ? ' (herbivores)' : ''}</span><b>×{live.sizeHerb.toFixed(2)}</b></div>
+					{#if cfg.predators}<div><span>Size (meat-eaters)</span><b>{live.sizeMeat ? `×${live.sizeMeat.toFixed(2)}` : '-'}</b></div>{/if}
+					<div><span>Speed gene</span><b>×{live.speedGene.toFixed(2)}</b></div>
+				{/if}
+				{#if cfg.foodLimit}<div><span>Food left</span><b>{live.foodLeft} <small>/ {cfg.foodNum}</small></b></div>{/if}
+				{#if cfg.predators}
+					<div class="herb"><span>Herbivores</span><b>{live.alive - live.preds - live.omnis}</b></div>
+					{#if cfg.omnivores}<div class="omni"><span>Omnivores</span><b>{live.omnis}</b></div>{/if}
+					<div class="pred"><span>Carnivores</span><b>{live.preds}</b></div>
+					<div class="pred"><span>Eaten</span><b>{totals.eaten.toLocaleString()}</b></div>
+				{/if}
 			</div>
-			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population</div>
+			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population{#if cfg.predators}{#if cfg.omnivores}<i style="--c: #818cf8"></i>Omnivores{/if}<i style="--c: #f87171"></i>Carnivores{/if}</div>
 			<div class="chart-box" bind:this={chartBox}><canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas></div>
 			<div class="table-box">
 				<table>
-					<thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Alive</th><th>Total</th><th>Born</th></tr></thead>
+					<thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Alive</th><th>Total</th><th>Born</th>{#if cfg.body}<th>Size</th>{/if}{#if cfg.predators}<th>Omni</th><th>Carn</th><th>Eaten</th>{/if}</tr></thead>
 					<tbody>
 						{#each history.toReversed() as h (h.gen)}
-							<tr><td>{h.gen}</td><td>{h.best}</td><td>{h.avg.toFixed(2)}</td><td>{h.alive}</td><td>{h.total}</td><td>{h.born}</td></tr>
+							<tr><td>{h.gen}</td><td>{num(h.best)}</td><td>{h.avg.toFixed(2)}</td><td>{h.alive}</td><td>{h.total}</td><td>{h.born}</td>{#if cfg.body}<td>{h.size?.toFixed(2) ?? '-'}</td>{/if}{#if cfg.predators}<td>{h.omnis ?? 0}</td><td>{h.preds ?? 0}</td><td>{h.eaten ?? 0}</td>{/if}</tr>
 						{:else}
-							<tr><td colspan="6" class="none">Each generation’s stats appear here.</td></tr>
+							<tr><td colspan="10" class="none">Each generation’s stats appear here.</td></tr>
 						{/each}
 					</tbody>
 				</table>
 			</div>
 		{:else if tab === 'settings'}
+			<label class="opt" title="Eaten food comes back at a limited rate instead of at once">
+				<input type="checkbox" bind:checked={cfg.foodLimit} />Limit food regrowth (scarcity: the pressure that can make NEOS eat each other)
+			</label>
 			<div class="sliders">
-				{#each SLIDERS.filter((s) => !s.only || s.only.includes(cfg.algo)) as s (s.key)}
+				{#each SLIDERS.filter((s) => (!s.only || s.only.includes(cfg.algo)) && (!s.preds || cfg.predators) && (!s.limit || cfg.foodLimit) && (!s.body || cfg.body)) as s (s.key)}
 					{@const [min, max, step] = RANGES[s.key]}
 					{@const v = cfg[s.key] as number}
 					<label title={s.tip}>
@@ -398,6 +611,25 @@
 			{:else}
 				<p class="hint">{cfg.algo === 'es' ? 'An evolution strategy mutates every baby with Gaussian noise (Mutation strength in Hyperparameters); there’s no crossover.' : cfg.algo === 'de' ? 'Differential evolution makes babies from three NEOS (F and CR in Hyperparameters); there’s no separate crossover or mutation.' : 'Random search passes nothing on: a baseline to compare the others against.'}</p>
 			{/if}
+			<fieldset class="algos">
+				<legend>Body</legend>
+				<label class="opt" title="Size and speed are genes, paid for in energy">
+					<input type="checkbox" bind:checked={cfg.body} />Size and speed evolve
+				</label>
+				<small class="hint">Bigger NEOS are slower and burn more energy (size²), as do fast ones; an empty energy store is death. A hunter alone can only eat NEOS its size or smaller, but a pack of smaller ones touching a big NEOS can if their sizes add up, so being big is mostly worth it for herbivores, which then have less to run from.</small>
+			</fieldset>
+			<fieldset class="algos">
+				<legend>Predators</legend>
+				<label class="opt" title="NEOS can evolve to eat other NEOS">
+					<input type="checkbox" bind:checked={cfg.predators} />Some NEOS can evolve to eat other NEOS
+				</label>
+				<label class="opt" title="Omnivores eat food and herbivores: the step between herbivores and carnivores">
+					<input type="checkbox" bind:checked={cfg.omnivores} disabled={!cfg.predators} />Omnivores in between
+				</label>
+				<small class="hint"
+					>Herbivores are <b class="c-herb">green</b>, omnivores <b class="c-omni">blue</b> and carnivores <b class="c-carn">red</b> (with fangs). Hunger drives it: a starving parent’s baby may eat more meat, a well-fed one’s almost never, so with plenty of food, predators don’t take hold. Limit food regrowth (Hyperparameters) to make food scarce. Every NEOS senses the nearest thing that could eat it, so prey can evolve to run away.</small
+				>
+			</fieldset>
 			<fieldset>
 				<legend>Life and elitism</legend>
 				{#each SWITCHES.filter((s) => s.group === 'life') as s (s.key)}
@@ -410,6 +642,48 @@
 	</div>
 	</div>
 </section>
+
+{#if savesOpen}
+	<div use:portal>
+		<Modal title={savesOpen === 'save' ? 'Save this run' : 'Load a run'} width="440px" onclose={() => (savesOpen = null)}>
+			<div class="saves">
+				{#if savesOpen === 'save'}
+					{#if saves.length >= MAX_SAVES}
+						<p class="warn">You have {MAX_SAVES} saved runs, the most there can be. Delete one to make room:</p>
+					{:else}
+						<form
+							class="name"
+							onsubmit={(e) => {
+								e.preventDefault();
+								save();
+							}}
+						>
+							<label for="neos-save-name">Name this run</label>
+							<div class="row">
+								<input id="neos-save-name" bind:value={saveName} maxlength="40" placeholder="e.g. Scarce food, NEAT" />
+								<button class="primary" type="submit">Save</button>
+							</div>
+							<small>Keeps the settings, walls, stats and every NEOS’s genes, in this browser ({saves.length}/{MAX_SAVES} used).</small>
+						</form>
+					{/if}
+				{/if}
+				{#if saves.length}
+					<ul>
+						{#each saves as s (s.id)}
+							<li>
+								<span class="sname"><b>{s.name}</b><small>{when(s.at)} · generation {s.gen}</small></span>
+								{#if savesOpen === 'load'}<button class="primary" onclick={() => load(s)}>Load</button>{/if}
+								<button class="del" onclick={() => remove(s.id)} title="Delete {s.name}">Delete</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="muted">No saved runs yet.</p>
+				{/if}
+			</div>
+		</Modal>
+	</div>
+{/if}
 
 <style>
 	.neos {
@@ -448,6 +722,106 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
+	}
+	.saves {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		color: #e2e8f0;
+		font-size: 0.88rem;
+	}
+	.saves .name {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.saves .row {
+		display: flex;
+		gap: 8px;
+	}
+	.saves input {
+		flex: 1;
+		min-width: 0;
+		padding: 7px 10px;
+		border-radius: 8px;
+		border: 1px solid rgba(148, 163, 184, 0.35);
+		background: rgba(255, 255, 255, 0.06);
+		color: inherit;
+		font: inherit;
+	}
+	.saves small,
+	.saves .muted {
+		color: #94a3b8;
+	}
+	.saves .warn {
+		margin: 0;
+		color: #fbbf24;
+	}
+	.saves ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.saves li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.sname {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.sname b {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.primary {
+		background: rgba(74, 222, 128, 0.2);
+		border-color: #4ade80;
+	}
+	.del:hover {
+		border-color: #f87171 !important;
+		color: #fca5a5;
+	}
+	canvas.drawable {
+		cursor: crosshair;
+		touch-action: none;
+	}
+	.hint-over {
+		position: absolute;
+		left: 10px;
+		right: 10px;
+		bottom: 12px;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(10, 14, 26, 0.78);
+		font-size: 0.78rem;
+		text-align: center;
+		pointer-events: none;
+	}
+	.stop:not(:disabled):hover {
+		border-color: #f87171;
+	}
+	.stats .pred b,
+	.c-carn {
+		color: #f87171;
+	}
+	.stats .omni b,
+	.c-omni {
+		color: #93c5fd;
+	}
+	.stats .herb b,
+	.c-herb {
+		color: #4ade80;
 	}
 	.extinct {
 		position: absolute;
