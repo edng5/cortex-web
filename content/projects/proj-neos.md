@@ -69,3 +69,49 @@ grew too large, the ecosystem collapsed.
 | 6 | 33 | 12.52 | 0 (final) | 83 |
 
 <!-- carousel: generations -->
+
+## Simulator findings
+The live simulator above was swept headlessly: each setting run 3 times for 25 generations, and
+scored by the average food a NEOS eats in generations 15–25 (higher is better). With the defaults,
+NEAT scores **10.2** and the original genetic algorithm **10.0**; random search, which learns
+nothing, scores **5.3**.
+
+**Settings that help**
+
+| Setting | Avg food |
+|---|---|
+| More food (250) / faster NEOS (max speed 1.0) | 19.2 / 19.6 |
+| Uniform crossover, or no crossover at all | 13.5 / 13.1 |
+| Differential evolution / evolution strategy | 13.1 / 12.9 |
+| Elitism at the top 5% | 12.8 |
+| Gaussian mutation at strength 0.5 | 13.1 |
+| Fast turning (1440°/s) | 12.5 |
+| NEAT growing nodes often (20%) vs never | 11.3 vs 7.5 |
+
+**Settings that hurt**
+
+| Setting | Avg food |
+|---|---|
+| Elitism at the top 40% / 60% | 6.1 / 4.1 |
+| Scarce food (30) | 4.1 |
+| Slow turning (180°/s) | 6.6 |
+| A single hidden node | 8.0 |
+| Letting unfit NEOS breed | 8.0 |
+| Gaussian mutation at a small strength (0.1) | 7.9 |
+| Tournament or roulette selection | 9.2 / 8.9 |
+
+Strict elitism matters most: breeding only from the very best roughly triples food eaten
+compared with letting the top 60% breed. Turning off the elitism refill scores well on paper (13.3)
+but the population went extinct 81 times in 3 runs: only the hall of fame kept it alive, which is
+the same collapse the original hit at generation 6. Blending both parents' weights (the original's
+crossover) does worse than taking each weight whole, because averaging pulls every baby toward the
+middle.
+
+**Predators.** With plenty of food, no predators take hold. With food regrowing at 3 a second,
+omnivores appear (1–16 at a time) and some become carnivores (up to 5); with omnivores turned off,
+carnivores appear directly (3–25). Once the refill bred only from the living, prey evolved to turn
+away from hunters almost every time in 5 of 6 runs. Hand-wired prey that flee escape 56% of chases,
+against 29% for ones that turn toward the hunter.
+
+**Body size.** With hunters about, herbivores grew larger (×1.2–2.0, where a lone smaller hunter
+can't eat them). Without hunters, size just drifted (×0.6–1.5), as being big only costs energy.
