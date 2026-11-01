@@ -51,7 +51,11 @@
 </script>
 
 <Modal title="Log in" width="420px" onclose={() => (session.loginOpen = false)}>
-	<p class="lead">Log in to ask Cortex up to <strong>10 questions a day</strong>.</p>
+	{#if page.url.pathname.startsWith('/speakeaseai')}
+		<p class="lead">Log in to play <strong>Phrase Quest, Scenarios and the Dictionary</strong>, with your progress saved across your devices.</p>
+	{:else}
+		<p class="lead">Log in to ask Cortex up to <strong>10 questions a day</strong>.</p>
+	{/if}
 
 	{#if !session.auth.ready}
 		<p class="warn">Login isn't configured on this server yet.</p>
