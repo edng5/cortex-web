@@ -98,6 +98,15 @@ export function getDb(): Database.Database {
 			saved_at    INTEGER NOT NULL,       -- when it last changed on the player's device (ms); newer wins
 			PRIMARY KEY (user_id, game)
 		);
+		-- Daily backups of each save (the two newest are kept; see game-saves.ts).
+		CREATE TABLE IF NOT EXISTS game_save_backups (
+			user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			game        TEXT NOT NULL,
+			data        TEXT NOT NULL,          -- the save as it was
+			saved_at    INTEGER NOT NULL,       -- when that save was made (ms)
+			backed_up_at INTEGER NOT NULL,      -- when it was copied here (ms)
+			PRIMARY KEY (user_id, game, backed_up_at)
+		);
 		CREATE TABLE IF NOT EXISTS player_names (
 			user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 			name        TEXT NOT NULL,          -- leaderboard name the player chose (public)

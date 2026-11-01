@@ -128,6 +128,12 @@ for visitors who aren't logged in, 10 per day when logged in. Failed answers are
 blocks and limit hits. Read it with `npm run audit -- --days 7 [--event chat_prompt]`. Entries
 older than 90 days are deleted automatically (hourly).
 
+**Save backups**: signed-in players' progress (the arcade games, FishMart, SpeakEase AI) is backed
+up once a day, just before a save replaces it; the two newest backups are kept and older ones
+purged. To roll a save back: `npm run saves:rollback -- --email player@example.com` lists their
+saves and backups; add `--game <name> [--backup 1|2]` to preview, and `--apply` to do it (the save
+it replaces is kept as a backup, so it can be undone).
+
 Data lives in `data/app.db` (SQLite, git-ignored). Behind a proxy, set adapter-node's
 `ADDRESS_HEADER=X-Forwarded-For` so visitors are told apart by their real IP.
 

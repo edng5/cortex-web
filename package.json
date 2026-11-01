@@ -15,6 +15,7 @@
 		"audit": "tsx --env-file=.env scripts/audit.ts",
 		"ifish:restore": "tsx scripts/ifish-restore.ts",
 		"ifish:give": "tsx scripts/ifish-give.ts",
+		"saves:rollback": "tsx scripts/saves-rollback.ts",
 		"email:test": "tsx --env-file=.env scripts/email-test.ts",
 		"email:setup": "tsx scripts/email-setup.ts"
 	},
