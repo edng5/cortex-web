@@ -16,7 +16,7 @@
 	let data = $state<Details>(sim.details());
 	let tab = $state<'species' | 'diets' | 'sizes'>('species');
 	/** The table's columns (what it can be sorted by). */
-	type SortKey = 'name' | 'alive' | 'peak' | 'born' | 'first' | 'avgLife' | 'avgFit' | 'food' | 'prey' | 'eatenBy' | 'size';
+	type SortKey = 'name' | 'alive' | 'peak' | 'born' | 'first' | 'avgLife' | 'avgFit' | 'food' | 'prey' | 'eatenBy' | 'size' | 'litter';
 	let sortBy = $state<SortKey>('born');
 	let showExtinct = $state(true);
 
@@ -142,7 +142,7 @@
 					<table>
 						<thead>
 							<tr>
-								{#each [['name', 'Species'], ['alive', 'Alive'], ['peak', 'Peak'], ['born', 'Born'], ['first', 'Gens'], ['avgLife', 'Lifespan'], ['avgFit', 'Avg fitness'], ['food', 'Food'], ['prey', 'Prey'], ['eatenBy', 'Eaten'], ['size', 'Size']] as [k, label] (k)}
+								{#each [['name', 'Species'], ['alive', 'Alive'], ['peak', 'Peak'], ['born', 'Born'], ['first', 'Gens'], ['avgLife', 'Lifespan'], ['avgFit', 'Avg fitness'], ['food', 'Food'], ['prey', 'Prey'], ['eatenBy', 'Eaten'], ['size', 'Size'], ['litter', 'Litter']] as [k, label] (k)}
 									<th class:sorted={sortBy === k}><button onclick={() => (sortBy = k as SortKey)}>{label}</button></th>
 								{/each}
 							</tr>
@@ -163,6 +163,7 @@
 									<td>{s.prey}</td>
 									<td>{s.eatenBy}</td>
 									<td>×{s.size.toFixed(2)}</td>
+									<td>{s.litter.toFixed(1)}</td>
 								</tr>
 								{#if s.albino}
 									{@const a = s.albino}
@@ -179,10 +180,11 @@
 										<td>{a.prey}</td>
 										<td>{a.eatenBy}</td>
 										<td></td>
+										<td></td>
 									</tr>
 								{/if}
 							{:else}
-								<tr><td colspan="11" class="none">No species yet: press ▶ Play.</td></tr>
+								<tr><td colspan="12" class="none">No species yet: press ▶ Play.</td></tr>
 							{/each}
 						</tbody>
 					</table>

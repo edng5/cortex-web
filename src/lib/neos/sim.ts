@@ -21,6 +21,13 @@
 
 export const WORLD = 2; // the world is [-2, 2] × [-2, 2], like the original
 const EAT_R = 0.075;
+/** How close two NEOS have to get to mate (a little more than touching). */
+const MATE_R = 0.12;
+/** A courting NEOS slows down within this distance of its mate. */
+const COURT_R = 0.6;
+/** How far a NEOS notices a willing mate (×2 for the fittest), and how far its species' elite draw it. */
+const ATTRACT_NEAR = 0.6;
+const ATTRACT_FAR = 2.5;
 /** Fitness for getting away from a hunter (food is worth 1). */
 const ESCAPE_FIT = 0.5;
 /** Body evolution: energy from a food particle, a full store (× size), and the smallest size. */
@@ -59,6 +66,8 @@ export interface Config {
 	drMax: number;
 	dvMax: number;
 	cooldown: number;
+	/** Food a baby costs (shared by its parents): a NEOS has to eat to afford breeding. */
+	breedCost: number;
 	genTime: number;
 	/** Hidden nodes (fixed-network algorithms; NEAT starts at 1 and grows). */
 	hidden: number;
@@ -95,6 +104,15 @@ export interface Config {
 	maxSize: number;
 	/** Energy burned a step (× size² and how fast it's going). */
 	energyUse: number;
+	/**
+	 * Life history evolves: litter size, maturity age and rest between births are genes (starting
+	 * at 1 baby, the maturity age and the breeding cooldown), each with a cost.
+	 */
+	litter: boolean;
+	/** The most babies one birth can have. */
+	maxLitter: number;
+	/** Chance each of a baby's life-history genes changes (litter ±1, maturity and rest ±20% or so). */
+	litterMutate: number;
 	// The genetic algorithm, piece by piece.
 	selection: Selection;
 	crossover: Crossover;
@@ -106,7 +124,6 @@ export interface Config {
 	pickyMates: boolean;
 	seekMates: boolean;
 	refill: boolean;
-	revive: boolean;
 }
 
 export const DEFAULTS: Config = {
@@ -117,13 +134,14 @@ export const DEFAULTS: Config = {
 	elitism: 0.2,
 	mutate: 0.1,
 	mutStrength: 0.1,
-	mature: 200,
+	mature: 120,
 	lifeMin: 500,
 	lifeMax: 600,
 	vMax: 0.5,
 	drMax: 720,
 	dvMax: 0.25,
-	cooldown: 150,
+	cooldown: 80,
+	breedCost: 2,
 	genTime: 50,
 	hidden: 5,
 	addNode: 0.05,
@@ -143,6 +161,9 @@ export const DEFAULTS: Config = {
 	sizeMutate: 0.2,
 	maxSize: 2,
 	energyUse: 0.15,
+	litter: false,
+	maxLitter: 5,
+	litterMutate: 0.15,
 	selection: 'truncation',
 	crossover: 'blend',
 	mutScale: true,
@@ -150,10 +171,9 @@ export const DEFAULTS: Config = {
 	mutReset: false,
 	mutLifespan: false,
 	breedInWorld: true,
-	pickyMates: true,
+	pickyMates: false,
 	seekMates: true,
-	refill: true,
-	revive: true
+	refill: false,
 };
 
 /** Slider ranges: [min, max, step]. */
@@ -171,6 +191,7 @@ export const RANGES: Record<string, [number, number, number]> = {
 	drMax: [90, 1440, 30],
 	dvMax: [0.05, 1, 0.05],
 	cooldown: [0, 600, 10],
+	breedCost: [0.5, 8, 0.5],
 	genTime: [10, 120, 5],
 	hidden: [1, MAX_H, 1],
 	addNode: [0, 0.3, 0.01],
@@ -185,6 +206,8 @@ export const RANGES: Record<string, [number, number, number]> = {
 	starve: [100, 1500, 50],
 	sizeMutate: [0, 0.6, 0.02],
 	maxSize: [1.1, 3, 0.1],
+	maxLitter: [2, 8, 1],
+	litterMutate: [0, 0.5, 0.01],
 	energyUse: [0.05, 0.4, 0.01]
 };
 
@@ -223,6 +246,14 @@ export interface Neo {
 	diet: number;
 	/** Its species' id. */
 	spc: number;
+	/** Life-history genes: babies per birth, the age it can first breed at, and its rest between births. */
+	litter: number;
+	matureAt: number;
+	rest: number;
+	/** Distance to the mate it's swimming toward (Infinity: not looking): it brakes as it closes in. */
+	seekD: number;
+	/** Food eaten since it last bred: what it can spend on babies. */
+	store: number;
 	/** Steps since it last ate. */
 	hunger: number;
 	/** Fitness that came from eating other NEOS. */
@@ -249,6 +280,9 @@ export interface Genome {
 	diet?: number;
 	size?: number;
 	sp?: number;
+	litter?: number;
+	matureAt?: number;
+	rest?: number;
 	life: number;
 	gen: number;
 	fit: number;
@@ -284,8 +318,9 @@ export interface GenStat {
 	preds?: number;
 	omnis?: number;
 	eaten?: number;
-	/** Average size alive at the end. */
+	/** Average size and litter size alive at the end. */
 	size?: number;
+	litter?: number;
 }
 /** How a group of NEOS (a species, a diet, a size class) has done over the run. */
 export interface Tally {
@@ -311,6 +346,7 @@ export interface Species extends Tally {
 	first: number;
 	last: number | null;
 	sizeSum: number;
+	litterSum: number;
 	/** Its albino subspecies (the rare 1-in-1,000 white babies), tallied on their own too. */
 	albino: Tally;
 	/** The founder's genes, which newcomers are compared against. */
@@ -333,7 +369,6 @@ export interface Totals {
 	born: number;
 	died: number;
 	food: number;
-	extinctions: number;
 	bestEver: number;
 	lineage: number;
 	eaten: number;
@@ -371,8 +406,7 @@ export class Sim {
 	gen = 0;
 	genStep = 0;
 	history: GenStat[] = [];
-	totals: Totals = { steps: 0, born: 0, died: 0, food: 0, extinctions: 0, bestEver: 0, lineage: 0, eaten: 0, escapes: 0 };
-	hall: Genome[] = [];
+	totals: Totals = { steps: 0, born: 0, died: 0, food: 0, bestEver: 0, lineage: 0, eaten: 0, escapes: 0 };
 	/** Every species seen this run, by id; and how each diet and size class has done. */
 	species = new Map<number, Species>();
 	byDiet: Tally[] = [tally(), tally(), tally()];
@@ -412,8 +446,7 @@ export class Sim {
 		this.gen = 0;
 		this.genStep = 0;
 		this.history = [];
-		this.totals = { steps: 0, born: 0, died: 0, food: 0, extinctions: 0, bestEver: 0, lineage: 0, eaten: 0, escapes: 0 };
-		this.hall = [];
+		this.totals = { steps: 0, born: 0, died: 0, food: 0, bestEver: 0, lineage: 0, eaten: 0, escapes: 0 };
 		this.extinct = false;
 		this.cur = { deadFit: [], born: 0, died: 0, food: 0, eaten: 0 };
 		this.regrow = 0;
@@ -481,7 +514,21 @@ export class Sim {
 
 	/** A NEOS with these genes (or fresh random ones). */
 	private spawn(
-		g?: { wih?: ArrayLike<number>; who?: ArrayLike<number>; nh?: number; life?: number; gen?: number; diet?: number; size?: number; sp?: number },
+		g?: {
+			wih?: ArrayLike<number>;
+			who?: ArrayLike<number>;
+			nh?: number;
+			life?: number;
+			gen?: number;
+			diet?: number;
+			size?: number;
+			sp?: number;
+			litter?: number;
+			matureAt?: number;
+			rest?: number;
+			/** How many babies it was born with (siblings share the parents' investment). */
+			brood?: number;
+		},
 		x?: number,
 		y?: number
 	): Neo {
@@ -519,7 +566,13 @@ export class Sim {
 			chased: false,
 			size,
 			sp: this.cfg.body ? (g?.sp ?? 1) : 1,
-			energy: STORE_E * size * 0.6,
+			// Babies from a big litter start with less energy (the parents' investment is shared).
+			energy: STORE_E * size * 0.6 * Math.min(1, 2 / ((g?.brood ?? 1) + 1)),
+			litter: this.cfg.litter ? Math.max(1, Math.min(this.cfg.maxLitter, g?.litter ?? 1)) : 1,
+			matureAt: this.cfg.litter ? (g?.matureAt ?? this.cfg.mature) : this.cfg.mature,
+			rest: this.cfg.litter ? (g?.rest ?? this.cfg.cooldown) : this.cfg.cooldown,
+			seekD: Infinity,
+			store: 0,
 			foodD: Infinity,
 			eaten: false,
 			cool: 0,
@@ -557,6 +610,7 @@ export class Sim {
 				first: this.gen,
 				last: null,
 				sizeSum: 0,
+				litterSum: 0,
 				albino: tally(),
 				rep: { wih: n.wih.slice(), who: n.who.slice(), nh: n.nh, diet: n.diet, size: n.size }
 			};
@@ -566,6 +620,7 @@ export class Sim {
 		best.last = null;
 		n.spc = best.id;
 		best.sizeSum += n.size;
+		best.litterSum += n.litter;
 		for (const t of this.tallies(n)) t.born++;
 	}
 	/** The species, diet and size-class tallies a NEOS counts toward. */
@@ -617,6 +672,7 @@ export class Sim {
 			last: s.last,
 			alive: alive.sp.get(s.id) ?? 0,
 			size: s.born ? s.sizeSum / s.born : 1,
+			litter: s.born ? s.litterSum / s.born : 1,
 			born: s.born,
 			died: s.died,
 			peak: s.peak,
@@ -700,15 +756,81 @@ export class Sim {
 		return c.omnivores || d !== 1 ? d : 0;
 	}
 
+	/** A baby's life-history genes (litter size, maturity, rest): its fitter parent's, sometimes changed. */
+	private lifeOf(p: Neo | Genome) {
+		const c = this.cfg;
+		if (!c.litter) return { litter: 1, matureAt: c.mature, rest: c.cooldown };
+		let litter = p.litter ?? 1;
+		let matureAt = p.matureAt ?? c.mature;
+		let rest = p.rest ?? c.cooldown;
+		if (Math.random() < c.litterMutate) litter += Math.random() < 0.5 ? -1 : 1;
+		if (Math.random() < c.litterMutate) matureAt *= Math.exp(gauss() * 0.2);
+		if (Math.random() < c.litterMutate) rest *= Math.exp(gauss() * 0.2);
+		return {
+			litter: Math.max(1, Math.min(c.maxLitter, litter)),
+			matureAt: Math.round(Math.max(20, Math.min(800, matureAt))),
+			rest: Math.round(Math.max(10, Math.min(800, rest)))
+		};
+	}
+	/** Resting less between births makes each baby cost more food (√ of how much shorter the rest is). */
+	private babyCost(a: Neo, b: Neo) {
+		const c = this.cfg;
+		if (!c.litter) return c.breedCost;
+		const rest = Math.max(10, (a.rest + b.rest) / 2);
+		return c.breedCost * Math.min(2.5, Math.max(0.7, Math.sqrt(Math.max(10, c.cooldown) / rest)));
+	}
+
+	/**
+	 * A birth: as many babies as the fitter parent's litter size (room allowing), around the first
+	 * parent. The trade-off: bigger litters mean babies with shorter lives and (body evolution)
+	 * less starting energy, and the parents rest longer afterwards.
+	 */
+	/** Could breed now: grown up, rested, not eaten, and fed enough to pay its share of a baby. */
+	private ready(n: Neo, solo = false) {
+		const c = this.cfg;
+		const cost = this.babyCost(n, n);
+		return !n.eaten && n.cool <= 0 && n.age >= n.matureAt && n.store >= (solo ? cost : cost / 2);
+	}
+
+	private birth(a: Neo, b: Neo, room: number): Neo[] {
+		const c = this.cfg;
+		// Each baby costs food from the parents' stores: a litter is as big as the gene says and they can afford.
+		const funds = a === b ? a.store : a.store + b.store;
+		const cost = this.babyCost(a, b);
+		const k = Math.max(0, Math.min(room, (a.fit >= b.fit ? a : b).litter, Math.floor(funds / cost)));
+		if (!k) return [];
+		const left = Math.max(0, funds - k * cost);
+		if (a === b) a.store = left;
+		else {
+			a.store = (left * a.store) / funds;
+			b.store = left - a.store;
+		}
+		const out: Neo[] = [];
+		for (let i = 0; i < k; i++) {
+			const ang = (i / Math.max(1, k)) * Math.PI * 2;
+			const r = k > 1 ? 0.06 : 0;
+			out.push(this.child(a, b, Math.min(WORLD, Math.max(-WORLD, a.x + Math.cos(ang) * r)), Math.min(WORLD, Math.max(-WORLD, a.y + Math.sin(ang) * r)), k));
+		}
+		// Each parent rests by its own rest gene, longer after a bigger litter.
+		a.cool = Math.round(a.rest * (1 + 0.6 * (k - 1)));
+		b.cool = Math.round(b.rest * (1 + 0.6 * (k - 1)));
+		return out;
+	}
+
 	/** A baby of a and b (b may be a itself), made the way the chosen algorithm makes them. */
-	private child(a: Genome | Neo, b: Genome | Neo, x?: number, y?: number): Neo {
+	private child(a: Genome | Neo, b: Genome | Neo, x?: number, y?: number, brood = 1): Neo {
 		const c = this.cfg;
 		const gen = Math.max(a.gen, b.gen) + 1;
 		let life = randInt(c.lifeMin, Math.max(c.lifeMin, c.lifeMax));
 		// Lifespan inherited (± the mutation strength) instead of drawn fresh.
 		if (c.mutLifespan) life = Math.round(Math.max(50, ((a.life + b.life) / 2) * rand(1 - c.mutStrength, 1 + c.mutStrength)));
+		// Babies from bigger litters live shorter lives.
+		life = Math.round(life * Math.max(0.4, 1 - 0.08 * (brood - 1)));
+		const lifeGenes = this.lifeOf(a.fit >= b.fit ? a : b);
+		// Maturing early means a shorter life (live fast, die young).
+		if (c.litter) life = Math.round(life * Math.min(1.2, Math.max(0.6, 0.6 + (0.4 * lifeGenes.matureAt) / Math.max(20, c.mature))));
 		const diet = this.dietOf(a.fit >= b.fit ? a : b);
-		const body = this.bodyOf(a.fit >= b.fit ? a : b);
+		const body = { ...this.bodyOf(a.fit >= b.fit ? a : b), ...lifeGenes, brood };
 		if (c.algo === 'random') return this.spawn({ life, gen, diet, ...body }, x, y);
 
 		// The genes as one list: food and danger input weights, then the speed row, then the turn row.
@@ -800,16 +922,6 @@ export class Sim {
 		return [a, one()];
 	}
 
-	private remember(n: Neo) {
-		if (n.fit <= 0) return;
-		if (this.hall.length >= 12 && n.fit <= this.hall[this.hall.length - 1].fit) return;
-		// The hall of fame restarts the world, so it keeps herbivores, and only those that weren't eaten.
-		if (n.diet || n.eaten) return;
-		this.hall.push({ wih: [...n.wih], who: [...n.who], nh: n.nh, life: n.life, gen: n.gen, fit: n.fit, size: n.size, sp: n.sp });
-		this.hall.sort((p, q) => q.fit - p.fit);
-		this.hall.length = Math.min(this.hall.length, 12);
-	}
-
 	private nearestFood(n: Neo): number {
 		const cx = cellOf(n.x);
 		const cy = cellOf(n.y);
@@ -865,6 +977,7 @@ export class Sim {
 			// (A bigger body doesn't reach food any further: size only costs a herbivore, unless there are hunters.)
 			if (dx * dx + dy * dy <= EAT_R * EAT_R) {
 				n.fit++;
+				n.store++;
 				n.hunger = 0;
 				n.energy = Math.min(STORE_E * n.size, n.energy + FOOD_E);
 				this.cur.food++;
@@ -898,24 +1011,43 @@ export class Sim {
 		if (c.predators) this.hunt();
 
 		// Late in life, swim toward the nearest fit (and, for NEAT, compatible) NEOS instead of food.
+		// The urge to mate: a NEOS that could breed now (grown up, rested, fed enough) goes after a
+		// willing mate it can see. Mates are chosen by attraction: its own species first, and fitter
+		// ones, which can be seen from further away (the fittest draw their species from across
+		// most of the world).
+		for (const n of neos) n.seekD = Infinity;
 		if (c.seekMates && c.breedInWorld && c.algo !== 'es') {
+			let top = 1;
+			for (const o of neos) if (o.fit > top) top = o.fit;
+			const elite = Math.max(1, this.threshold);
 			for (const n of neos) {
-				if (n.age <= n.life * 0.75) continue;
+				if (!this.ready(n) || !fit(n)) continue;
 				let best: Neo | null = null;
+				let bs = 0;
 				let bd = Infinity;
 				const cx = cellOf(n.x);
 				const cy = cellOf(n.y);
-				for (let gy = Math.max(0, cy - 3); gy <= Math.min(GRID - 1, cy + 3); gy++)
-					for (let gx = Math.max(0, cx - 3); gx <= Math.min(GRID - 1, cx + 3); gx++)
+				const r = Math.ceil(ATTRACT_FAR / CELL);
+				for (let gy = Math.max(0, cy - r); gy <= Math.min(GRID - 1, cy + r); gy++)
+					for (let gx = Math.max(0, cx - r); gx <= Math.min(GRID - 1, cx + r); gx++)
 						for (const o of this.neoGrid[gy * GRID + gx]) {
-							if (o === n || !fit(o) || !this.compatible(n, o)) continue;
-							const d = (o.x - n.x) ** 2 + (o.y - n.y) ** 2;
-							if (d < bd) {
+							if (o === n || !this.ready(o) || !fit(o) || !this.compatible(n, o)) continue;
+							const d = Math.sqrt((o.x - n.x) ** 2 + (o.y - n.y) ** 2);
+							const same = o.spc === n.spc;
+							// How far it can be seen: further the fitter it is; the elite of its own species, from afar.
+							const range = same && o.fit >= elite ? ATTRACT_FAR : ATTRACT_NEAR * (1 + o.fit / top);
+							if (d > range) continue;
+							const score = ((same ? 2 : 1) * (1 + (2 * o.fit) / top)) / (d + 0.1);
+							if (score > bs) {
+								bs = score;
 								bd = d;
 								best = o;
 							}
 						}
-				if (best) n.input = heading(n, best.x, best.y);
+				if (best) {
+					n.input = heading(n, best.x, best.y);
+					n.seekD = bd;
+				}
 			}
 		}
 
@@ -923,11 +1055,10 @@ export class Sim {
 		if (c.breedInWorld) {
 			const born: Neo[] = [];
 			for (const n of neos) {
-				if (n.eaten || n.cool > 0 || n.age < c.mature || !fit(n)) continue;
+				if (!this.ready(n, c.algo === 'es') || !fit(n)) continue;
 				if (neos.length + born.length >= c.popCap) break;
 				if (c.algo === 'es') {
-					born.push(this.child(n, n, n.x, n.y));
-					n.cool = c.cooldown;
+					born.push(...this.birth(n, n, c.popCap - neos.length - born.length));
 					continue;
 				}
 				const cx = cellOf(n.x);
@@ -935,11 +1066,10 @@ export class Sim {
 				search: for (let gy = Math.max(0, cy - 1); gy <= Math.min(GRID - 1, cy + 1); gy++)
 					for (let gx = Math.max(0, cx - 1); gx <= Math.min(GRID - 1, cx + 1); gx++)
 						for (const o of this.neoGrid[gy * GRID + gx]) {
-							if (o === n || o.eaten || o.cool > 0 || o.age < c.mature || !fit(o)) continue;
-							const touch = (EAT_R * (n.size + o.size)) / 2;
+							if (o === n || !this.ready(o) || !fit(o)) continue;
+							const touch = MATE_R * (n.size + o.size) / 2;
 							if ((o.x - n.x) ** 2 + (o.y - n.y) ** 2 > touch * touch || !this.compatible(n, o)) continue;
-							born.push(this.child(n, o, n.x, n.y));
-							n.cool = o.cool = c.cooldown;
+							born.push(...this.birth(n, o, c.popCap - neos.length - born.length));
 							break search;
 						}
 			}
@@ -960,7 +1090,6 @@ export class Sim {
 				this.cur.deadFit.push(n.fit);
 				this.cur.died++;
 				this.totals.died++;
-				this.remember(n);
 				for (const t of this.tallies(n)) {
 					t.died++;
 					t.fitSum += n.fit;
@@ -976,11 +1105,22 @@ export class Sim {
 				dv += n.who[h] * a;
 				dr += n.who[MAX_H + h] * a;
 			}
-			n.r = (n.r + Math.tanh(dr) * turn + 360) % 360;
 			// Top speed: by diet, then (body evolution) the speed gene, and bigger is slower.
 			const dietTop = n.diet === 2 ? c.vMax * c.predSpeed : n.diet === 1 ? (c.vMax * (1 + c.predSpeed)) / 2 : c.vMax;
 			const top = c.body ? (dietTop * n.sp) / Math.sqrt(n.size) : dietTop;
-			n.v = Math.min(top, Math.max(0, n.v + (Math.tanh(dv) * acc) / (c.body ? n.size : 1)));
+			const push = acc / (c.body ? n.size : 1);
+			if (n.seekD < Infinity) {
+				// Courting (instinct, not the network): turn straight toward the mate, slow down as it
+				// gets close (and to turn when it's off to the side), and stop once there, so the
+				// pair meet instead of circling each other.
+				n.r = (n.r + Math.max(-turn, Math.min(turn, n.input * 180)) + 360) % 360;
+				const near = n.seekD <= (MATE_R * n.size) / 2 ? 0 : Math.min(1, Math.max(0.15, n.seekD / COURT_R));
+				const want = top * near * (1 - 0.7 * Math.min(1, Math.abs(n.input) * 2));
+				n.v = n.v > want ? Math.max(want, n.v - push * 2) : Math.min(want, n.v + push);
+			} else {
+				n.r = (n.r + Math.tanh(dr) * turn + 360) % 360;
+				n.v = Math.min(top, Math.max(0, n.v + Math.tanh(dv) * push));
+			}
 			n.hunger++;
 			// Energy: bigger and faster burns more.
 			if (c.body) n.energy -= c.energyUse * n.size * n.size * (0.3 + 0.7 * (n.v / c.vMax) ** 2);
@@ -1005,20 +1145,13 @@ export class Sim {
 		neos.length = w;
 		this.totals.steps++;
 
-		// Elitism: the fittest NEOS alive top the population back up (the hall of fame only steps in
-		// when almost no one is left: its old genes would otherwise keep pulling evolution back).
-		if (c.refill && this.totals.steps % 10 === 0 && neos.length < c.popSize)
-			this.refillFrom(neos.length >= 4 ? neos : [...neos, ...this.hall], c.popSize - neos.length);
+		// Elitism: the fittest living NEOS top the population back up.
+		if (c.refill && this.totals.steps % 10 === 0 && neos.length < c.popSize) this.refillFrom(neos, c.popSize - neos.length);
 
 		if (++this.genStep >= Math.round(c.genTime / DT)) this.endGeneration();
 
-		if (!neos.length) {
-			if (c.revive) {
-				// Extinct: the hall of fame (or fresh NEOS) start over, and the world goes on.
-				this.totals.extinctions++;
-				this.refillFrom(this.hall, c.popSize);
-			} else this.extinct = true;
-		}
+		// Everyone's dead: nothing brings them back.
+		if (!neos.length) this.extinct = true;
 	}
 
 	/**
@@ -1106,6 +1239,7 @@ export class Sim {
 			// Bigger prey is a bigger meal, shared by the pack; omnivores get half.
 			const v = ((o.diet === 2 ? c.preyValue : Math.max(1, c.preyValue / 2)) * prey.size) / pack.length;
 			o.fit += v;
+			o.store += v;
 			o.meat += v;
 			o.hunger = 0;
 			o.energy = Math.min(STORE_E * o.size, o.energy + FOOD_E * 2 * prey.size);
@@ -1132,6 +1266,7 @@ export class Sim {
 			preds: this.neos.filter((n) => n.diet === 2).length,
 			omnis: this.neos.filter((n) => n.diet === 1).length,
 			size: this.neos.length ? Math.round((this.neos.reduce((a, n) => a + n.size, 0) / this.neos.length) * 100) / 100 : 1,
+			litter: this.neos.length ? Math.round((this.neos.reduce((a, n) => a + n.litter, 0) / this.neos.length) * 100) / 100 : 1,
 			eaten: this.cur.eaten
 		});
 		if (this.history.length > 500) this.history.shift();
@@ -1140,17 +1275,24 @@ export class Sim {
 		this.cur = { deadFit: [], born: 0, died: 0, food: 0, eaten: 0 };
 	}
 
-	private refillFrom(all: (Neo | Genome)[], n: number) {
-		// Top-ups come from herbivores (meat-eaters only arise from hungry parents and spread by hunting).
-		const prey = all.filter((p) => !p.diet);
-		const pool = prey.length ? prey : all;
+	/**
+	 * Elitism's top-up: babies of the fittest living NEOS, bred like any other baby. Only NEOS that
+	 * have eaten and are off their breeding cooldown can be parents (herbivores first: meat-eaters
+	 * only arise from hungry parents and spread by hunting), each has one baby and then rests. So
+	 * it's no safety net: if too few NEOS find food, births can't keep up with deaths and the
+	 * population dies out.
+	 */
+	private refillFrom(living: Neo[], n: number) {
+		const fed = living.filter((p) => p.fit >= 1 && !p.eaten && p.cool <= 0);
+		const herbivores = fed.filter((p) => !p.diet);
+		let pool = herbivores.length >= 2 ? herbivores : fed;
 		const add: Neo[] = [];
-		for (let i = 0; i < n; i++) {
-			if (pool.length >= 2) {
-				const [a, b] = this.pick(pool);
-				add.push(this.child(a, b));
-			} else if (pool.length === 1) add.push(this.child(pool[0], pool[0]));
-			else add.push(this.spawn());
+		while (add.length < n && pool.length >= 2) {
+			const [a, b] = this.pick(pool);
+			const pa = a as Neo;
+			const pb = (b === a ? pool.find((p) => p !== a) : b) as Neo;
+			add.push(...this.birth(pa, pb, n - add.length));
+			pool = pool.filter((p) => p !== pa && p !== pb);
 		}
 		this.neos.push(...add);
 		this.cur.born += add.length;
@@ -1166,6 +1308,9 @@ export class Sim {
 			diet: n.diet ?? 0,
 			size: +(n.size ?? 1).toFixed(3),
 			sp: +(n.sp ?? 1).toFixed(3),
+			litter: n.litter ?? 1,
+			matureAt: n.matureAt ?? this.cfg.mature,
+			rest: n.rest ?? this.cfg.cooldown,
 			life: n.life,
 			gen: n.gen,
 			fit: n.fit
@@ -1176,7 +1321,6 @@ export class Sim {
 			history: this.history,
 			totals: this.totals,
 			walls: this.walls,
-			hall: this.hall.map(genes),
 			neos: this.neos.map(genes)
 		};
 	}
@@ -1187,7 +1331,6 @@ export class Sim {
 		this.gen = s.gen ?? 0;
 		this.history = s.history ?? [];
 		this.totals = { ...this.totals, ...s.totals };
-		this.hall = s.hall ?? [];
 		if (s.neos?.length) {
 			// The loaded NEOS are sorted into species afresh.
 			this.clearSpecies();
@@ -1238,6 +1381,11 @@ export class Sim {
 			sizeHerb: n - preds - omnis ? sizeH / (n - preds - omnis) : 0,
 			sizeMeat: preds + omnis ? sizeM / (preds + omnis) : 0,
 			speedGene: n ? speed / n : 1,
+			litter: n ? this.neos.reduce((a, o) => a + o.litter, 0) / n : 1,
+			matureAt: n ? this.neos.reduce((a, o) => a + o.matureAt, 0) / n : this.cfg.mature,
+			rest: n ? this.neos.reduce((a, o) => a + o.rest, 0) / n : this.cfg.cooldown,
+			litterHerb: n - preds - omnis ? this.neos.reduce((a, o) => a + (o.diet ? 0 : o.litter), 0) / (n - preds - omnis) : 0,
+			litterMeat: preds + omnis ? this.neos.reduce((a, o) => a + (o.diet ? o.litter : 0), 0) / (preds + omnis) : 0,
 			foodLeft: this.foodLeft(),
 			species: this.speciesCount(),
 			progress: this.genStep / Math.round(this.cfg.genTime / DT),

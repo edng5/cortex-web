@@ -53,7 +53,7 @@
 		dirty = true;
 	});
 
-	const SLIDERS: { key: keyof Config; label: string; fmt?: (v: number) => string; tip: string; only?: Algo[]; preds?: boolean; limit?: boolean; body?: boolean }[] = [
+	const SLIDERS: { key: keyof Config; label: string; fmt?: (v: number) => string; tip: string; only?: Algo[]; preds?: boolean; limit?: boolean; body?: boolean; life?: boolean }[] = [
 		{ key: 'popSize', label: 'Population size', tip: 'NEOS at the start; with elitism refill on, the fittest’s babies keep it from dropping below this.' },
 		{ key: 'popCap', label: 'Population cap', tip: 'No more babies once there are this many (the original stopped at 150).' },
 		{ key: 'foodNum', label: 'Food', tip: 'Most food in the world; each one eaten reappears somewhere else (at once, or at the regrowth rate when limited).' },
@@ -66,10 +66,13 @@
 		{ key: 'deCR', label: 'Crossover rate CR', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'Differential evolution: chance each gene takes the new value.', only: ['de'] },
 		{ key: 'mutate', label: 'Mutation rate', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'Chance a baby is mutated.', only: ['neat', 'ga'] },
 		{ key: 'mutStrength', label: 'Mutation strength', fmt: (v) => v.toFixed(2), tip: 'How big a mutation is (an evolution strategy’s noise).', only: ['neat', 'ga', 'es'] },
-		{ key: 'mature', label: 'Maturity age', fmt: (v) => `${v} steps`, tip: 'NEOS younger than this can’t breed.' },
+		{ key: 'mature', label: 'Maturity age', fmt: (v) => `${v} steps`, tip: 'NEOS younger than this can’t breed (with life history evolving: where the gene starts).' },
 		{ key: 'lifeMin', label: 'Lifespan (min)', fmt: (v) => `${v} steps`, tip: 'Each NEOS lives a random number of steps between the min and max.' },
 		{ key: 'lifeMax', label: 'Lifespan (max)', fmt: (v) => `${v} steps`, tip: 'Each NEOS lives a random number of steps between the min and max.' },
-		{ key: 'cooldown', label: 'Breeding cooldown', fmt: (v) => `${v} steps`, tip: 'Rest between babies.' },
+		{ key: 'cooldown', label: 'Breeding rest', fmt: (v) => `${v} steps`, tip: 'Rest between births, longer after a bigger litter (with life history evolving: where the gene starts).' },
+		{ key: 'breedCost', label: 'Food to breed', fmt: (v) => `${v} a baby`, tip: 'Food a baby costs, shared by its parents: a NEOS has to eat before it can breed. Too high and the population can’t replace itself.' },
+		{ key: 'maxLitter', label: 'Litter size limit', fmt: (v) => `${v} babies`, tip: 'The most babies one birth can have.', life: true },
+		{ key: 'litterMutate', label: 'Life-history mutation', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'Chance each of a baby’s litter size, maturity age and rest genes changes.', life: true },
 		{ key: 'vMax', label: 'Max speed', fmt: (v) => v.toFixed(2), tip: 'World units a second.' },
 		{ key: 'dvMax', label: 'Max acceleration', fmt: (v) => v.toFixed(2), tip: 'How fast a NEOS can speed up or slow down.' },
 		{ key: 'drMax', label: 'Max turn rate', fmt: (v) => `${v}°/s`, tip: 'How fast a NEOS can turn.' },
@@ -101,9 +104,8 @@
 		{ key: 'mutLifespan', label: 'Inherit lifespan', tip: 'Babies get their parents’ average lifespan (± strength) instead of a random one.', group: 'mut' },
 		{ key: 'breedInWorld', label: 'Breed when they meet', tip: 'Two fit, grown-up NEOS that touch have a baby.', group: 'life' },
 		{ key: 'pickyMates', label: 'Only fit NEOS breed', tip: 'Mates must be in the top elitism %.', group: 'life' },
-		{ key: 'seekMates', label: 'Seek mates in old age', tip: 'Past 75% of their life, NEOS swim toward fit mates instead of food.', group: 'life' },
-		{ key: 'refill', label: 'Elitism refill', tip: 'Whenever the population drops below its size, the fittest NEOS’ babies top it back up.', group: 'life' },
-		{ key: 'revive', label: 'Revive after extinction', tip: 'If everyone dies, the hall of fame’s genes start again.', group: 'life' }
+		{ key: 'seekMates', label: 'Seek mates', tip: 'A NEOS that could breed (grown up, rested, fed enough) goes after a willing mate it can see, its own species and fitter ones first; the fittest attract their species from far away. It slows down as it closes in, so pairs meet.', group: 'life' },
+		{ key: 'refill', label: 'Top up the population (elitism)', tip: 'Off by default. When the population drops below its size, the fittest living NEOS that have eaten have extra babies to top it back up. Even then, if too few find food, it can’t keep up and the population dies out.', group: 'life' }
 	];
 
 	/** A fresh world, waiting for Play (walls can be drawn again). */
@@ -290,6 +292,8 @@
 			lines: [
 				`${['Herbivore', 'Omnivore', 'Carnivore'][n.diet]}${sim.cfg.body ? ` · size ×${n.size.toFixed(2)} · speed ×${n.sp.toFixed(2)}` : ''}`,
 				`Generation ${n.gen} · ${n.nh} hidden node${n.nh === 1 ? '' : 's'}`,
+				...(sim.cfg.litter ? [`Litters of ${n.litter} · matures at ${Math.round(n.matureAt * DT)}s · rests ${Math.round(n.rest * DT)}s`] : []),
+				...(n.seekD < Infinity ? ['Courting a mate'] : []),
 				`Fitness ${num(n.fit)} · age ${Math.round(n.age * DT)}s of ${Math.round(n.life * DT)}s`
 			]
 		};
@@ -580,7 +584,11 @@
 			{:else if phase === 'stopped'}
 				<div class="extinct">Run stopped. Start a new world to place walls and run again.</div>
 			{:else if extinct}
-				<div class="extinct">Extinct! Turn on “Revive after extinction” or start a new world.</div>
+				<div class="extinct">
+					<b>Population extinct</b>
+					<span>All NEOS died in generation {sim.gen}, after {clock(live.time)} of simulated time.</span>
+					<span class="sub">To run again, start a new world. More food, longer lifespans or lower energy use improve survival.</span>
+				</div>
 			{/if}
 		</div>
 		<div class="bar">
@@ -623,7 +631,6 @@
 				<div><span>Food eaten</span><b>{totals.food.toLocaleString()}</b></div>
 				<div><span>Born</span><b>{totals.born.toLocaleString()}</b></div>
 				<div><span>Died</span><b>{totals.died.toLocaleString()}</b></div>
-				<div><span>Extinctions</span><b>{totals.extinctions}</b></div>
 				<div><span>Deepest lineage</span><b>gen {totals.lineage}</b></div>
 				<div><span>Hidden nodes</span><b>{live.hidden.toFixed(1)} <small>avg</small></b></div>
 				{#if cfg.algo === 'neat'}<div><span>Species</span><b>{live.species}</b></div>{/if}
@@ -631,6 +638,11 @@
 					<div><span>Size{cfg.predators ? ' (herbivores)' : ''}</span><b>×{live.sizeHerb.toFixed(2)}</b></div>
 					{#if cfg.predators}<div><span>Size (meat-eaters)</span><b>{live.sizeMeat ? `×${live.sizeMeat.toFixed(2)}` : '-'}</b></div>{/if}
 					<div><span>Speed gene</span><b>×{live.speedGene.toFixed(2)}</b></div>
+				{/if}
+				{#if cfg.litter}
+					<div><span>Litter size</span><b>{live.litter.toFixed(1)} <small>avg</small></b></div>
+					<div><span>Maturity</span><b>{Math.round(live.matureAt)} <small>steps</small></b></div>
+					<div><span>Rest</span><b>{Math.round(live.rest)} <small>steps</small></b></div>
 				{/if}
 				{#if cfg.foodLimit}<div><span>Food left</span><b>{live.foodLeft} <small>/ {cfg.foodNum}</small></b></div>{/if}
 				{#if cfg.predators}
@@ -644,12 +656,12 @@
 			<div class="chart-box" bind:this={chartBox}><canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas></div>
 			<div class="table-box">
 				<table>
-					<thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Alive</th><th>Total</th><th>Born</th>{#if cfg.body}<th>Size</th>{/if}{#if cfg.predators}<th>Omni</th><th>Carn</th><th>Eaten</th>{/if}</tr></thead>
+					<thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Alive</th><th>Total</th><th>Born</th>{#if cfg.body}<th>Size</th>{/if}{#if cfg.litter}<th>Litter</th>{/if}{#if cfg.predators}<th>Omni</th><th>Carn</th><th>Eaten</th>{/if}</tr></thead>
 					<tbody>
 						{#each history.toReversed() as h (h.gen)}
-							<tr><td>{h.gen}</td><td>{num(h.best)}</td><td>{h.avg.toFixed(2)}</td><td>{h.alive}</td><td>{h.total}</td><td>{h.born}</td>{#if cfg.body}<td>{h.size?.toFixed(2) ?? '-'}</td>{/if}{#if cfg.predators}<td>{h.omnis ?? 0}</td><td>{h.preds ?? 0}</td><td>{h.eaten ?? 0}</td>{/if}</tr>
+							<tr><td>{h.gen}</td><td>{num(h.best)}</td><td>{h.avg.toFixed(2)}</td><td>{h.alive}</td><td>{h.total}</td><td>{h.born}</td>{#if cfg.body}<td>{h.size?.toFixed(2) ?? '-'}</td>{/if}{#if cfg.litter}<td>{h.litter?.toFixed(1) ?? '-'}</td>{/if}{#if cfg.predators}<td>{h.omnis ?? 0}</td><td>{h.preds ?? 0}</td><td>{h.eaten ?? 0}</td>{/if}</tr>
 						{:else}
-							<tr><td colspan="10" class="none">Each generation’s stats appear here.</td></tr>
+							<tr><td colspan="11" class="none">Each generation’s stats appear here.</td></tr>
 						{/each}
 					</tbody>
 				</table>
@@ -659,7 +671,7 @@
 				<input type="checkbox" bind:checked={cfg.foodLimit} />Limit food regrowth (scarcity: the pressure that can make NEOS eat each other)
 			</label>
 			<div class="sliders">
-				{#each SLIDERS.filter((s) => (!s.only || s.only.includes(cfg.algo)) && (!s.preds || cfg.predators) && (!s.limit || cfg.foodLimit) && (!s.body || cfg.body)) as s (s.key)}
+				{#each SLIDERS.filter((s) => (!s.only || s.only.includes(cfg.algo)) && (!s.preds || cfg.predators) && (!s.limit || cfg.foodLimit) && (!s.body || cfg.body) && (!s.life || cfg.litter)) as s (s.key)}
 					{@const [min, max, step] = RANGES[s.key]}
 					{@const v = cfg[s.key] as number}
 					<label title={s.tip}>
@@ -701,6 +713,13 @@
 			{:else}
 				<p class="hint">{cfg.algo === 'es' ? 'An evolution strategy mutates every baby with Gaussian noise (Mutation strength in Hyperparameters); there’s no crossover.' : cfg.algo === 'de' ? 'Differential evolution makes babies from three NEOS (F and CR in Hyperparameters); there’s no separate crossover or mutation.' : 'Random search passes nothing on: a baseline to compare the others against.'}</p>
 			{/if}
+			<fieldset class="algos">
+				<legend>Life history</legend>
+				<label class="opt" title="Litter size, maturity age and rest between births are genes">
+					<input type="checkbox" bind:checked={cfg.litter} />Litter size, maturity and rest evolve
+				</label>
+				<small class="hint">Each has a cost. Bigger litters: the babies live shorter lives and (with body evolution) start with less energy, and the parents rest longer. Maturing early: a shorter life. Resting less between births: each baby costs more food. Under heavy predation many babies pay off; when each can thrive, fewer do.</small>
+			</fieldset>
 			<fieldset class="algos">
 				<legend>Body</legend>
 				<label class="opt" title="Size and speed are genes, paid for in energy">
@@ -947,6 +966,21 @@
 	.stats .herb b,
 	.c-herb {
 		color: #4ade80;
+	}
+	.extinct b {
+		display: block;
+		margin-bottom: 4px;
+		font-size: 0.95rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+	.extinct span {
+		display: block;
+	}
+	.extinct .sub {
+		margin-top: 4px;
+		color: #94a3b8;
+		font-size: 0.78rem;
 	}
 	.extinct {
 		position: absolute;
