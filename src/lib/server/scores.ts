@@ -80,9 +80,9 @@ export interface Monthly {
 	month: string;
 	/**
 	 * Per game: the month shown (this one, or the latest with scores; null = never played, or the
-	 * all-time board) and each board's leader.
+	 * all-time board), each board's leader, and each board's top 3 (shown when a game is opened).
 	 */
-	games: Record<GameId, { month: string | null; boards: Record<number, BoardEntry | null> }>;
+	games: Record<GameId, { month: string | null; boards: Record<number, BoardEntry | null>; top: Record<number, BoardEntry[]> }>;
 }
 
 /**
@@ -94,28 +94,29 @@ const ALL_TIME = `(SELECT user_id, game, mission, MAX(best) AS best, MIN(updated
 	UNION ALL SELECT user_id, game, mission, best, updated_at FROM game_monthly
 ) GROUP BY user_id, game, mission)`;
 
-/** Every board's all-time leader (the best score ever, every month included). */
+/** Every board's all-time top 3 (the best scores ever, every month included). */
 export function getAllTime(): Monthly {
 	const db = getDb();
 	const leader = db.prepare(
 		`SELECT s.best AS score, u.email_enc AS email_enc, p.name AS name
 		 FROM ${ALL_TIME} s JOIN users u ON u.id = s.user_id LEFT JOIN player_names p ON p.user_id = s.user_id
 		 WHERE s.game = ? AND s.mission = ? AND s.best > 0
-		 ORDER BY s.best DESC, s.updated_at ASC LIMIT 1`
+		 ORDER BY s.best DESC, s.updated_at ASC LIMIT 3`
 	);
 	const games = {} as Monthly['games'];
 	for (const game of Object.keys(GAMES) as GameId[]) {
 		const boards: Record<number, BoardEntry | null> = {};
+		const top: Record<number, BoardEntry[]> = {};
 		for (const b of GAMES[game].boards) {
-			const r = leader.get(game, b) as { score: number; email_enc: string; name: string | null } | undefined;
-			boards[b] = r ? { name: rowName(r), score: r.score } : null;
+			top[b] = (leader.all(game, b) as { score: number; email_enc: string; name: string | null }[]).map((r) => ({ name: rowName(r), score: r.score }));
+			boards[b] = top[b][0] ?? null;
 		}
-		games[game] = { month: null, boards };
+		games[game] = { month: null, boards, top };
 	}
 	return { period: 'all', month: monthOf(Date.now()), games };
 }
 
-/** This month's leader on every board; a game nobody has played this month shows its latest month with scores. */
+/** This month's top 3 on every board; a game nobody has played this month shows its latest month with scores. */
 export function getMonthly(): Monthly {
 	const db = getDb();
 	const month = monthOf(Date.now());
@@ -124,17 +125,18 @@ export function getMonthly(): Monthly {
 		`SELECT s.best AS score, u.email_enc AS email_enc, p.name AS name
 		 FROM game_monthly s JOIN users u ON u.id = s.user_id LEFT JOIN player_names p ON p.user_id = s.user_id
 		 WHERE s.game = ? AND s.month = ? AND s.mission = ? AND s.best > 0
-		 ORDER BY s.best DESC, s.updated_at ASC LIMIT 1`
+		 ORDER BY s.best DESC, s.updated_at ASC LIMIT 3`
 	);
 	const games = {} as Monthly['games'];
 	for (const game of Object.keys(GAMES) as GameId[]) {
 		const m = (latest.get(game, month) as { m: string | null }).m;
 		const boards: Record<number, BoardEntry | null> = {};
+		const top: Record<number, BoardEntry[]> = {};
 		for (const b of GAMES[game].boards) {
-			const r = m ? (leader.get(game, m, b) as { score: number; email_enc: string; name: string | null } | undefined) : undefined;
-			boards[b] = r ? { name: rowName(r), score: r.score } : null;
+			top[b] = m ? (leader.all(game, m, b) as { score: number; email_enc: string; name: string | null }[]).map((r) => ({ name: rowName(r), score: r.score })) : [];
+			boards[b] = top[b][0] ?? null;
 		}
-		games[game] = { month: m, boards };
+		games[game] = { month: m, boards, top };
 	}
 	return { period: 'month', month, games };
 }

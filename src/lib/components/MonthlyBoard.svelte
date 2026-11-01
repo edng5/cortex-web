@@ -1,7 +1,7 @@
 <!--
   E.Ngine Games leaders: this month's top score on every game's boards (a game nobody has played
   this month shows its most recent month with scores), or switched to all-time. Nothing at all
-  shows "-".
+  shows "-". Click a game to see each of its boards' top 3.
 -->
 <script lang="ts">
 	import { GAMES } from '$lib/games/registry';
@@ -9,7 +9,15 @@
 	import BoardToggle from './BoardToggle.svelte';
 
 	type Entry = { name: string; score: number } | null;
-	type Monthly = { period?: 'month' | 'all'; month: string; games: Partial<Record<string, { month: string | null; boards: Record<number, Entry> }>> };
+	type Monthly = {
+		period?: 'month' | 'all';
+		month: string;
+		games: Partial<Record<string, { month: string | null; boards: Record<number, Entry>; top?: Record<number, NonNullable<Entry>[]> }>>;
+	};
+
+	/** The games opened up to show their top 3. */
+	let open = $state<string[]>([]);
+	const toggle = (id: string) => (open = open.includes(id) ? open.filter((x) => x !== id) : [...open, id]);
 
 	let data = $state<Monthly | null>(null);
 	let failed = $state(false);
@@ -44,19 +52,36 @@
 	<BoardToggle />
 	{#each GAMES.filter((g) => Object.keys(g.boards).length) as g (g.id)}
 		{@const row = data?.games[g.id]}
+		{@const isOpen = open.includes(g.id)}
 		<section style="--accent: {g.accent}">
 			<h4>
-				<img src={g.icon} alt="" width="20" height="20" />{g.title}
+				<button class="game" aria-expanded={isOpen} onclick={() => toggle(g.id)} title={isOpen ? 'Show just the leader' : 'Show the top 3'}>
+					<img src={g.icon} alt="" width="20" height="20" />{g.title}
+					<span class="chev" class:up={isOpen} aria-hidden="true">▾</span>
+				</button>
 				{#if !allTime && row?.month && data && row.month !== data.month}<span class="from">from {monthName(row.month)}</span>{/if}
 			</h4>
 			<dl>
 				{#each Object.entries(g.boards) as [b, label] (b)}
 					{@const e = row?.boards[Number(b)] ?? null}
-					<div class="line">
-						{#if Object.keys(g.boards).length > 1}<dt>{label}</dt>{/if}
-						<dd class="who">{e ? e.name : data || failed ? '-' : '…'}</dd>
-						<dd class="score">{e ? e.score.toLocaleString() : data || failed ? '-' : ''}</dd>
-					</div>
+					{@const top = row?.top?.[Number(b)] ?? (e ? [e] : [])}
+					{#if isOpen}
+						{#if Object.keys(g.boards).length > 1}<dt class="board">{label}</dt>{/if}
+						{#each [0, 1, 2] as i (i)}
+							{@const t = top[i]}
+							<div class="line top">
+								<dt class="rank">{['🥇', '🥈', '🥉'][i]}</dt>
+								<dd class="who">{t ? t.name : data || failed ? '-' : '…'}</dd>
+								<dd class="score">{t ? t.score.toLocaleString() : ''}</dd>
+							</div>
+						{/each}
+					{:else}
+						<div class="line">
+							{#if Object.keys(g.boards).length > 1}<dt>{label}</dt>{/if}
+							<dd class="who">{e ? e.name : data || failed ? '-' : '…'}</dd>
+							<dd class="score">{e ? e.score.toLocaleString() : data || failed ? '-' : ''}</dd>
+						</div>
+					{/if}
 				{/each}
 			</dl>
 		</section>
@@ -106,6 +131,37 @@
 		margin: 0 0 4px;
 		font-size: 0.8rem;
 		color: var(--accent);
+	}
+	.game {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+	.game:hover {
+		filter: brightness(1.2);
+	}
+	.chev {
+		font-size: 0.7rem;
+		color: var(--muted, #94a3b8);
+		transition: transform 0.15s;
+	}
+	.chev.up {
+		transform: rotate(180deg);
+	}
+	dt.board {
+		margin-top: 4px;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+	dt.rank {
+		min-width: 0;
 	}
 	h4 img {
 		border-radius: 4px;
