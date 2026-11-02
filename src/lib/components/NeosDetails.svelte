@@ -400,6 +400,21 @@
 	.name {
 		text-align: left;
 	}
+	/* The name column stays put while the stats scroll sideways (and its header in the corner). */
+	td.name,
+	th:first-child {
+		position: sticky;
+		left: 0;
+		z-index: 1;
+		background: #0b1020;
+		box-shadow: 1px 0 0 rgba(148, 163, 184, 0.18);
+	}
+	th:first-child {
+		z-index: 2;
+	}
+	tr.sub td.name {
+		background: #0f1424;
+	}
 	.dot {
 		display: inline-block;
 		width: 9px;
