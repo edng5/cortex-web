@@ -266,6 +266,9 @@ export interface Neo {
 	chased: boolean;
 	/** Steps left digesting its last kill (it won't hunt until then). */
 	digest: number;
+	/** How far it has swum, and how many babies it has had. */
+	dist: number;
+	kids: number;
 	/** Body genes: size (1 = the original's) and speed (× the max speed); and energy left. */
 	size: number;
 	sp: number;
@@ -357,6 +360,13 @@ export interface Tally {
 	/** Summed over the dead: fitness and age, for averages. */
 	fitSum: number;
 	lifeSum: number;
+	/** Summed over the dead: average speed over their lives, and babies they had. */
+	speedSum: number;
+	kidsSum: number;
+	/** Summed over everyone born: hidden nodes, maturity age and rest between births. */
+	nodesSum: number;
+	matureSum: number;
+	restSum: number;
 }
 /** A species: NEOS whose genes are within the species threshold of its founder's. */
 export interface Species extends Tally {
@@ -375,7 +385,37 @@ export interface Species extends Tally {
 	/** The founder's genes, which newcomers are compared against. */
 	rep: { wih: Float32Array; who: Float32Array; nh: number; diet: number; size: number };
 }
-const tally = (): Tally => ({ born: 0, died: 0, peak: 0, food: 0, prey: 0, eatenBy: 0, starved: 0, escapes: 0, fitSum: 0, lifeSum: 0 });
+const tally = (): Tally => ({
+	born: 0,
+	died: 0,
+	peak: 0,
+	food: 0,
+	prey: 0,
+	eatenBy: 0,
+	starved: 0,
+	escapes: 0,
+	fitSum: 0,
+	lifeSum: 0,
+	speedSum: 0,
+	kidsSum: 0,
+	nodesSum: 0,
+	matureSum: 0,
+	restSum: 0
+});
+/** A tally's averages, for the details window. */
+const averages = (t: Tally) => ({
+	avgFit: t.died ? t.fitSum / t.died : 0,
+	avgLife: t.died ? t.lifeSum / t.died : 0,
+	/** World units a second, over a lifetime. */
+	speed: t.died ? t.speedSum / t.died : 0,
+	/** Babies per NEOS over its life. */
+	fecundity: t.died ? t.kidsSum / t.died : 0,
+	/** Food eaten per NEOS born. */
+	foodPer: t.born ? t.food / t.born : 0,
+	nodes: t.born ? t.nodesSum / t.born : 0,
+	matureAt: t.born ? t.matureSum / t.born : 0,
+	rest: t.born ? t.restSum / t.born : 0
+});
 /** Size classes for the details: small, medium, large. */
 export const SIZE_CLASSES = ['Small (< ×0.8)', 'Medium', 'Large (> ×1.25)'];
 const sizeClass = (s: number) => (s < 0.8 ? 0 : s > 1.25 ? 2 : 1);
@@ -622,6 +662,8 @@ export class Sim {
 			meat: 0,
 			chased: false,
 			digest: 0,
+			dist: 0,
+			kids: 0,
 			size,
 			sp: this.cfg.body ? (g?.sp ?? 1) : 1,
 			// Babies from a big litter start with less energy (the parents' investment is shared).
@@ -682,7 +724,12 @@ export class Sim {
 		n.spc = best.id;
 		best.sizeSum += n.size;
 		best.litterSum += n.litter;
-		for (const t of this.tallies(n)) t.born++;
+		for (const t of this.tallies(n)) {
+			t.born++;
+			t.nodesSum += n.nh;
+			t.matureSum += n.matureAt;
+			t.restSum += n.rest;
+		}
 	}
 	/**
 	 * A new species' genus: the original NEOS (generation 0) are all Neos; later ones join the
@@ -772,18 +819,16 @@ export class Sim {
 			eatenBy: s.eatenBy,
 			starved: s.starved,
 			escapes: s.escapes,
-			avgFit: s.died ? s.fitSum / s.died : 0,
-			avgLife: s.died ? s.lifeSum / s.died : 0,
+			...averages(s),
 			albino: s.albino.born
 				? {
 						...s.albino,
-						alive: alive.albino.get(s.id) ?? 0,
-						avgFit: s.albino.died ? s.albino.fitSum / s.albino.died : 0,
-						avgLife: s.albino.died ? s.albino.lifeSum / s.albino.died : 0
+						...averages(s.albino),
+						alive: alive.albino.get(s.id) ?? 0
 					}
 				: null
 		}));
-		const group = (t: Tally, n: number) => ({ ...t, alive: n, avgFit: t.died ? t.fitSum / t.died : 0, avgLife: t.died ? t.lifeSum / t.died : 0 });
+		const group = (t: Tally, n: number) => ({ ...t, ...averages(t), alive: n });
 		return {
 			species,
 			diets: this.byDiet.map((t, i) => group(t, alive.diet[i])),
@@ -931,6 +976,8 @@ export class Sim {
 			const r = k > 1 ? 0.06 : 0;
 			out.push(this.child(a, b, Math.min(WORLD, Math.max(-WORLD, a.x + Math.cos(ang) * r)), Math.min(WORLD, Math.max(-WORLD, a.y + Math.sin(ang) * r)), k));
 		}
+		a.kids += k;
+		if (b !== a) b.kids += k;
 		// Each parent rests by its own rest gene, longer after a bigger litter, and (body evolution)
 		// longer the bigger it is: large NEOS breed less often, so they average fewer babies.
 		a.cool = Math.round(a.rest * (1 + 0.6 * (k - 1)) * (c.body ? a.size : 1));
@@ -1225,6 +1272,8 @@ export class Sim {
 					t.died++;
 					t.fitSum += n.fit;
 					t.lifeSum += n.age;
+					t.speedSum += n.age ? n.dist / (n.age * DT) : 0;
+					t.kidsSum += n.kids;
 					if (n.eaten) t.eatenBy++;
 					else if (starved && n.age < n.life) t.starved++;
 				}
@@ -1269,6 +1318,8 @@ export class Sim {
 			// Energy: bigger and faster burns more.
 			if (c.body) n.energy -= c.energyUse * n.size * n.size * (0.3 + 0.7 * (n.v / c.vMax) ** 2);
 			const rad = (n.r * Math.PI) / 180;
+			const ox = n.x;
+			const oy = n.y;
 			const nx = Math.min(WORLD, Math.max(-WORLD, n.x + n.v * Math.cos(rad) * DT));
 			const ny = Math.min(WORLD, Math.max(-WORLD, n.y + n.v * Math.sin(rad) * DT));
 			if (!this.walls.length || !this.blocked(nx, ny)) {
@@ -1280,6 +1331,7 @@ export class Sim {
 				else if (!this.blocked(n.x, ny)) n.y = ny;
 				n.v *= 0.5;
 			}
+			n.dist += Math.hypot(n.x - ox, n.y - oy);
 			n.age++;
 			if (n.cool > 0) n.cool--;
 			if (n.fit > this.totals.bestEver) this.totals.bestEver = n.fit;

@@ -15,9 +15,39 @@
 	// svelte-ignore state_referenced_locally
 	let data = $state<Details>(sim.details());
 	let tab = $state<'species' | 'diets' | 'sizes'>('species');
-	/** The table's columns (what it can be sorted by). */
-	type SortKey = 'name' | 'alive' | 'peak' | 'born' | 'first' | 'avgLife' | 'avgFit' | 'food' | 'prey' | 'eatenBy' | 'starved' | 'size' | 'litter';
-	let sortBy = $state<SortKey>('born');
+	type Group = Details['diets'][number];
+	type Row = Details['species'][number];
+	/**
+	 * The stats columns, shared by the species, diet and size tables: what each shows (blank when it
+	 * doesn't apply) and what it means (its tooltip). `species` columns are only in the species table.
+	 */
+	/** What every row (species, albinos, diets, sizes) has: the stats the columns show. */
+	type Stats = Pick<Group, 'alive' | 'born' | 'died' | 'peak' | 'prey' | 'eatenBy' | 'starved' | 'escapes' | 'avgFit' | 'avgLife' | 'speed' | 'fecundity' | 'foodPer' | 'nodes' | 'matureAt' | 'rest'> &
+		Partial<Pick<Row, 'id' | 'first' | 'last' | 'size' | 'litter'>>;
+	type Col = { key: string; label: string; tip: string; show: (r: Stats) => string | number; species?: boolean };
+	const dash = (ok: boolean, v: () => string | number) => (ok ? v() : '-');
+	const COLS: Col[] = [
+		{ key: 'alive', label: 'Alive', tip: 'Alive now (†: extinct)', show: (r) => r.alive || (r.id ? '†' : 0) },
+		{ key: 'peak', label: 'Peak', tip: 'Most alive at once', show: (r) => r.peak },
+		{ key: 'born', label: 'Born', tip: 'Born this run', show: (r) => r.born },
+		{ key: 'first', label: 'Gens', tip: 'Generations it was around (first–last)', show: (r) => `${r.first}–${r.last ?? 'now'}`, species: true },
+		{ key: 'avgLife', label: 'Lifespan', tip: 'How long they lived, on average', show: (r) => dash(!!r.died, () => life(r.avgLife)) },
+		{ key: 'fecundity', label: 'Fecundity', tip: 'Babies each one had over its life, on average', show: (r) => dash(!!r.died, () => r.fecundity.toFixed(2)) },
+		{ key: 'avgFit', label: 'Avg fitness', tip: 'Fitness at death, on average (food, prey, escapes)', show: (r) => dash(!!r.died, () => n1(r.avgFit)) },
+		{ key: 'foodPer', label: 'Food/life', tip: 'Food eaten per NEOS', show: (r) => dash(!!r.born, () => n1(r.foodPer)) },
+		{ key: 'speed', label: 'Speed', tip: 'How fast they swam over their lives, on average (world units a second)', show: (r) => dash(!!r.died, () => r.speed.toFixed(2)) },
+		{ key: 'prey', label: 'Prey', tip: 'NEOS they ate', show: (r) => r.prey },
+		{ key: 'eatenBy', label: 'Eaten', tip: 'Of theirs eaten by hunters', show: (r) => r.eatenBy },
+		{ key: 'starved', label: 'Starved', tip: 'Of theirs that died of hunger', show: (r) => r.starved },
+		{ key: 'escapes', label: 'Escapes', tip: 'Times they got away from a hunter', show: (r) => r.escapes },
+		{ key: 'size', label: 'Size', tip: 'Body size at birth, on average (×1 is the original size)', show: (r) => (r.size !== undefined ? `×${r.size.toFixed(2)}` : ''), species: true },
+		{ key: 'litter', label: 'Litter', tip: 'Litter size gene, on average', show: (r) => (r.litter !== undefined ? r.litter.toFixed(1) : ''), species: true },
+		{ key: 'nodes', label: 'Nodes', tip: 'Hidden nodes in their networks, on average', show: (r) => dash(!!r.born, () => r.nodes.toFixed(1)) },
+		{ key: 'matureAt', label: 'Matures', tip: 'Age they could first breed at, on average', show: (r) => dash(!!r.born, () => life(r.matureAt)) },
+		{ key: 'rest', label: 'Rest', tip: 'Rest between births, on average', show: (r) => dash(!!r.born, () => life(r.rest)) }
+	];
+	const groupCols = COLS.filter((c) => !c.species);
+	let sortBy = $state('born');
 	let showExtinct = $state(true);
 
 	const DIETS = ['Herbivores', 'Omnivores', 'Carnivores'];
@@ -30,7 +60,8 @@
 			.filter((s) => showExtinct || s.alive)
 			.toSorted((a, b) => {
 				if (sortBy === 'name') return a.name.localeCompare(b.name);
-				return b[sortBy] - a[sortBy];
+				const k = sortBy as keyof Row;
+				return Number(b[k] ?? -1) - Number(a[k] ?? -1);
 			})
 	);
 	/** The species charted: the most born, and every one alive now with a big share. */
@@ -144,8 +175,9 @@
 					<table>
 						<thead>
 							<tr>
-								{#each [['name', 'Species'], ['alive', 'Alive'], ['peak', 'Peak'], ['born', 'Born'], ['first', 'Gens'], ['avgLife', 'Lifespan'], ['avgFit', 'Avg fitness'], ['food', 'Food'], ['prey', 'Prey'], ['eatenBy', 'Eaten'], ['starved', 'Starved'], ['size', 'Size'], ['litter', 'Litter']] as [k, label] (k)}
-									<th class:sorted={sortBy === k}><button onclick={() => (sortBy = k as SortKey)}>{label}</button></th>
+								<th class:sorted={sortBy === 'name'}><button onclick={() => (sortBy = 'name')}>Species</button></th>
+								{#each COLS as c (c.key)}
+									<th class:sorted={sortBy === c.key} title={c.tip}><button onclick={() => (sortBy = c.key)}>{c.label}</button></th>
 								{/each}
 							</tr>
 						</thead>
@@ -155,40 +187,18 @@
 									<td class="name">
 										<i class="dot" style="background: {SHADES[s.diet][3]}" title={DIET_ONE[s.diet]}></i><em>{s.name}</em>{#if colorOf(s.id)}<i class="line" style="--c: {colorOf(s.id)}"></i>{/if}
 									</td>
-									<td>{s.alive || '†'}</td>
-									<td>{s.peak}</td>
-									<td>{s.born}</td>
-									<td>{s.first}–{s.last ?? 'now'}</td>
-									<td>{s.died ? life(s.avgLife) : '-'}</td>
-									<td>{s.died ? n1(s.avgFit) : '-'}</td>
-									<td>{s.food}</td>
-									<td>{s.prey}</td>
-									<td>{s.eatenBy}</td>
-									<td>{s.starved}</td>
-									<td>×{s.size.toFixed(2)}</td>
-									<td>{s.litter.toFixed(1)}</td>
+									{#each COLS as c (c.key)}<td>{c.show(s)}</td>{/each}
 								</tr>
 								{#if s.albino}
 									{@const a = s.albino}
 									<!-- Its albino subspecies (1 in 1,000 babies). -->
 									<tr class="sub" class:extinct={!a.alive}>
 										<td class="name"><span class="indent">↳</span><i class="dot albino" title="Albino"></i><em>{s.name}</em> (albino)</td>
-										<td>{a.alive || '†'}</td>
-										<td>{a.peak}</td>
-										<td>{a.born}</td>
-										<td></td>
-										<td>{a.died ? life(a.avgLife) : '-'}</td>
-										<td>{a.died ? n1(a.avgFit) : '-'}</td>
-										<td>{a.food}</td>
-										<td>{a.prey}</td>
-										<td>{a.eatenBy}</td>
-										<td>{a.starved}</td>
-										<td></td>
-										<td></td>
+										{#each COLS as c (c.key)}<td>{c.species ? '' : c.show({ ...a, id: s.id })}</td>{/each}
 									</tr>
 								{/if}
 							{:else}
-								<tr><td colspan="13" class="none">No species yet: press ▶ Play.</td></tr>
+								<tr><td colspan={COLS.length + 1} class="none">No species yet: press ▶ Play.</td></tr>
 							{/each}
 						</tbody>
 					</table>
@@ -203,22 +213,17 @@
 				</p>
 				<div class="table-box">
 					<table>
-						<thead><tr><th></th><th>Alive</th><th>Peak</th><th>Born</th><th>Died</th><th>Lifespan</th><th>Avg fitness</th><th>Food</th><th>Prey</th><th>Eaten</th><th>Starved</th><th>Escapes</th></tr></thead>
+						<thead>
+							<tr>
+								<th></th>
+								{#each groupCols as c (c.key)}<th title={c.tip}>{c.label}</th>{/each}
+							</tr>
+						</thead>
 						<tbody>
 							{#each groups as g, i (i)}
 								<tr class:extinct={!g.born}>
 									<td class="name">{#if tab === 'diets'}<i class="dot" style="background: {SHADES[i][3]}"></i>{/if}{names[i]}</td>
-									<td>{g.alive}</td>
-									<td>{g.peak}</td>
-									<td>{g.born}</td>
-									<td>{g.died}</td>
-									<td>{g.died ? life(g.avgLife) : '-'}</td>
-									<td>{g.died ? n1(g.avgFit) : '-'}</td>
-									<td>{g.food}</td>
-									<td>{g.prey}</td>
-									<td>{g.eatenBy}</td>
-									<td>{g.starved}</td>
-									<td>{g.escapes}</td>
+									{#each groupCols as c (c.key)}<td>{c.show(g)}</td>{/each}
 								</tr>
 							{/each}
 						</tbody>
