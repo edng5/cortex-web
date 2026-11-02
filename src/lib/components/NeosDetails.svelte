@@ -127,11 +127,13 @@
 		<div class="body">
 			{#if tab === 'species'}
 				<p class="hint">
-					A species is a group of NEOS whose genes (and diet and size) stay close to its founder’s. The most successful kept breeding: sort by
+					Names are <em>Genus species</em>. A species is a group of NEOS whose genes (and diet and size) stay close to its founder’s; every species
+					starts in the original genus, <em>Neos</em>, and one that drifts far enough from every genus founds a new one ({data.genera} so far). The most
+					successful kept breeding: sort by
 					<b>Born</b> for the biggest lineages, <b>Peak</b> for the most at once, or <b>Avg fitness</b> for the best eaters.
 				</p>
 				<div class="legend">
-					{#each charted as s (s.id)}<span><i style="--c: {colorOf(s.id)}"></i>{s.name}{s.alive ? '' : ' †'}</span>{/each}
+					{#each charted as s (s.id)}<span><i style="--c: {colorOf(s.id)}"></i><em>{s.name}</em>{s.alive ? '' : ' †'}</span>{/each}
 				</div>
 				<div class="chart-box" bind:this={chartBox}><canvas bind:this={chart} aria-label="Population of each species per generation"></canvas></div>
 				<div class="row">
@@ -151,7 +153,7 @@
 							{#each rows as s (s.id)}
 								<tr class:extinct={!s.alive}>
 									<td class="name">
-										<i class="dot" style="background: {SHADES[s.diet][3]}" title={DIET_ONE[s.diet]}></i>{s.name}{#if colorOf(s.id)}<i class="line" style="--c: {colorOf(s.id)}"></i>{/if}
+										<i class="dot" style="background: {SHADES[s.diet][3]}" title={DIET_ONE[s.diet]}></i><em>{s.name}</em>{#if colorOf(s.id)}<i class="line" style="--c: {colorOf(s.id)}"></i>{/if}
 									</td>
 									<td>{s.alive || '†'}</td>
 									<td>{s.peak}</td>
@@ -170,7 +172,7 @@
 									{@const a = s.albino}
 									<!-- Its albino subspecies (1 in 1,000 babies). -->
 									<tr class="sub" class:extinct={!a.alive}>
-										<td class="name"><span class="indent">↳</span><i class="dot albino" title="Albino"></i>Albino {s.name}</td>
+										<td class="name"><span class="indent">↳</span><i class="dot albino" title="Albino"></i><em>{s.name}</em> (albino)</td>
 										<td>{a.alive || '†'}</td>
 										<td>{a.peak}</td>
 										<td>{a.born}</td>

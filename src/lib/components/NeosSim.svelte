@@ -290,7 +290,7 @@
 			px,
 			py,
 			flip: px > r.width * 0.6,
-			species: `${albino ? 'Albino ' : ''}${sp?.name ?? 'Unknown species'}`,
+			species: sp?.name ?? 'Unknown species',
 			diet: n.diet,
 			albino,
 			lines: [
@@ -488,7 +488,9 @@
 		const x = (i: number) => (i / (pts.length - 1)) * (w - 4) + 2;
 		const line = (vals: number[], max: number, color: string, fill = false, dash = false) => {
 			c.beginPath();
-			c.setLineDash(dash ? [6 * dpr, 4 * dpr] : []);
+			// Dotted (fitness: best and average) or solid (populations).
+			c.setLineDash(dash ? [2 * dpr, 3 * dpr] : []);
+			c.lineCap = dash ? 'round' : 'butt';
 			vals.forEach((v, i) => (i ? c.lineTo(x(i), h - 4 - (v / max) * (h - 12)) : c.moveTo(x(i), h - 4 - (v / max) * (h - 12))));
 			if (fill) {
 				c.lineTo(x(vals.length - 1), h);
@@ -502,10 +504,10 @@
 			}
 		};
 		line(pts.map((p) => p.alive), maxPop, 'rgba(148, 163, 184, 0.15)', true);
-		line(pts.map((p) => p.avg), maxFit, '#38bdf8');
-		line(pts.map((p) => p.best), maxFit, '#4ade80');
+		line(pts.map((p) => p.avg), maxFit, '#38bdf8', false, true);
+		line(pts.map((p) => p.best), maxFit, '#4ade80', false, true);
 		// Herbivores: everyone who isn't an omnivore or carnivore (shown once predators are on).
-		if (cfg.predators) line(pts.map((p) => p.alive - (p.omnis ?? 0) - (p.preds ?? 0)), maxPop, '#86efac', false, true);
+		if (cfg.predators) line(pts.map((p) => p.alive - (p.omnis ?? 0) - (p.preds ?? 0)), maxPop, '#86efac');
 		if (pts.some((p) => p.omnis)) line(pts.map((p) => p.omnis ?? 0), maxPop, '#818cf8');
 		if (pts.some((p) => p.preds)) line(pts.map((p) => p.preds ?? 0), maxPop, '#f87171');
 	}
@@ -581,7 +583,7 @@
 			></canvas>
 			{#if hoverInfo}
 				<div class="tip" class:flip={hoverInfo.flip} style="left: {hoverInfo.px}px; top: {hoverInfo.py}px">
-					<b><i class="dot" style="background: {hoverInfo.albino ? '#f5fffa' : SHADES[hoverInfo.diet][3]}"></i>{hoverInfo.species}</b>
+					<b><i class="dot" style="background: {hoverInfo.albino ? '#f5fffa' : SHADES[hoverInfo.diet][3]}"></i><em>{hoverInfo.species}</em>{hoverInfo.albino ? ' (albino)' : ''}</b>
 					{#each hoverInfo.lines as l (l)}<span>{l}</span>{/each}
 				</div>
 			{/if}
@@ -665,7 +667,7 @@
 					<div><span>Hunger</span><b>{Math.round(live.hunger[0] * 100)}% <small>avg</small></b></div>
 				{/if}
 			</div>
-			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population{#if cfg.predators}<i class="dash" style="--c: #86efac"></i>Herbivores{#if cfg.omnivores}<i style="--c: #818cf8"></i>Omnivores{/if}<i style="--c: #f87171"></i>Carnivores{/if}</div>
+			<div class="legend"><i class="dash" style="--c: #4ade80"></i>Best <i class="dash" style="--c: #38bdf8"></i>Average <i class="area"></i>Population{#if cfg.predators}<i style="--c: #86efac"></i>Herbivores{#if cfg.omnivores}<i style="--c: #818cf8"></i>Omnivores{/if}<i style="--c: #f87171"></i>Carnivores{/if}</div>
 			<div class="chart-box" bind:this={chartBox}><canvas class="chart" bind:this={chart} aria-label="Fitness per generation"></canvas></div>
 			<div class="table-box">
 				<table>
@@ -937,6 +939,9 @@
 	.tip.flip {
 		transform: translate(calc(-100% - 14px), -50%);
 	}
+	.tip em {
+		font-style: italic;
+	}
 	.tip b {
 		color: #f1f5f9;
 		font-size: 0.8rem;
@@ -1128,7 +1133,7 @@
 		background: var(--c);
 	}
 	.legend i.dash {
-		background: repeating-linear-gradient(90deg, var(--c) 0 5px, transparent 5px 8px);
+		background: repeating-linear-gradient(90deg, var(--c) 0 2px, transparent 2px 5px);
 	}
 	.legend i.area {
 		height: 8px;

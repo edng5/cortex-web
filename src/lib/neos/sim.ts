@@ -361,7 +361,9 @@ export interface Tally {
 /** A species: NEOS whose genes are within the species threshold of its founder's. */
 export interface Species extends Tally {
 	id: number;
+	/** "Genus species" (its genus, and its own name). */
 	name: string;
+	genus: number;
 	diet: number;
 	/** Generations it was first and (if extinct) last seen. */
 	first: number;
@@ -377,11 +379,18 @@ const tally = (): Tally => ({ born: 0, died: 0, peak: 0, food: 0, prey: 0, eaten
 /** Size classes for the details: small, medium, large. */
 export const SIZE_CLASSES = ['Small (< ×0.8)', 'Medium', 'Large (> ×1.25)'];
 const sizeClass = (s: number) => (s < 0.8 ? 0 : s > 1.25 ? 2 : 1);
-// Species names: two made-up syllables from the id (e.g. "Corlia"), so each is easy to tell apart.
-const SYL_A = ['Ala', 'Bri', 'Cor', 'Del', 'Eri', 'Fen', 'Gal', 'Hal', 'Ira', 'Jun', 'Kel', 'Lum', 'Mor', 'Nix', 'Ori', 'Pel', 'Qua', 'Ros', 'Syl', 'Tor', 'Umb', 'Val', 'Wyn', 'Xan', 'Yor', 'Zel'];
+// Names are binomial, "Genus species" (e.g. "Neos corria"). The species name is two made-up
+// syllables from its id, so each is easy to tell apart.
+const SYL_A = ['ala', 'bri', 'cor', 'del', 'eri', 'fen', 'gal', 'hal', 'ira', 'jun', 'kel', 'lum', 'mor', 'nix', 'ori', 'pel', 'qua', 'ros', 'syl', 'tor', 'umb', 'val', 'wyn', 'xan', 'yor', 'zel'];
 const SYL_B = ['ba', 'cis', 'dra', 'nex', 'fin', 'gor', 'lia', 'mus', 'nox', 'pha', 'ria', 'tus', 'vel', 'zor'];
 const NAMES = 182; // 26 × 14 / gcd: the two syllables don't repeat together before this
-const speciesName = (id: number) => SYL_A[id % SYL_A.length] + SYL_B[(id * 5) % SYL_B.length] + (id >= NAMES ? ` ${Math.floor(id / NAMES) + 1}` : '');
+const speciesName = (id: number) => SYL_A[id % SYL_A.length] + SYL_B[(id * 5) % SYL_B.length] + (id >= NAMES ? `-${Math.floor(id / NAMES) + 1}` : '');
+// Genera: every species starts in the original genus, Neos; one that diverges far enough from
+// every genus's founder (genes, diet and size) founds a new one.
+const GENUS_NAMES = ['Neos', 'Velox', 'Lumina', 'Rapax', 'Natrix', 'Vorax', 'Herbia', 'Corvex', 'Silvana', 'Mordax', 'Pelagia', 'Tenebra', 'Aurex', 'Fulgor', 'Cervia', 'Ignis', 'Sylvex', 'Nocta', 'Viridia', 'Ferox'];
+const genusName = (id: number) => GENUS_NAMES[(id - 1) % GENUS_NAMES.length] + (id > GENUS_NAMES.length ? ` ${Math.ceil(id / GENUS_NAMES.length)}` : '');
+/** How much further than the species threshold a species must be from a genus's founder to found a new genus. */
+const GENUS_SPREAD = 2.5;
 /** Most species kept (the extinct ones that did least are dropped first). */
 const MAX_SPECIES = 300;
 
@@ -435,6 +444,8 @@ export class Sim {
 	/** Each generation: how many of each species were alive at its end. */
 	speciesHistory: { gen: number; counts: Record<number, number> }[] = [];
 	private nextSpecies = 1;
+	/** The genera so far: each one's founding species' genes (newcomers are compared with them). */
+	private genera: { id: number; name: string; rep: Species['rep'] }[] = [];
 	extinct = false;
 	/** Walls stay put across new worlds (they can only be changed before a run starts). */
 	walls: Wall[] = [];
@@ -461,6 +472,7 @@ export class Sim {
 		this.bySize = [tally(), tally(), tally()];
 		this.speciesHistory = [];
 		this.nextSpecies = 1;
+		this.genera = [];
 	}
 
 	reset() {
@@ -648,17 +660,20 @@ export class Sim {
 		}
 		if (!best) {
 			const id = this.nextSpecies++;
+			const rep = { wih: n.wih.slice(), who: n.who.slice(), nh: n.nh, diet: n.diet, size: n.size };
+			const genus = this.genusFor(n, rep);
 			best = {
 				...tally(),
 				id,
-				name: speciesName(id),
+				name: `${genus.name} ${speciesName(id)}`,
+				genus: genus.id,
 				diet: n.diet,
 				first: this.gen,
 				last: null,
 				sizeSum: 0,
 				litterSum: 0,
 				albino: tally(),
-				rep: { wih: n.wih.slice(), who: n.who.slice(), nh: n.nh, diet: n.diet, size: n.size }
+				rep
 			};
 			this.species.set(id, best);
 			this.pruneSpecies();
@@ -669,6 +684,35 @@ export class Sim {
 		best.litterSum += n.litter;
 		for (const t of this.tallies(n)) t.born++;
 	}
+	/**
+	 * A new species' genus: the original NEOS (generation 0) are all Neos; later ones join the
+	 * closest genus whose founder they're still near, or found a new genus if they've diverged too far.
+	 */
+	private genusFor(n: Neo, rep: Species['rep']) {
+		if (!this.genera.length || n.gen === 0) {
+			if (!this.genera.length) this.genera.push({ id: 1, name: genusName(1), rep });
+			return this.genera[0];
+		}
+		let best = null as (typeof this.genera)[number] | null;
+		let bd = this.cfg.compat * GENUS_SPREAD;
+		for (const g of this.genera) {
+			const d = this.speciesDist(n, { rep: g.rep } as Species);
+			if (d <= bd) {
+				bd = d;
+				best = g;
+			}
+		}
+		if (best) return best;
+		const id = this.genera.length + 1;
+		const g = { id, name: genusName(id), rep };
+		this.genera.push(g);
+		return g;
+	}
+	/** How many genera have appeared this run. */
+	generaCount() {
+		return this.genera.length;
+	}
+
 	/** The species, diet and size-class tallies a NEOS counts toward. */
 	private tallies(n: Neo): Tally[] {
 		const s = this.species.get(n.spc);
@@ -713,6 +757,7 @@ export class Sim {
 		const species = [...this.species.values()].map((s) => ({
 			id: s.id,
 			name: s.name,
+			genus: s.name.split(' ')[0],
 			diet: s.diet,
 			first: s.first,
 			last: s.last,
@@ -743,7 +788,8 @@ export class Sim {
 			species,
 			diets: this.byDiet.map((t, i) => group(t, alive.diet[i])),
 			sizes: this.bySize.map((t, i) => group(t, alive.size[i])),
-			history: this.speciesHistory
+			history: this.speciesHistory,
+			genera: this.genera.length
 		};
 	}
 
