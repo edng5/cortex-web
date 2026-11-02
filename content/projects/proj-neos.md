@@ -107,15 +107,19 @@ by elitism.)
 **Surviving on their own.** The live simulator now runs without that top-up by default (it's an
 option), and nothing brings an extinct world back. Babies cost food, so NEOS must eat before they
 can breed; a NEOS ready to breed goes after a mate it can see (its own species and fitter ones
-first; the fittest attract their species from far away) and slows down to meet it. With the
-defaults (maturity at 120 steps, 80 steps' rest between births, one food a baby) populations grow
-until they fill the world (random search too, on numbers alone, though it doesn't get any better at
+first; the fittest attract their species from far away) and slows down to meet it. With maturity
+at 120 steps, 80 steps' rest between births and one food a baby, and food that comes back at once,
+herbivores alone grow until they fill the world (random search too, on numbers alone, though it doesn't get any better at
 eating), while any population with too little food, too short a life or too dear babies dies out. The original's settings (maturity at 200, rest of 150) die out within two
 generations, the same collapse the original hit at generation 6. When litter size, maturity and
 rest evolve, NEOS settle on litters of about 3, mature later (around 400 steps, buying a longer
 life) and rest less. Blending both parents' weights (the original's
 crossover) does worse than taking each weight whole, because averaging pulls every baby toward the
 middle.
+
+**The balanced defaults.** The simulator starts (and its ⚖ button resets) with NEAT, omnivores
+and carnivores on, and food regrowing at 10 a second, without topping up: in 6 of 6 test runs,
+herbivores (about 30–95), omnivores and carnivores were all still going at generation 40.
 
 **Predators in balance.** Predators used to overrun the prey and the whole world collapsed. Five
 checks fixed it, as in real ecosystems: a hunter digests after a kill before hunting again, prey

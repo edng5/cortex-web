@@ -187,9 +187,13 @@
 			note = 'That save couldn’t be read.';
 		}
 	}
+	/**
+	 * The balanced settings (the defaults): NEAT with omnivores and carnivores, food regrowing at
+	 * 10 a second, no top-up. Herbivores, omnivores and carnivores hold an equilibrium on their own.
+	 */
 	function defaults() {
 		cfg = { ...DEFAULTS };
-		note = 'Settings back to the original’s.';
+		note = 'Balanced settings: NEAT, with omnivores and carnivores in equilibrium. Start a new world to begin fresh with them.';
 	}
 	function sync() {
 		live = sim.live();
@@ -689,7 +693,7 @@
 					</label>
 				{/each}
 			</div>
-			<button class="small" onclick={defaults}>Reset to the original’s settings</button>
+			<button class="small balanced" onclick={defaults} title="NEAT with omnivores and carnivores and limited food: settings where the ecosystem holds an equilibrium on its own">⚖ Reset to balanced settings</button>
 		{:else}
 			<fieldset class="algos">
 				<legend>Evolution algorithm</legend>
@@ -754,7 +758,8 @@
 					<label class="opt" title={s.tip}><input type="checkbox" bind:checked={cfg[s.key] as boolean} />{s.label}</label>
 				{/each}
 			</fieldset>
-			<p class="hint">Changes apply straight away; the world keeps going.</p>
+			<button class="small balanced" onclick={defaults} title="NEAT with omnivores and carnivores and limited food: settings where the ecosystem holds an equilibrium on its own">⚖ Reset to balanced settings</button>
+			<p class="hint">Changes apply straight away; the world keeps going. The balanced settings (the defaults) keep herbivores, omnivores and carnivores in equilibrium.</p>
 		{/if}
 	</div>
 	</div>
@@ -1212,6 +1217,10 @@
 	.lab b {
 		color: #4ade80;
 		font-variant-numeric: tabular-nums;
+	}
+	.small.balanced {
+		border-color: rgba(74, 222, 128, 0.6);
+		background: rgba(74, 222, 128, 0.12);
 	}
 	.small {
 		align-self: flex-start;
