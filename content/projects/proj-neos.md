@@ -133,3 +133,10 @@ against 29% for ones that turn toward the hunter.
 
 **Body size.** With hunters about, herbivores grew larger (×1.2–2.0, where a lone smaller hunter
 can't eat them). Without hunters, size just drifted (×0.6–1.5), as being big only costs energy.
+
+**Hunger and size, as in real ecosystems.** Every NEOS can starve: herbivores need to eat often,
+omnivores less so, and carnivores can go twice as long between kills (and digest after one). Small
+NEOS have big litters of cheap babies; big ones have fewer, dearer babies and rest longer between
+births, but store more food, so they last longer between meals. With all of that on, herbivore sizes
+spread out (about ×0.7 to ×1.7) instead of all going one way, and most herbivores that die starve
+rather than get eaten, while carnivores almost never starve.

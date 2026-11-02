@@ -84,7 +84,7 @@
 		{ key: 'sizeMutate', label: 'Body mutation', fmt: (v) => `${Math.round(v * 100)}%`, tip: 'Chance a baby’s size, and separately its speed, change a little.', body: true },
 		{ key: 'maxSize', label: 'Size limit', fmt: (v) => `×${v.toFixed(1)}`, tip: 'The biggest a NEOS can grow (×1 is the original size).', body: true },
 		{ key: 'energyUse', label: 'Energy use', fmt: (v) => v.toFixed(2), tip: 'Energy burned a step, × size² and how fast it’s going. Food refills it; empty is death.', body: true },
-		{ key: 'starve', label: 'Starvation', fmt: (v) => `${v} steps`, tip: 'Omnivores and carnivores die if they go this long without eating; hunger is also what makes babies meatier.', preds: true }
+		{ key: 'starve', label: 'Starvation time', fmt: (v) => `${v} steps`, tip: 'How long a NEOS can go without eating before it starves: herbivores need to eat more often (×0.75), omnivores this long, carnivores twice as long between kills; with body evolution, bigger NEOS last longer (they store more). Hunger also makes babies meatier.' }
 	];
 	const SELECTIONS: [Selection, string, string][] = [
 		['truncation', 'Truncation', 'Parents are random picks from the top elitism % (the original).'],
@@ -294,7 +294,8 @@
 				`Generation ${n.gen} · ${n.nh} hidden node${n.nh === 1 ? '' : 's'}`,
 				...(sim.cfg.litter ? [`Litters of ${n.litter} · matures at ${Math.round(n.matureAt * DT)}s · rests ${Math.round(n.rest * DT)}s`] : []),
 				...(n.seekD < Infinity ? ['Courting a mate'] : []),
-				`Fitness ${num(n.fit)} · age ${Math.round(n.age * DT)}s of ${Math.round(n.life * DT)}s`
+				`Fitness ${num(n.fit)} · age ${Math.round(n.age * DT)}s of ${Math.round(n.life * DT)}s`,
+				`Hunger ${Math.round(Math.min(1, n.hunger / sim.starveLimit(n)) * 100)}% (starves after ${Math.round(sim.starveLimit(n) * DT)}s without food)${n.digest > 0 ? ' · digesting' : ''}`
 			]
 		};
 	}
@@ -653,6 +654,11 @@
 					{#if cfg.omnivores}<div class="omni"><span>Omnivores</span><b>{live.omnis}</b></div>{/if}
 					<div class="pred"><span>Carnivores</span><b>{live.preds}</b></div>
 					<div class="pred"><span>Eaten</span><b>{totals.eaten.toLocaleString()}</b></div>
+					<div class="herb"><span>Hunger (herbivores)</span><b>{Math.round(live.hunger[0] * 100)}%</b></div>
+					{#if cfg.omnivores}<div class="omni"><span>Hunger (omnivores)</span><b>{live.omnis ? `${Math.round(live.hunger[1] * 100)}%` : '-'}</b></div>{/if}
+					<div class="pred"><span>Hunger (carnivores)</span><b>{live.preds ? `${Math.round(live.hunger[2] * 100)}%` : '-'}</b></div>
+				{:else}
+					<div><span>Hunger</span><b>{Math.round(live.hunger[0] * 100)}% <small>avg</small></b></div>
 				{/if}
 			</div>
 			<div class="legend"><i style="--c: #4ade80"></i>Best <i style="--c: #38bdf8"></i>Average <i class="area"></i>Population{#if cfg.predators}<i class="dash" style="--c: #86efac"></i>Herbivores{#if cfg.omnivores}<i style="--c: #818cf8"></i>Omnivores{/if}<i style="--c: #f87171"></i>Carnivores{/if}</div>

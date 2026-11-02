@@ -32,6 +32,8 @@ const ATTRACT_FAR = 2.5;
 const ESCAPE_FIT = 0.5;
 /** Steps a hunter spends digesting after a kill, before it can hunt again. */
 const DIGEST = 120;
+/** How long each diet can go without eating, × the starvation setting: herbivores, omnivores, carnivores. */
+const HUNGER_TOLERANCE = [0.75, 1, 2];
 /** Body evolution: energy from a food particle, a full store (× size), and the smallest size. */
 const FOOD_E = 20;
 const STORE_E = 70;
@@ -96,7 +98,7 @@ export interface Config {
 	predSpeed: number;
 	/** How far away a NEOS senses a predator. */
 	senseR: number;
-	/** Steps a predator lasts without eating. */
+	/** Steps an omnivore lasts without eating; herbivores need to eat more often (×0.75), carnivores can go longer (×2). */
 	starve: number;
 	/** Body evolution: size and speed are genes, paid for in energy. */
 	body: boolean;
@@ -349,6 +351,8 @@ export interface Tally {
 	/** NEOS it ate, and how many of its own were eaten. */
 	prey: number;
 	eatenBy: number;
+	/** Died of hunger. */
+	starved: number;
 	escapes: number;
 	/** Summed over the dead: fitness and age, for averages. */
 	fitSum: number;
@@ -369,7 +373,7 @@ export interface Species extends Tally {
 	/** The founder's genes, which newcomers are compared against. */
 	rep: { wih: Float32Array; who: Float32Array; nh: number; diet: number; size: number };
 }
-const tally = (): Tally => ({ born: 0, died: 0, peak: 0, food: 0, prey: 0, eatenBy: 0, escapes: 0, fitSum: 0, lifeSum: 0 });
+const tally = (): Tally => ({ born: 0, died: 0, peak: 0, food: 0, prey: 0, eatenBy: 0, starved: 0, escapes: 0, fitSum: 0, lifeSum: 0 });
 /** Size classes for the details: small, medium, large. */
 export const SIZE_CLASSES = ['Small (< ×0.8)', 'Medium', 'Large (> ×1.25)'];
 const sizeClass = (s: number) => (s < 0.8 ? 0 : s > 1.25 ? 2 : 1);
@@ -721,6 +725,7 @@ export class Sim {
 			food: s.food,
 			prey: s.prey,
 			eatenBy: s.eatenBy,
+			starved: s.starved,
 			escapes: s.escapes,
 			avgFit: s.died ? s.fitSum / s.died : 0,
 			avgLife: s.died ? s.lifeSum / s.died : 0,
@@ -754,6 +759,16 @@ export class Sim {
 	private compatible(a: Neo, b: Neo) {
 		return Math.abs(a.diet - b.diet) <= 1 && (this.cfg.algo !== 'neat' || this.distance(a, b) <= this.cfg.compat);
 	}
+	/**
+	 * How long a NEOS can go without eating before it starves: herbivores need to eat often,
+	 * carnivores can go a long time between kills (as in real life), omnivores are in between; and
+	 * with body evolution, the bigger it is, the longer it lasts (it stores more).
+	 */
+	starveLimit(n: { diet: number; size?: number }) {
+		// (Body evolution) bigger bodies store more food, so they last longer between meals.
+		return this.cfg.starve * HUNGER_TOLERANCE[n.diet] * (this.cfg.body ? (n.size ?? 1) : 1);
+	}
+
 	/** a can eat b: carnivores eat herbivores and omnivores; omnivores eat herbivores. */
 	private eats(a: Neo, b: Neo) {
 		return a.diet === 2 ? b.diet < 2 : a.diet === 1 && b.diet === 0;
@@ -783,7 +798,7 @@ export class Sim {
 		const c = this.cfg;
 		const d = p.diet ?? 0;
 		if (!c.predators) return 0;
-		const hunger = 'hunger' in p ? Math.min(1, p.hunger / (c.starve * 0.5)) : 0;
+		const hunger = 'hunger' in p ? Math.min(1, p.hunger / (this.starveLimit(p as Neo) * 0.5)) : 0;
 		const meaty = d === 1 && 'meat' in p && p.fit > 0 ? p.meat / p.fit : 0;
 		// How short food is across the world: none when it's plentiful (or regrows at once), so
 		// one unlucky hungry NEOS in a well-fed world doesn't start a line of predators.
@@ -822,9 +837,21 @@ export class Sim {
 	/** Resting less between births makes each baby cost more food (√ of how much shorter the rest is). */
 	private babyCost(a: Neo, b: Neo) {
 		const c = this.cfg;
-		if (!c.litter) return c.breedCost;
+		// (Body evolution) small parents have small, cheap babies; big ones, big and dear.
+		const sized = c.body ? c.breedCost * ((a.size + b.size) / 2) : c.breedCost;
+		if (!c.litter) return sized;
 		const rest = Math.max(10, (a.rest + b.rest) / 2);
-		return c.breedCost * Math.min(2.5, Math.max(0.7, Math.sqrt(Math.max(10, c.cooldown) / rest)));
+		return sized * Math.min(2.5, Math.max(0.7, Math.sqrt(Math.max(10, c.cooldown) / rest)));
+	}
+	/**
+	 * (Body evolution) how many babies a birth tends to have for its parents' size: small NEOS have
+	 * big litters, large ones fewer (× size^-1.5: half size, ~2.8×; double size, ~0.35×), on top of
+	 * the litter gene. Rounded at random, so large ones average under one... but always at least one.
+	 */
+	private sizedLitter(gene: number, a: Neo, b: Neo) {
+		if (!this.cfg.body) return gene;
+		const x = gene * Math.pow((a.size + b.size) / 2, -1.5);
+		return Math.max(1, Math.min(this.cfg.maxLitter + 3, Math.floor(x) + (Math.random() < x - Math.floor(x) ? 1 : 0)));
 	}
 
 	/**
@@ -844,7 +871,7 @@ export class Sim {
 		// Each baby costs food from the parents' stores: a litter is as big as the gene says and they can afford.
 		const funds = a === b ? a.store : a.store + b.store;
 		const cost = this.babyCost(a, b);
-		const k = Math.max(0, Math.min(room, (a.fit >= b.fit ? a : b).litter, Math.floor(funds / cost)));
+		const k = Math.max(0, Math.min(room, this.sizedLitter((a.fit >= b.fit ? a : b).litter, a, b), Math.floor(funds / cost)));
 		if (!k) return [];
 		const left = Math.max(0, funds - k * cost);
 		if (a === b) a.store = left;
@@ -858,9 +885,10 @@ export class Sim {
 			const r = k > 1 ? 0.06 : 0;
 			out.push(this.child(a, b, Math.min(WORLD, Math.max(-WORLD, a.x + Math.cos(ang) * r)), Math.min(WORLD, Math.max(-WORLD, a.y + Math.sin(ang) * r)), k));
 		}
-		// Each parent rests by its own rest gene, longer after a bigger litter.
-		a.cool = Math.round(a.rest * (1 + 0.6 * (k - 1)));
-		b.cool = Math.round(b.rest * (1 + 0.6 * (k - 1)));
+		// Each parent rests by its own rest gene, longer after a bigger litter, and (body evolution)
+		// longer the bigger it is: large NEOS breed less often, so they average fewer babies.
+		a.cool = Math.round(a.rest * (1 + 0.6 * (k - 1)) * (c.body ? a.size : 1));
+		b.cool = Math.round(b.rest * (1 + 0.6 * (k - 1)) * (c.body ? b.size : 1));
 		return out;
 	}
 
@@ -1141,8 +1169,9 @@ export class Sim {
 		const acc = c.dvMax * DT;
 		let w = 0;
 		for (const n of neos) {
-			// Old age, eaten, (meat-eaters) starved, or (body evolution) out of energy.
-			if (n.age >= n.life || n.eaten || (n.diet > 0 && n.hunger > c.starve) || (c.body && n.energy <= 0)) {
+			// Old age, eaten, starved (gone too long without eating for its diet), or (body evolution) out of energy.
+			const starved = n.hunger > this.starveLimit(n) || (c.body && n.energy <= 0);
+			if (n.age >= n.life || n.eaten || starved) {
 				this.cur.deadFit.push(n.fit);
 				this.cur.died++;
 				this.totals.died++;
@@ -1151,6 +1180,7 @@ export class Sim {
 					t.fitSum += n.fit;
 					t.lifeSum += n.age;
 					if (n.eaten) t.eatenBy++;
+					else if (starved && n.age < n.life) t.starved++;
 				}
 				continue;
 			}
@@ -1275,7 +1305,7 @@ export class Sim {
 			if (!prey) continue;
 			// Still digesting its last kill: not hunting (an omnivore keeps eating plants). Omnivores
 			// mostly graze, and only hunt once they've gone a while without eating.
-			if (n.digest > 0 || (n.diet === 1 && n.hunger < c.starve * 0.25)) continue;
+			if (n.digest > 0 || (n.diet === 1 && n.hunger < this.starveLimit(n) * 0.25)) continue;
 			const d = Math.sqrt(pd);
 			if (d <= this.touch(n, prey)) this.bite(n, prey);
 			if (!prey.eaten && (n.diet === 2 || d < n.foodD)) n.input = heading(n, prey.x, prey.y);
@@ -1457,6 +1487,11 @@ export class Sim {
 			sizeMeat: preds + omnis ? sizeM / (preds + omnis) : 0,
 			speedGene: n ? speed / n : 1,
 			litter: n ? this.neos.reduce((a, o) => a + o.litter, 0) / n : 1,
+			/** Average hunger per diet, as a share of how long that diet can go without eating (0-1). */
+			hunger: [0, 1, 2].map((d) => {
+				const g = this.neos.filter((o) => o.diet === d);
+				return g.length ? g.reduce((a, o) => a + Math.min(1, o.hunger / this.starveLimit(o)), 0) / g.length : 0;
+			}),
 			matureAt: n ? this.neos.reduce((a, o) => a + o.matureAt, 0) / n : this.cfg.mature,
 			rest: n ? this.neos.reduce((a, o) => a + o.rest, 0) / n : this.cfg.cooldown,
 			litterHerb: n - preds - omnis ? this.neos.reduce((a, o) => a + (o.diet ? 0 : o.litter), 0) / (n - preds - omnis) : 0,

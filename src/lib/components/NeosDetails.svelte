@@ -16,7 +16,7 @@
 	let data = $state<Details>(sim.details());
 	let tab = $state<'species' | 'diets' | 'sizes'>('species');
 	/** The table's columns (what it can be sorted by). */
-	type SortKey = 'name' | 'alive' | 'peak' | 'born' | 'first' | 'avgLife' | 'avgFit' | 'food' | 'prey' | 'eatenBy' | 'size' | 'litter';
+	type SortKey = 'name' | 'alive' | 'peak' | 'born' | 'first' | 'avgLife' | 'avgFit' | 'food' | 'prey' | 'eatenBy' | 'starved' | 'size' | 'litter';
 	let sortBy = $state<SortKey>('born');
 	let showExtinct = $state(true);
 
@@ -142,7 +142,7 @@
 					<table>
 						<thead>
 							<tr>
-								{#each [['name', 'Species'], ['alive', 'Alive'], ['peak', 'Peak'], ['born', 'Born'], ['first', 'Gens'], ['avgLife', 'Lifespan'], ['avgFit', 'Avg fitness'], ['food', 'Food'], ['prey', 'Prey'], ['eatenBy', 'Eaten'], ['size', 'Size'], ['litter', 'Litter']] as [k, label] (k)}
+								{#each [['name', 'Species'], ['alive', 'Alive'], ['peak', 'Peak'], ['born', 'Born'], ['first', 'Gens'], ['avgLife', 'Lifespan'], ['avgFit', 'Avg fitness'], ['food', 'Food'], ['prey', 'Prey'], ['eatenBy', 'Eaten'], ['starved', 'Starved'], ['size', 'Size'], ['litter', 'Litter']] as [k, label] (k)}
 									<th class:sorted={sortBy === k}><button onclick={() => (sortBy = k as SortKey)}>{label}</button></th>
 								{/each}
 							</tr>
@@ -162,6 +162,7 @@
 									<td>{s.food}</td>
 									<td>{s.prey}</td>
 									<td>{s.eatenBy}</td>
+									<td>{s.starved}</td>
 									<td>×{s.size.toFixed(2)}</td>
 									<td>{s.litter.toFixed(1)}</td>
 								</tr>
@@ -179,12 +180,13 @@
 										<td>{a.food}</td>
 										<td>{a.prey}</td>
 										<td>{a.eatenBy}</td>
+										<td>{a.starved}</td>
 										<td></td>
 										<td></td>
 									</tr>
 								{/if}
 							{:else}
-								<tr><td colspan="12" class="none">No species yet: press ▶ Play.</td></tr>
+								<tr><td colspan="13" class="none">No species yet: press ▶ Play.</td></tr>
 							{/each}
 						</tbody>
 					</table>
@@ -199,7 +201,7 @@
 				</p>
 				<div class="table-box">
 					<table>
-						<thead><tr><th></th><th>Alive</th><th>Peak</th><th>Born</th><th>Died</th><th>Lifespan</th><th>Avg fitness</th><th>Food</th><th>Prey</th><th>Eaten</th><th>Escapes</th></tr></thead>
+						<thead><tr><th></th><th>Alive</th><th>Peak</th><th>Born</th><th>Died</th><th>Lifespan</th><th>Avg fitness</th><th>Food</th><th>Prey</th><th>Eaten</th><th>Starved</th><th>Escapes</th></tr></thead>
 						<tbody>
 							{#each groups as g, i (i)}
 								<tr class:extinct={!g.born}>
@@ -213,6 +215,7 @@
 									<td>{g.food}</td>
 									<td>{g.prey}</td>
 									<td>{g.eatenBy}</td>
+									<td>{g.starved}</td>
 									<td>{g.escapes}</td>
 								</tr>
 							{/each}
