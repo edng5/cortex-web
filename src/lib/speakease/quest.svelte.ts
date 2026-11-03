@@ -1,5 +1,5 @@
-// Phrase Quest: learn phrases in a language by saying them. Easy greetings first; pass PER_LEVEL
-// phrases to level up, and each level brings harder ones. After a level-up, a few phrases from
+// Phrase Quest: learn phrases in a language by saying them. Easy greetings first; pass perLevel()
+// phrases to level up (more at each level), and each level brings harder ones. After a level-up, a few phrases from
 // earlier levels come back for review. A phrase you don't get gives you 2 more tries, then moves
 // on and comes back a few phrases later. Progress is kept per language (never purged).
 import { app, load, newId, post, store } from './app.svelte';
@@ -42,7 +42,8 @@ export interface Result {
 	xp: number;
 }
 
-export const PER_LEVEL = 5;
+/** New phrases to pass to finish a level: 8 at level 1, two more each level after, up to 20. */
+export const perLevel = (level: number) => Math.min(20, 8 + 2 * (Math.max(1, level) - 1));
 /** Tries per phrase before moving on (the first go and 2 retries). */
 export const TRIES = 3;
 const REVIEWS = 3;
@@ -139,8 +140,8 @@ class PhraseQuest {
 	async attempt(blob: Blob) {
 		const c = this.card;
 		if (!c || this.checking) return;
-		// Each try costs energy.
-		if (!game.spend()) {
+		// Each try costs energy (not for members: they have unlimited energy here).
+		if (!game.unlimited && !game.spend()) {
 			app.say('Out of energy! It fills back up tomorrow.');
 			return;
 		}
@@ -213,7 +214,7 @@ class PhraseQuest {
 				p.learned.push({ ...c, review: undefined });
 				p.passed++;
 				app.countPhrase(this.locale);
-				if (p.passed >= PER_LEVEL) {
+				if (p.passed >= perLevel(p.level)) {
 					p.level++;
 					p.passed = 0;
 					this.levelUp = p.level;

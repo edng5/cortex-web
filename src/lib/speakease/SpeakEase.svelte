@@ -20,8 +20,10 @@
 	let {
 		nickname = null,
 		account = null,
-		back = '/?node=proj-speakease'
-	}: { nickname?: string | null; account?: string | null; back?: string } = $props();
+		back = '/?node=proj-speakease',
+		/** On the site's member list: unlimited energy in Phrase Quest. */
+		member = false
+	}: { nickname?: string | null; account?: string | null; back?: string; member?: boolean } = $props();
 
 	/** The games (Phrase Quest, scenarios, the dictionary) need an account; friend chats don't. */
 	const signedIn = $derived(!!account);
@@ -37,6 +39,8 @@
 		let gone = false;
 		// Signed in: first take the account's progress (if it's newer), then keep sending changes.
 		const synced = account ? pullProgress(account) : Promise.resolve(false);
+		// Members have unlimited energy in Phrase Quest.
+		game.unlimited = member;
 		synced.then((inStep) => {
 			if (gone) return;
 			quest.locale = load('phrases-lang', quest.locale);

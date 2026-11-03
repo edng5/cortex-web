@@ -4,7 +4,8 @@
 	import Icon from './Icon.svelte';
 	import { ENERGY_MAX, countdown, game } from './game.svelte';
 
-	let { out = false, onhome }: { out?: boolean; onhome?: () => void } = $props();
+	/** `unlimited`: a member in Phrase Quest (no energy used): the chip shows ∞. */
+	let { out = false, onhome, unlimited = false }: { out?: boolean; onhome?: () => void; unlimited?: boolean } = $props();
 
 	// The countdown ticks every second while it's showing.
 	$effect(() => {
@@ -24,6 +25,10 @@
 		<p class="muted">Chats with your friends are free: keep talking while you wait.</p>
 		{#if onhome}<button class="btn" onclick={onhome}>Back to friends</button>{/if}
 	</div>
+{:else if unlimited}
+	<span class="chip" title="Unlimited energy: members’ tries in Phrase Quest are free.">
+		<Icon name="bolt" size={16} />∞
+	</span>
 {:else}
 	<span class="chip" class:low={game.energy <= 3} title="Energy: {game.energy} of {ENERGY_MAX}. Each try uses 1; it fills back up each day.">
 		<Icon name="bolt" size={16} />{game.energy}

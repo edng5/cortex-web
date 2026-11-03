@@ -102,6 +102,8 @@ class Game {
 	private heldParty = false;
 	/** Ticks so the next day's refill (and its countdown) shows up. */
 	now = $state(Date.now());
+	/** Members (the site's member list): Phrase Quest costs them no energy. */
+	unlimited = $state(false);
 	private popId = 0;
 	private wonTimer: ReturnType<typeof setTimeout> | undefined;
 

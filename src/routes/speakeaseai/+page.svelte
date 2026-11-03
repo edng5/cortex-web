@@ -37,7 +37,7 @@
 		<p class="note">{HOW_TO_NOTE}</p>
 	</div>
 	<div class="phone">
-		<div class="screen"><SpeakEase nickname={data.nickname} account={data.account} {back} /></div>
+		<div class="screen"><SpeakEase nickname={data.nickname} account={data.account} member={!!data.user?.isMember} {back} /></div>
 	</div>
 </main>
 

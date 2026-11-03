@@ -96,7 +96,7 @@ How to use it:
   tip, with normal and slow playback); the light bulb suggests what to say next. Chats are saved
   on your device for 30 days.
 - Phrase Quest: learn phrases in any of the 16 languages. It starts with easy greetings and gets
-  harder as you level up (5 phrases a level). Each phrase shows its meaning, a sound-it-out spelling,
+  harder as you level up (8 phrases for the first level, 2 more each level after, up to 20). Each phrase shows its meaning, a sound-it-out spelling,
   IPA (and romanization for other scripts) and tips for the tricky sounds; hear it at normal or slow
   speed, then say it. Miss it and you get 2 more tries before it moves on and comes back later; after
   each level-up, earlier phrases come back for review.

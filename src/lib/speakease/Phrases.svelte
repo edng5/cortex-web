@@ -7,7 +7,7 @@
 	import Energy from './Energy.svelte';
 	import { game } from './game.svelte';
 	import { app } from './app.svelte';
-	import { PER_LEVEL, TRIES, quest } from './quest.svelte';
+	import { TRIES, perLevel, quest } from './quest.svelte';
 	import { noSpaces } from './data';
 
 	let { onback }: { onback: () => void } = $props();
@@ -43,12 +43,12 @@
 	<button class="review-btn" onclick={() => (reviewOpen = true)} disabled={!p.learned.length} title={p.learned.length ? 'Review earlier phrases' : 'Learn a phrase first'}>
 		<Icon name="retry" size={16} />Review
 	</button>
-	<Energy />
+	<Energy unlimited={game.unlimited} />
 	<span class="level">Lv {p.level}</span>
 </header>
 
-<div class="progress" aria-label="{p.passed} of {PER_LEVEL} phrases to the next level">
-	{#each Array(PER_LEVEL) as _, i (i)}<i class:on={i < p.passed}></i>{/each}
+<div class="progress" aria-label="{p.passed} of {perLevel(p.level)} phrases to the next level">
+	{#each Array(perLevel(p.level)) as _, i (i)}<i class:on={i < p.passed}></i>{/each}
 </div>
 
 <div class="body">
@@ -109,7 +109,7 @@
 			{/if}
 		</article>
 
-		{#if game.energy < 1 && !quest.checking && !settled}
+		{#if game.energy < 1 && !game.unlimited && !quest.checking && !settled}
 			<Energy out onhome={onback} />
 		{:else if quest.checking}
 			<div class="result"><div class="spinner small" aria-hidden="true"></div><p>Listening to how you said it…</p></div>
@@ -122,7 +122,7 @@
 					{#if r.pass}
 						<p class="big">{praise(r.score)} <span class="xp">+{r.xp} XP</span></p>
 						{#if game.combo >= 2}<p class="combo">Combo x{game.combo}! Keep getting them first try.</p>{/if}
-						<p>{card.review ? 'Still got it.' : `${p.passed + 1 >= PER_LEVEL ? 'That finishes the level!' : `${PER_LEVEL - p.passed - 1} more to level ${p.level + 1}.`}`}</p>
+						<p>{card.review ? 'Still got it.' : `${p.passed + 1 >= perLevel(p.level) ? 'That finishes the level!' : `${perLevel(p.level) - p.passed - 1} more to level ${p.level + 1}.`}`}</p>
 					{:else if quest.retriesLeft > 0}
 						<p class="big">Almost!</p>
 						<p>Listen again and give it another go. {quest.retriesLeft} {quest.retriesLeft === 1 ? 'try' : 'tries'} left.</p>
@@ -151,7 +151,7 @@
 	<HoldMic
 		bind:recording
 		hint={settled ? 'Tap Next to carry on' : quest.tries ? 'Hold and try again' : 'Hold and say the phrase'}
-		disabled={!card || quest.checking || settled || game.energy < 1}
+		disabled={!card || quest.checking || settled || (game.energy < 1 && !game.unlimited)}
 		onrecord={(b) => quest.attempt(b)}
 	/>
 </div>
