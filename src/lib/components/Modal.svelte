@@ -13,6 +13,7 @@
 		width = '640px',
 		bare = false,
 		swipeClose = false,
+		z = 60,
 		children
 	}: {
 		title: string;
@@ -21,6 +22,8 @@
 		bare?: boolean;
 		/** Phones: swipe the card down to close it (for node views, not pop-ups with draggable content). */
 		swipeClose?: boolean;
+		/** Stacking layer (60, above the page; higher for pop-ups opened over the games window, at 80). */
+		z?: number;
 		children: Snippet;
 	} = $props();
 	let swiped = $state(false);
@@ -41,7 +44,7 @@
 <svelte:window onkeydowncapture={onKey} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="backdrop" transition:fade={{ duration: 180 }} onclick={(e) => e.target === e.currentTarget && onclose()}>
+<div class="backdrop" style="z-index: {z}" transition:fade={{ duration: 180 }} onclick={(e) => e.target === e.currentTarget && onclose()}>
 	<div
 		class="card"
 		class:bare

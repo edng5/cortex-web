@@ -78,7 +78,8 @@
 	{@const g = openGame}
 	{@const row = data?.games[g.id]}
 	<div use:portal>
-		<Modal title="{g.title} leaders" width="420px" onclose={() => (open = null)}>
+		<!-- Above the E.Ngine Games window (80), where this board also shows; below the lightbox (100). -->
+		<Modal title="{g.title} leaders" width="420px" z={90} onclose={() => (open = null)}>
 			<div class="pop" style="--accent: {g.accent}">
 				<div class="pophead">
 					<img src={g.icon} alt="" width="40" height="40" />
