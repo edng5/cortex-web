@@ -1,5 +1,6 @@
 // GET /api/games/:game/save → { data, savedAt } the signed-in player's progress (data: null if none).
-// PUT /api/games/:game/save { data, savedAt } → keep it if it's newer than the account's copy.
+// PUT /api/games/:game/save { data, savedAt, base?, device? } → keep it, unless another device has
+//     saved since `base` (the version this device last had): then 409 { data, savedAt }, the newer save.
 import { error, json } from '@sveltejs/kit';
 import { isGame } from '$lib/server/scores';
 import { MAX_SAVE_BYTES, getSave, putSave } from '$lib/server/game-saves';
@@ -26,6 +27,11 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
 	const savedAt = Number(body?.savedAt);
 	if (typeof data !== 'string' || data.length > MAX_SAVE_BYTES) error(400, 'Invalid save.');
 	if (!Number.isFinite(savedAt) || savedAt <= 0) error(400, 'Invalid save time.');
+	const base = body?.base === undefined || body?.base === null ? undefined : Number(body.base);
+	if (base !== undefined && !Number.isFinite(base)) error(400, 'Invalid base.');
+	const device = typeof body?.device === 'string' ? body.device.slice(0, 40) : undefined;
 	// A clock far in the future would make this save win forever: cap it at now.
-	return json({ savedAt: putSave(locals.user.id, params.game, data, Math.min(savedAt, Date.now())) });
+	const r = putSave(locals.user.id, params.game, data, Math.min(savedAt, Date.now()), { base, device });
+	if (r.conflict) return json(r.conflict, { status: 409 });
+	return json({ savedAt: r.savedAt });
 };

@@ -182,7 +182,7 @@ db.transaction(() => {
 	// Newer than anything on the player's devices, so it replaces the new store they started.
 	db.prepare(
 		`INSERT INTO game_saves (user_id, game, data, saved_at) VALUES (?, 'ifish', ?, ?)
-		 ON CONFLICT(user_id, game) DO UPDATE SET data = excluded.data, saved_at = excluded.saved_at`
+		 ON CONFLICT(user_id, game) DO UPDATE SET data = excluded.data, saved_at = excluded.saved_at, device = NULL`
 	).run(target.id, restored, Date.now());
 	if (owner !== target.id) {
 		db.prepare('DELETE FROM ifish_showcase WHERE user_id = ?').run(target.id);

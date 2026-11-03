@@ -152,6 +152,9 @@ export function getDb(): Database.Database {
 	if (!cols.includes('tank')) db.exec('ALTER TABLE ifish_showcase ADD COLUMN tank TEXT');
 	// The whole store (layout and every tank), for walking around it in the showcase.
 	if (!cols.includes('layout')) db.exec('ALTER TABLE ifish_showcase ADD COLUMN layout TEXT');
+	// Which device last wrote each save (so a device's own saves never count as a conflict).
+	const saveCols = (db.prepare('PRAGMA table_info(game_saves)').all() as { name: string }[]).map((c) => c.name);
+	if (!saveCols.includes('device')) db.exec('ALTER TABLE game_saves ADD COLUMN device TEXT');
 	purgeExpired();
 	setInterval(purgeExpired, 60 * 60 * 1000).unref(); // hourly
 	return db;

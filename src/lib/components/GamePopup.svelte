@@ -3,8 +3,10 @@
   Leaving a game (Esc, ✕, a click outside, or Quit / Exit in its own menu) closes the pop-up,
   back to the node; opened from the header's Play button, or on phones and mid-size screens (no
   games menu beside the node), it goes back to the games menu first. Esc, ✕ and clicking outside ask first, so a stray key press doesn't end a
-  run; the game pauses while asking. The pop-up stays mounted (hidden and paused), and so does
-  every game started in it, so each one is where you left it when reopened.
+  run; the game pauses while asking. Leaving a game saves it (to the account too, when signed in)
+  and closes it, so reopening starts it fresh from its menu, from the latest save (which may have
+  come from another device meanwhile). Only the game showing stays open; the pop-up itself stays
+  mounted (hidden) between visits.
   On mid-size screens the node has no menu beside it, so the pop-up opens on the menu instead.
 -->
 <script lang="ts">
@@ -19,13 +21,14 @@
 
 	let confirming = $state(false);
 	let keepBtn = $state<HTMLButtonElement>();
-	/** Games started so far (they stay mounted, paused when not showing). */
+	/** The game open now (a game is closed, saving first, as soon as it's left). */
 	let started = $state<string[]>([]);
 	const current = $derived(gameById(session.gameId));
 
 	$effect(() => {
 		const id = session.gameId;
-		if (id && !started.includes(id)) started = [...started, id];
+		// Only the game showing stays open: leaving one (or switching) closes it, which saves it.
+		started = id ? [id] : [];
 	});
 
 	function askClose() {
@@ -142,7 +145,7 @@
 			<div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="leave-title">
 				<div class="box">
 					<h2 id="leave-title">Leave the game?</h2>
-					<p>It keeps your place: reopen it any time before you leave the site. High scores are saved.</p>
+					<p>Your progress and high scores are saved. Next time it opens from its menu.</p>
 					<div class="actions">
 						<button class="keep" bind:this={keepBtn} onclick={keepPlaying}>Keep playing</button>
 						<button class="leave" onclick={leaveGame}>Close game</button>

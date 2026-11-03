@@ -89,7 +89,8 @@ s.found = [...new Set([...(Array.isArray(s.found) ? s.found : []), ...wanted.map
 s.log = [`A gift from FishMart: ${wanted.map((sp) => sp.name).join(' and ')}, waiting in your backroom.`, ...(Array.isArray(s.log) ? s.log : [])].slice(0, 30);
 
 // Newer than anything on the player's devices, so this copy wins the next sync.
-db.prepare("UPDATE game_saves SET data = ?, saved_at = ? WHERE user_id = ? AND game = 'ifish'").run(JSON.stringify(s), Date.now(), row.user_id);
+// (No device: every device's next save is refused until it has taken this one.)
+db.prepare("UPDATE game_saves SET data = ?, saved_at = ?, device = NULL WHERE user_id = ? AND game = 'ifish'").run(JSON.stringify(s), Date.now(), row.user_id);
 
 console.log(`\nGave ${wanted.length} fish to "${s.name}"; they're in the backroom (${s.hold.length}/${s.holdCap}).`);
 console.log(`Backup of the save before: ${backup}`);

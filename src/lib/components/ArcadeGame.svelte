@@ -6,7 +6,7 @@
   `active` = false pauses the game (pop-up hidden, another game showing, or "Leave the game?").
 -->
 <script lang="ts">
-	import { onMount, type Component } from 'svelte';
+	import { onMount, tick, type Component } from 'svelte';
 	import type { ArcadeGame, Board } from '$lib/games/common';
 	import type { GameSpec, GameUiProps } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
@@ -54,9 +54,42 @@
 		const shown = performance.now();
 		const user = session.user;
 		const tag = user ? accountTag(user.email) : null;
+		/** Hook a freshly loaded canvas game up to the page. */
+		const prepare = (g: ArcadeGame) => {
+			g.onQuit = () => onquit?.();
+			g.onScore = submitScore;
+			g.sfx = (name) => gameAudio.play(spec.id, name);
+			g.loggedIn = !!session.user;
+		};
+		/**
+		 * Another device has saved since this copy (found on coming back to the page, or when the
+		 * account refused a save): restart the game from that newer save, without this copy's
+		 * progress being saved over it. A component game is closed first (it saves as it closes),
+		 * then the newer save is put in place, then it's opened again; a canvas game is dropped
+		 * without saving and loaded again.
+		 */
+		const restartFrom = async (adopt: () => void) => {
+			if (disposed) return adopt();
+			if (spec.ui) {
+				const C = Ui;
+				Ui = null;
+				await tick();
+				adopt();
+				Ui = C;
+			} else {
+				game = null;
+				adopt();
+				if (status !== 'running') return;
+				const g = await spec.load!();
+				if (disposed) return;
+				prepare(g);
+				game = g;
+				repaint = true;
+			}
+		};
 		const ready = (tag ? pullSave(spec.id, spec.saveKey, tag) : Promise.resolve(false)).then((inStep) => {
 			// Watch from here on (so taking the account's copy doesn't count as a new change).
-			sync = watchSave(spec.id, spec.saveKey, () => (inStep && session.user?.email === user?.email ? tag : null));
+			sync = watchSave(spec.id, spec.saveKey, () => (inStep && session.user?.email === user?.email ? tag : null), (adopt) => void restartFrom(adopt));
 			syncFlush = sync.flush;
 		});
 		const atLeast = <T,>(v: T) => new Promise<T>((done) => setTimeout(() => done(v), Math.max(0, shown + 900 - performance.now())));
@@ -81,10 +114,7 @@
 			.then((g) => {
 				if (disposed) return;
 				game = g;
-				g.onQuit = () => onquit?.();
-				g.onScore = submitScore;
-				g.sfx = (name) => gameAudio.play(spec.id, name);
-				g.loggedIn = !!session.user;
+				prepare(g);
 				loadBoard();
 				status = 'running';
 				const ctx = setupCanvas();
