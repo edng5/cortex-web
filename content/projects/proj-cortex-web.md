@@ -22,9 +22,9 @@ Edward's earlier Discord assistant, also called Cortex.
 ## Exploring
 - Click any neuron to open its details. On desktop, its pictures float beside the panel as a pile of
   draggable cards you can rearrange; on phones they sit inside the panel.
-- Some neurons have their own layouts: photography opens a large centred gallery, NEOS uses a
-  carousel, and the Pokémon neuron poses its cut-outs like a team photo, with flyers in the air and
-  the rest on the ground.
+- Some neurons have their own layouts: photography opens a large centred gallery, NEOS runs a live
+  simulator, E.Ngine Games opens its games menu, and the Pokémon neuron poses its cut-outs like a
+  team photo, with flyers in the air and the rest on the ground.
 - Click a legend colour to glide that type into a line on the left, ordered by date or by size.
 - The header has rotating titles, a timeline of Edward's work experience, and a floating deck of all
   his projects ordered by size.
@@ -48,7 +48,20 @@ relevant neuron opens. The neurons speed up while Cortex listens and light up as
 - Emails, names and questions are encrypted at rest, sessions are stored only as hashes, and an
   audit log of sign-ins and questions is kept for 90 days.
 
+## Architecture
+![Cortex-Web system design: the browser, the SvelteKit server, SQLite, external services and the content pipeline](/images/cortex-web/architecture.svg)
+
+- **Browser:** the SvelteKit client draws the neuron graph and runs Cortex's voice, the games,
+  SpeakEase AI and the NEOS simulator. Game progress is saved locally and synced to the account.
+- **Server:** one SvelteKit app on Node serves the pages and the APIs: Cortex's answers (retrieval,
+  then a streamed reply), sign-in, game saves and leaderboards, the FishMart market and SpeakEase AI.
+  Rate limits, a question queue, encryption and an audit log sit in front of them.
+- **Data:** one SQLite database holds accounts, limits, saves (with daily backups), leaderboards and
+  the market.
+- **Content:** each neuron is a Markdown file. An ingest step embeds them into a vector store (for
+  Cortex's search) and finds related neurons (the graph's links), which the server loads at start.
+
 ## Tech
 SvelteKit and TypeScript, d3-force on HTML canvas, the Web Speech API for voice, transformers.js
-embeddings with a JSON vector store, the Gemini API (with a Claude API option), and SQLite for
-accounts, question limits and the audit log.
+embeddings with a JSON vector store, the Gemini API (with a Claude API option), SQLite, Google
+OAuth and SMTP email for sign-in, on Node (adapter-node).

@@ -1,13 +1,13 @@
 ---
 title: "Pitching"
 subtitle: "Entrepreneurship · Communication"
-summary: "Pitching startup ideas to judges and investors, from Queen's inQUbate to the Camp QMIND pitching competition win with SpeakEase AI."
+summary: "Pitched SpeakEase AI to judges and investors, winning the Camp QMIND pitching competition."
 tags: [skill, pitching, entrepreneurship, startup, public-speaking, communication]
 weight: 1
 images: []
 links: []
-related: [exp-inqubate]
+related: [exp-inqubate, proj-speakease]
 ---
 
-Edward pitched SpeakEase AI through Queen's inQUbate program. The team won 1st place at the Camp
-QMIND pitching competition, showcased the app at CUCAI, and pitched to Ripple Ventures.
+- **SpeakEase AI (inQUbate):** 1st place at Camp QMIND, showcased at CUCAI, and pitched to Ripple
+  Ventures.

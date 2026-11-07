@@ -1,11 +1,18 @@
 ---
 title: "LLM APIs (Claude, OpenAI, Gemini)"
 subtitle: "AI / ML"
-summary: "Edward has built on many model providers: OpenAI GPT-3.5 for the Cortex Discord bot and the SpeakEase prototype, Claude 3.7 Sonnet for LeGM-CP, Claude Haiku 4.5 for Mind-to-Speech, Gemini's 2M-token context for The Watcher, and Azure Speech and Translator for SpeakEase AI."
+summary: "Built on OpenAI, Claude, Gemini and Azure AI across his projects."
 tags: [skill, llm, claude, openai, gemini, azure, speech]
 weight: 2
 icon: /images/skills/claude.svg
 images: []
 links: []
-related: [proj-mind-to-speech, proj-legm-cp, proj-the-watcher, proj-cortex-discord]
+related: [proj-cortex-discord, proj-speakease, proj-legm-cp, proj-mind-to-speech, proj-the-watcher, proj-cortex-web]
 ---
+
+- **OpenAI GPT-3.5:** the Cortex Discord bot, and SpeakEase AI's first version (with Azure Speech
+  and Translator).
+- **Claude:** 3.7 Sonnet drafts LeGM-CP's picks; Haiku 4.5 expands Mind-to-Speech's predicted
+  phrase into a fuller reply that's spoken aloud.
+- **Gemini:** The Watcher reads every MCU transcript in its 2-million-token context; this website's
+  Cortex and the web version of SpeakEase AI run on it.

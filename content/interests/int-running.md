@@ -9,5 +9,5 @@ images:
 captions:
   /images/running/oasis-zoo-run-medals.jpg: "Finisher medals from the Oasis Zoo Run"
 links: []
-related: [int-basketball, int-swimming]
+related: [int-basketball]
 ---

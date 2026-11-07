@@ -1,13 +1,10 @@
 ---
 title: "Foosball"
-subtitle: "Table football"
-summary: "Edward loves a game of foosball: fast hands, quick wrist shots and friendly rivalry."
-tags: [interest, foosball, table-football, table-games, games, competitive]
+summary: "One of Edward's favourite after-work activities."
+tags: [interest, foosball, table-football, after-work]
 weight: 1
 images:
   - /images/sports/foosball.jpg
-captions:
-  /images/sports/foosball.jpg: "Foosball · Photo: PoprocksCk, CC BY-SA 3.0"
 links: []
-related: [int-ping-pong]
+related: []
 ---

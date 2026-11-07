@@ -1,11 +1,14 @@
 ---
 title: "React Native"
 subtitle: "Framework"
-summary: "Edward designed the SpeakEase AI front end in React Native, ran A/B tests on the UI/UX, and shipped it with Expo Go to the App Store and Google Play."
+summary: "Designed SpeakEase AI's mobile app in React Native and shipped it to both app stores."
 tags: [skill, react-native, mobile-apps, frontend, typescript]
 weight: 1
 icon: /images/skills/react.svg
 images: []
 links: []
-related: [proj-speakease]
+related: [exp-speakease-cofounder, proj-speakease]
 ---
+
+- **SpeakEase AI:** designed the interface, refined it through A/B testing, and released it with
+  Expo Go on the App Store and Google Play (500+ users).

@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1220" width="900" height="1220" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title>Cortex-Web system design</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .box { fill: #111a2e; stroke-width: 2.5; }
+      .chip { fill: #18233b; stroke: #2b3a5c; stroke-width: 1.5; }
+      .title { fill: #f1f5f9; font-size: 23px; font-weight: 700; }
+      .head { fill: #e2e8f0; font-size: 18px; font-weight: 650; }
+      .sub { fill: #94a3b8; font-size: 15px; }
+      .line { fill: #cbd5e1; font-size: 16px; }
+      .label { fill: #94a3b8; font-size: 15px; font-style: italic; }
+      .wire { stroke: #94a3b8; stroke-width: 2.5; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="900" height="1220" fill="#0b1020"/>
+  <text x="450" y="44" text-anchor="middle" fill="#f8fafc" font-size="28" font-weight="800">Cortex-Web · system design</text>
+
+  <!-- Browser -->
+  <rect class="box" x="30" y="70" width="840" height="290" rx="18" stroke="#38bdf8"/>
+  <text class="title" x="54" y="108">Browser <tspan class="sub" font-size="17">· SvelteKit client</tspan></text>
+  <g>
+    <rect class="chip" x="50" y="128" width="390" height="66" rx="10"/>
+    <text class="head" x="66" y="156">Neuron graph</text><text class="sub" x="66" y="180">d3-force simulation drawn on canvas</text>
+    <rect class="chip" x="460" y="128" width="390" height="66" rx="10"/>
+    <text class="head" x="476" y="156">Cortex voice dock</text><text class="sub" x="476" y="180">Web Speech API: listen and speak</text>
+    <rect class="chip" x="50" y="206" width="390" height="66" rx="10"/>
+    <text class="head" x="66" y="234">E.Ngine Games · FishMart</text><text class="sub" x="66" y="258">canvas games and Svelte UIs</text>
+    <rect class="chip" x="460" y="206" width="390" height="66" rx="10"/>
+    <text class="head" x="476" y="234">SpeakEase AI (web)</text><text class="sub" x="476" y="258">language-learning app in Svelte</text>
+    <rect class="chip" x="50" y="284" width="390" height="66" rx="10"/>
+    <text class="head" x="66" y="312">NEOS simulator</text><text class="sub" x="66" y="336">evolution runs in the browser</text>
+    <rect class="chip" x="460" y="284" width="390" height="66" rx="10"/>
+    <text class="head" x="476" y="312">Local saves</text><text class="sub" x="476" y="336">localStorage, synced to the account</text>
+  </g>
+
+  <!-- Browser <-> server -->
+  <path class="wire" d="M450 364 L450 418" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="466" y="397">HTTPS: pages, streamed answers, saves</text>
+
+  <!-- Server -->
+  <rect class="box" x="30" y="422" width="840" height="290" rx="18" stroke="#a78bfa"/>
+  <text class="title" x="54" y="460">Server <tspan class="sub" font-size="17">· SvelteKit on Node (adapter-node)</tspan></text>
+  <g>
+    <rect class="chip" x="50" y="480" width="390" height="66" rx="10"/>
+    <text class="head" x="66" y="508">Pages</text><text class="sub" x="66" y="532">the neuron graph and who's signed in</text>
+    <rect class="chip" x="460" y="480" width="390" height="66" rx="10"/>
+    <text class="head" x="476" y="508">/api/ask · Cortex</text><text class="sub" x="476" y="532">retrieval, streamed answer, queue, limits</text>
+    <rect class="chip" x="50" y="558" width="390" height="66" rx="10"/>
+    <text class="head" x="66" y="586">/auth</text><text class="sub" x="66" y="610">Google sign-in, emailed one-time code</text>
+    <rect class="chip" x="460" y="558" width="390" height="66" rx="10"/>
+    <text class="head" x="476" y="586">/api/games</text><text class="sub" x="476" y="610">saves, leaderboards, FishMart market</text>
+    <rect class="chip" x="50" y="636" width="390" height="66" rx="10"/>
+    <text class="head" x="66" y="664">/api/speakease</text><text class="sub" x="66" y="688">chat, voice, pronunciation, dictionary</text>
+    <rect class="chip" x="460" y="636" width="390" height="66" rx="10"/>
+    <text class="head" x="476" y="664">Guardrails</text><text class="sub" x="476" y="688">rate limits, blocks, encryption, audit</text>
+  </g>
+
+  <!-- Server -> data and services -->
+  <path class="wire" d="M230 716 L230 784" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text class="label" x="244" y="756">read / write</text>
+  <path class="wire" d="M670 716 L670 784" marker-end="url(#arrow)"/>
+  <text class="label" x="684" y="756">API calls</text>
+
+  <!-- SQLite -->
+  <rect class="box" x="30" y="788" width="410" height="262" rx="18" stroke="#4ade80"/>
+  <text class="title" x="54" y="826">SQLite</text>
+  <text class="line" x="54" y="862">• Accounts, hashed sessions,</text>
+  <text class="line" x="70" y="884">encrypted emails, nicknames</text>
+  <text class="line" x="54" y="914">• Question limits, audit log</text>
+  <text class="line" x="54" y="944">• Game saves + daily backups</text>
+  <text class="line" x="54" y="974">• Leaderboards (monthly, all-time)</text>
+  <text class="line" x="54" y="1004">• FishMart showcase and market</text>
+  <text class="line" x="54" y="1034">• Chat strikes and blocks</text>
+
+  <!-- External services -->
+  <rect class="box" x="460" y="788" width="410" height="262" rx="18" stroke="#f472b6"/>
+  <text class="title" x="484" y="826">External services</text>
+  <text class="line" x="484" y="862">• Gemini API: Cortex's answers,</text>
+  <text class="line" x="500" y="884">SpeakEase AI's chat and speech</text>
+  <text class="line" x="484" y="914">• Claude API (optional for Cortex)</text>
+  <text class="line" x="484" y="944">• Google OAuth (sign-in)</text>
+  <text class="line" x="484" y="974">• SMTP email (sign-in codes)</text>
+  <text class="line" x="484" y="1004">• YouTube (playlists)</text>
+
+  <!-- Content pipeline -->
+  <rect class="box" x="30" y="1076" width="840" height="124" rx="18" stroke="#fbbf24"/>
+  <text class="title" x="54" y="1112">Content pipeline <tspan class="sub" font-size="17">· built when content changes, loaded by the server</tspan></text>
+  <text class="line" x="54" y="1146">content/*.md  →  npm run ingest (transformers.js embeddings)</text>
+  <text class="line" x="54" y="1174">→  vectors.json (Cortex's search) + edges.json (neuron links)</text>
+  <!-- loaded by the server -->
+  <path class="wire" d="M870 1138 L886 1138 L886 590 L874 590" marker-end="url(#arrow)"/>
+</svg>

@@ -7,6 +7,8 @@ start: 2025-08
 end: 2025-09
 weight: 2
 icon: /images/legm-cp/logo.jpg
+# Desktop: the pictures in a carousel (not the floating pile).
+mediaLayout: carousel
 images:
   - /images/legm-cp/demo.png
   - /images/legm-cp/architecture.svg

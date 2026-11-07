@@ -4,6 +4,8 @@ subtitle: "Picked up while away at school"
 summary: "After moving away for university, Edward took up cooking and started experimenting with recipes."
 tags: [cooking, food, recipes]
 weight: 1
+# Desktop: the pictures in a carousel (not the floating pile).
+mediaLayout: carousel
 images:
   - /images/cooking/dish-1.jpg
   - /images/cooking/dish-2.jpg
