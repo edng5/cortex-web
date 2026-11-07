@@ -14,6 +14,7 @@
 		bare = false,
 		swipeClose = false,
 		z = 60,
+		closable = true,
 		children
 	}: {
 		title: string;
@@ -24,6 +25,8 @@
 		swipeClose?: boolean;
 		/** Stacking layer (60, above the page; higher for pop-ups opened over the games window, at 80). */
 		z?: number;
+		/** false: no ✕ (a step that has to be finished, like choosing a nickname). */
+		closable?: boolean;
 		children: Snippet;
 	} = $props();
 	let swiped = $state(false);
@@ -66,7 +69,7 @@
 		{#if !bare}
 			<header>
 				<h2>{title}</h2>
-				<button class="close" onclick={onclose} aria-label="Close">✕</button>
+				{#if closable}<button class="close" onclick={onclose} aria-label="Close">✕</button>{/if}
 			</header>
 		{/if}
 		{@render children()}
