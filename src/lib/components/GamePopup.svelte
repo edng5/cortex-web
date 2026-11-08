@@ -164,8 +164,9 @@
 		display: none;
 		place-items: center;
 		padding: 16px;
-		background: rgba(3, 5, 10, 0.82);
-		backdrop-filter: blur(6px);
+		/* No backdrop blur: the browser would redo it every frame the game draws, which slows the
+		   game down on desktop. A darker backdrop hides the page instead. */
+		background: rgba(3, 5, 10, 0.93);
 		color: var(--text, #e2e8f0);
 		/* Scrolling inside a game stays inside it (never hands off to the page underneath). */
 		overscroll-behavior: contain;
@@ -300,9 +301,6 @@
 			padding: 0;
 			place-items: start center;
 			background: #03050a;
-			/* Solid here, so a blur of the page behind would never show: skip it (phones would
-			   otherwise redo it every frame). */
-			backdrop-filter: none;
 		}
 		.card:not(.menu) {
 			width: 100vw;
