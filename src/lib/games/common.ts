@@ -258,3 +258,299 @@ export function pixelsTouch(a: Sprite, b: Sprite, clip?: { x: number; y: number;
 	}
 	return false;
 }
+
+// ── Menu UI: drawn buttons, cards, panels and key caps (the original art had its labels painted in) ──
+// Menus are clicked or tapped. Each screen lists its buttons once (rect, look, action), and the same
+// list is used to draw them, to show the hover highlight, and to handle clicks.
+
+/** How one button state looks. */
+export interface Look {
+	fill: string;
+	text: string;
+	border: string;
+	detail?: string;
+}
+
+/** A game's menu look: its lettering and colours. */
+export interface UiTheme {
+	family: string;
+	size: number;
+	detailSize?: number;
+	radius: number;
+	/** Upper-case labels (the arcade games' lettering). */
+	caps?: boolean;
+	borderWidth?: number;
+	/** A soft glow around the hovered button. */
+	glow?: string;
+	/** Border of a hovered card (else the hover border). */
+	cardHover?: string;
+	idle: Look;
+	hover: Look;
+	/** The main action on a screen (Play, Buy…). */
+	primary?: Look;
+	/** Resets and other actions that can't be undone. */
+	danger?: Look;
+	/** A chosen option (current difficulty, ship…). */
+	chosen?: Look;
+	disabled: Look;
+}
+
+export interface UiButton {
+	/** Stable id, for the hover highlight. */
+	id: string;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	label?: string;
+	/** A smaller second line. */
+	detail?: string;
+	kind?: 'primary' | 'danger';
+	/** Shown as picked (e.g. the current difficulty). */
+	chosen?: boolean;
+	disabled?: boolean;
+	/** Text size for this button (else the theme's). */
+	size?: number;
+	/** Extra drawing on top of the button (cards: sprites, stats…). */
+	draw?: (ctx: CanvasRenderingContext2D, b: UiButton, look: Look) => void;
+	onClick: () => void;
+}
+
+export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+	const rr = Math.max(0, Math.min(r, h / 2, w / 2));
+	ctx.beginPath();
+	ctx.moveTo(x + rr, y);
+	ctx.arcTo(x + w, y, x + w, y + h, rr);
+	ctx.arcTo(x + w, y + h, x, y + h, rr);
+	ctx.arcTo(x, y + h, x, y, rr);
+	ctx.arcTo(x, y, x + w, y, rr);
+	ctx.closePath();
+}
+
+/** Which look a button has right now. */
+export function lookOf(b: UiButton, theme: UiTheme, hovered: boolean): Look {
+	if (b.disabled) return theme.disabled;
+	// Cards (buttons with their own drawing) keep their look and just light up their border.
+	if (hovered && b.draw) {
+		const base = b.chosen && theme.chosen ? theme.chosen : theme.idle;
+		return { ...base, border: theme.cardHover ?? theme.hover.border };
+	}
+	if (hovered) return theme.hover;
+	if (b.chosen && theme.chosen) return theme.chosen;
+	if (b.kind === 'danger' && theme.danger) return theme.danger;
+	if (b.kind === 'primary' && theme.primary) return theme.primary;
+	return theme.idle;
+}
+
+/** Draws a screen's buttons; `hover` is the id under the pointer. */
+export function drawButtons(ctx: CanvasRenderingContext2D, buttons: UiButton[], theme: UiTheme, hover: string | null) {
+	ctx.save();
+	ctx.imageSmoothingEnabled = true;
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	const bw = theme.borderWidth ?? 2;
+	for (const b of buttons) {
+		const hovered = !b.disabled && b.id === hover;
+		const look = lookOf(b, theme, hovered);
+		roundRect(ctx, b.x + bw / 2, b.y + bw / 2, b.w - bw, b.h - bw, theme.radius);
+		if (hovered && theme.glow) {
+			ctx.shadowColor = theme.glow;
+			ctx.shadowBlur = 16;
+		}
+		ctx.fillStyle = look.fill;
+		ctx.fill();
+		ctx.shadowColor = 'transparent';
+		ctx.shadowBlur = 0;
+		if (bw > 0) {
+			ctx.lineWidth = b.chosen && !b.disabled ? bw + 1 : bw;
+			ctx.strokeStyle = look.border;
+			ctx.stroke();
+		}
+		if (b.label) {
+			const size = b.size ?? theme.size;
+			const label = theme.caps ? b.label.toUpperCase() : b.label;
+			const detail = b.detail && (theme.caps ? b.detail.toUpperCase() : b.detail);
+			const ds = theme.detailSize ?? Math.round(size * 0.55);
+			const cx = b.x + b.w / 2;
+			const cy = b.y + b.h / 2;
+			ctx.fillStyle = look.text;
+			ctx.font = `bold ${size}px ${theme.family}`;
+			if (detail) {
+				const gap = 3;
+				const top = cy - (size + gap + ds) / 2;
+				ctx.fillText(label, cx, top + size / 2 + 1, b.w - 12);
+				ctx.font = `${ds}px ${theme.family}`;
+				ctx.fillStyle = look.detail ?? look.text;
+				ctx.fillText(detail, cx, top + size + gap + ds / 2 + 1, b.w - 12);
+			} else {
+				ctx.fillText(label, cx, cy + 1, b.w - 12);
+			}
+		}
+		if (b.draw) {
+			ctx.save();
+			b.draw(ctx, b, look);
+			ctx.restore();
+		}
+	}
+	ctx.restore();
+}
+
+/** The enabled button at a point, if any. */
+export function buttonAt(buttons: UiButton[], x: number, y: number): UiButton | undefined {
+	return buttons.find((b) => !b.disabled && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h);
+}
+
+/** Text with an explicit font, colour and alignment (restores the context after). */
+export function text(
+	ctx: CanvasRenderingContext2D,
+	s: string,
+	x: number,
+	y: number,
+	o: { size: number; family: string; color: string; bold?: boolean; align?: CanvasTextAlign; baseline?: CanvasTextBaseline; max?: number }
+) {
+	ctx.save();
+	ctx.font = `${o.bold === false ? '' : 'bold '}${o.size}px ${o.family}`;
+	ctx.fillStyle = o.color;
+	ctx.textAlign = o.align ?? 'left';
+	ctx.textBaseline = o.baseline ?? 'middle';
+	ctx.fillText(s, x, y, o.max);
+	ctx.restore();
+}
+
+/** Wraps text into lines no wider than `w` (for descriptions). */
+export function wrap(ctx: CanvasRenderingContext2D, s: string, w: number, font: string): string[] {
+	ctx.save();
+	ctx.font = font;
+	const lines: string[] = [];
+	let line = '';
+	for (const word of s.split(' ')) {
+		const next = line ? `${line} ${word}` : word;
+		if (ctx.measureText(next).width > w && line) {
+			lines.push(line);
+			line = word;
+		} else line = next;
+	}
+	if (line) lines.push(line);
+	ctx.restore();
+	return lines;
+}
+
+/** A filled, optionally outlined rounded panel. */
+export function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, o: { fill: string; border?: string; radius?: number; width?: number; shadow?: string }) {
+	ctx.save();
+	roundRect(ctx, x, y, w, h, o.radius ?? 10);
+	if (o.shadow) {
+		ctx.shadowColor = o.shadow;
+		ctx.shadowBlur = 20;
+		ctx.shadowOffsetY = 6;
+	}
+	ctx.fillStyle = o.fill;
+	ctx.fill();
+	ctx.shadowColor = 'transparent';
+	if (o.border) {
+		ctx.lineWidth = o.width ?? 2;
+		ctx.strokeStyle = o.border;
+		ctx.stroke();
+	}
+	ctx.restore();
+}
+
+/** A keyboard key cap; returns its width (so several can sit in a row). */
+export function keyCap(
+	ctx: CanvasRenderingContext2D,
+	label: string,
+	x: number,
+	y: number,
+	o: { h?: number; min?: number; family: string; fill: string; text: string; border: string; size?: number }
+): number {
+	const h = o.h ?? 30;
+	const size = o.size ?? 14;
+	ctx.save();
+	ctx.font = `bold ${size}px ${o.family}`;
+	const w = Math.max(o.min ?? h, ctx.measureText(label).width + 16);
+	roundRect(ctx, x, y + 3, w, h, 6);
+	ctx.fillStyle = o.border;
+	ctx.fill();
+	roundRect(ctx, x, y, w, h, 6);
+	ctx.fillStyle = o.fill;
+	ctx.fill();
+	ctx.lineWidth = 1.5;
+	ctx.strokeStyle = o.border;
+	ctx.stroke();
+	ctx.fillStyle = o.text;
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+	ctx.restore();
+	return w;
+}
+
+/** A row of key caps separated by a small gap; returns the total width. */
+export function keyRow(ctx: CanvasRenderingContext2D, keys: string[], x: number, y: number, o: Parameters<typeof keyCap>[4]): number {
+	let cx = x;
+	keys.forEach((k, i) => {
+		cx += keyCap(ctx, k, cx, y, o) + (i < keys.length - 1 ? 6 : 0);
+	});
+	return cx - x;
+}
+
+/** Level pips: `of` slots, the first `n` filled. */
+export function pips(ctx: CanvasRenderingContext2D, x: number, y: number, n: number, of: number, o: { on: string; off: string; w?: number; h?: number; gap?: number }) {
+	const w = o.w ?? 22, h = o.h ?? 8, gap = o.gap ?? 5;
+	ctx.save();
+	for (let i = 0; i < of; i++) {
+		roundRect(ctx, x + i * (w + gap), y, w, h, h / 2);
+		ctx.fillStyle = i < n ? o.on : o.off;
+		ctx.fill();
+	}
+	ctx.restore();
+}
+
+/** A small padlock (locked options). */
+export function padlock(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string) {
+	ctx.save();
+	ctx.strokeStyle = color;
+	ctx.fillStyle = color;
+	ctx.lineWidth = s * 0.16;
+	ctx.beginPath();
+	ctx.arc(cx, cy - s * 0.15, s * 0.28, Math.PI, 0);
+	ctx.stroke();
+	roundRect(ctx, cx - s * 0.42, cy - s * 0.15, s * 0.84, s * 0.65, s * 0.1);
+	ctx.fill();
+	ctx.restore();
+}
+
+/** Touch screens get "tap" wording instead of keyboard wording. */
+export function touchScreen(): boolean {
+	try {
+		return matchMedia('(pointer: coarse)').matches;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * A two-step confirm for actions that can't be undone (reset scores…): the first click arms the
+ * button for a few seconds, the second one does it.
+ */
+export class Confirm {
+	private armed: string | null = null;
+	private until = 0;
+	/** True if `id` was armed (so this click should do it); otherwise arms it. */
+	press(id: string): boolean {
+		const now = performance.now();
+		if (this.armed === id && now < this.until) {
+			this.armed = null;
+			return true;
+		}
+		this.armed = id;
+		this.until = now + 3000;
+		return false;
+	}
+	isArmed(id: string): boolean {
+		return this.armed === id && performance.now() < this.until;
+	}
+	clear() {
+		this.armed = null;
+	}
+}

@@ -1,10 +1,10 @@
 // Space Invaders (SpaceInvaders.java and its classes), ported to TypeScript. The Java logic is kept
-// as written, quirks included. Changes: menus also work with the mouse (hover + click), W/S
-// replace the arrow keys in menus, the default ship controls are A/D ("Lefty" in Options), and
+// as written, quirks included. Changes: the menus are redrawn and clicked or tapped (Options puts
+// controls, difficulty and ship on one page), the default ship controls are A/D ("Lefty"), and
 // No Shields (the original's "Shields Down" switch) is a third difficulty: Hard's waves and
 // bosses without bunkers, so each difficulty has its own leaderboard.
 import { Rect } from '../topgun/geometry';
-import { ARIAL, ARIAL_BLACK, COMIC, Gfx, drawRecord, loadImages, loadSave, spotAt, writeSave, type ArcadeGame, type Board, type Hotspot } from '../common';
+import { ARIAL, ARIAL_BLACK, Confirm, Gfx, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, text, touchScreen, writeSave, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
 
 export const GAME_W = 550;
 export const GAME_H = 664;
@@ -14,10 +14,8 @@ const BASE = '/games/spaceinvaders/';
 const IMAGES = {
 	SpaceMM: 'SpaceMM.jpg', A11: 'A11.png', A12: 'A12.png', A21: 'A21.png', A22: 'A22.png', A31: 'A31.png', A32: 'A32.png',
 	SShip: 'SShip.png', MShip: 'MShip.png', Mooneyship: 'Mooneyship.png', AlienShot: 'AlienShot.png', ShipShot: 'ShipShot.png',
-	MMAlien1: 'MMAlien1.png', MMAlien2: 'MMAlien2.png', SpaceHS: 'SpaceHS.jpg', SpaceOption0: 'SpaceOption0.jpg',
-	SpaceOption1: 'SpaceOption1.jpg', SpaceOption2: 'SpaceOption2.jpg', SpaceOption3: 'SpaceOption3.jpg',
-	Shield1: 'Shield1.png', Shield2: 'Shield2.png', Shield3: 'Shield3.png', LCorner: 'LCorner.png', RCorner: 'RCorner.png',
-	Locked: 'Locked.png', SpacePaused: 'SpacePaused.png'
+	MMAlien1: 'MMAlien1.png', MMAlien2: 'MMAlien2.png',
+	Shield1: 'Shield1.png', Shield2: 'Shield2.png', Shield3: 'Shield3.png', LCorner: 'LCorner.png', RCorner: 'RCorner.png'
 };
 type Images = Record<keyof typeof IMAGES, HTMLImageElement>;
 export const loadAssets = () => loadImages(BASE, IMAGES);
@@ -25,6 +23,38 @@ export const loadAssets = () => loadImages(BASE, IMAGES);
 const SAVE_KEY = 'spaceinvaders-save';
 const rnd = (n: number) => Math.floor(Math.random() * n);
 const Yellow = 'rgb(255,221,15)';
+
+// ── Menu look: arcade yellow on black ──
+const UI: UiTheme = {
+	family: ARIAL_BLACK,
+	size: 22,
+	detailSize: 12,
+	radius: 4,
+	caps: true,
+	borderWidth: 2,
+	glow: 'rgba(255,170,0,0.55)',
+	cardHover: '#fff',
+	idle: { fill: 'rgba(0,0,0,0.6)', text: Yellow, border: 'rgba(255,221,15,0.45)', detail: 'rgba(255,221,15,0.7)' },
+	hover: { fill: Yellow, text: '#000', border: Yellow, detail: 'rgb(150,40,0)' },
+	primary: { fill: 'rgba(255,221,15,0.14)', text: Yellow, border: Yellow, detail: 'rgba(255,221,15,0.8)' },
+	danger: { fill: 'rgba(0,0,0,0.6)', text: '#ff6e6e', border: 'rgba(255,110,110,0.7)' },
+	chosen: { fill: 'rgba(255,221,15,0.12)', text: Yellow, border: Yellow },
+	disabled: { fill: 'rgba(255,255,255,0.03)', text: 'rgba(255,221,15,0.3)', border: 'rgba(255,221,15,0.18)' }
+};
+const KEY = { family: 'Arial, sans-serif', fill: '#f2f2f2', text: '#111', border: '#888', size: 13, h: 28 };
+/** A check mark on the picked option. */
+function tick(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+	ctx.save();
+	ctx.strokeStyle = Yellow;
+	ctx.lineWidth = 3;
+	ctx.lineCap = 'round';
+	ctx.beginPath();
+	ctx.moveTo(cx - 7, cy);
+	ctx.lineTo(cx - 2, cy + 5);
+	ctx.lineTo(cx + 8, cy - 6);
+	ctx.stroke();
+	ctx.restore();
+}
 
 class Aliens {
 	sizeW = 40; sizeH = 20; y_speed = 0; x_speed = 2; x = 10; y = 50; delay = 0; alive = 1; shot = 0;
@@ -263,42 +293,216 @@ export class SpaceInvaders implements ArcadeGame {
 		this.save();
 	}
 
-	// ── Mouse: every menu item can be hovered (moves the alien cursor) and clicked ──
-	private spots(): Hotspot[] {
-		const item = (x: number, y: number, w: number, h: number, sel: number): Hotspot => ({
-			x, y, w, h,
-			hover: () => (this.select = sel),
-			click: () => {
-				this.select = sel;
-				this.keyPressed('Enter');
-			}
-		});
-		const back = item(8, 6, 100, 36, 0);
+	// ── Menus: drawn buttons and cards, clicked or tapped (the keyboard is for playing) ──
+	// Screens (`game`): 0 title, 3 high scores, 4 options (controls, difficulty and ship on one
+	// page), 8 paused.
+	private hover: string | null = null;
+	private confirm = new Confirm();
+
+	/** Picks menu item `sel` the way the Java menus did (cursor on it, then Enter). */
+	private press(sel: number) {
+		const wasPaused = this.game == 8;
+		const score = this.score;
+		this.select = sel;
+		this.keyPressedJava('ENTER');
+		this.sfx('confirm');
+		// Leaving a run from the pause menu still counts its score.
+		if (wasPaused && this.game == 0 && score > 0) this.onScore(this.difficulty, score);
+	}
+	/** Back to the main menu from Options (as its Back item did). */
+	private toMain() {
+		this.game = 0; this.select = 0; this.delay2 = 0; this.startDelay = 0;
+		this.save();
+	}
+
+	private ui(): UiButton[] {
+		const back: UiButton = { id: 'back', x: 14, y: 14, w: 96, h: 36, label: '‹ Back', size: 15, onClick: () => this.press(0) };
 		switch (this.game) {
-			case 0: return [item(140, 350, 270, 50, 0), item(115, 422, 320, 50, 1), item(165, 497, 220, 48, 2), item(140, 570, 270, 50, 3)];
-			case 3: return [back, item(420, 620, 115, 36, 1)];
-			case 4: return [back, item(140, 285, 265, 72, 1), item(140, 392, 265, 64, 2), item(60, 497, 450, 70, 3)];
-			case 5: return [back, item(62, 180, 176, 135, 1), item(325, 180, 145, 135, 2)];
-			case 6: return [back, item(115, 167, 310, 126, 1), item(113, 330, 315, 126, 2), item(115, 499, 317, 129, 3)];
-			case 7: return [back, item(68, 254, 416, 166, 1), item(68, 462, 416, 168, 2)];
-			case 8: return [item(140, 328, 245, 36, 0), item(140, 372, 245, 40, 1)];
-			case 2: return [{ x: 0, y: 0, w: GAME_W, h: GAME_H, click: () => this.keyPressed('Enter') }];
+			case 0: {
+				const rows: [string, string?][] = [
+					['New Game', ['', 'Normal', 'Hard', 'No Shields'][this.difficulty]],
+					['High Scores'],
+					['Options', 'Controls, difficulty and ship'],
+					['Quit Game']
+				];
+				return rows.map(([label, detail], i) => ({
+					id: 'main' + i, label, detail, x: 125, y: 340 + i * 66, w: 300, h: 54, kind: i == 0 ? ('primary' as const) : undefined, onClick: () => this.press(i)
+				}));
+			}
+			case 3: {
+				const armed = this.confirm.isArmed('clear');
+				return [
+					back,
+					{
+						id: 'clear', x: 315, y: 596, w: 220, h: 44, label: armed ? 'Click again to clear' : 'Clear stats', size: 15, kind: 'danger',
+						onClick: () => this.confirm.press('clear') && this.press(1)
+					}
+				];
+			}
+			case 4:
+				return [
+					{ ...back, onClick: () => this.toMain() },
+					...([[2, 'Lefty', ['A', 'D']], [1, 'Righty', ['←', '→']]] as const).map(([c, name, keys], i): UiButton => ({
+						id: 'ctl' + c, x: 25 + i * 255, y: 128, w: 245, h: 92, chosen: this.controls == c,
+						draw: (ctx, b) => {
+							text(ctx, name.toUpperCase(), b.x + 18, b.y + 24, { size: 17, family: ARIAL_BLACK, color: Yellow });
+							keyRow(ctx, [...keys], b.x + 18, b.y + 44, KEY);
+							text(ctx, 'move', b.x + 98, b.y + 59, { size: 14, family: ARIAL, color: '#ddd', bold: false });
+							if (this.controls == c) tick(ctx, b.x + b.w - 26, b.y + 24);
+						},
+						onClick: () => (this.controls = c)
+					})),
+					...[1, 2, 3].map((d): UiButton => ({
+						id: 'diff' + d, x: 20 + (d - 1) * 175, y: 270, w: 160, h: 132, chosen: this.difficulty == d,
+						draw: (ctx, b) => this.drawDifficulty(ctx, b, d),
+						onClick: () => {
+							this.difficulty = d; // 1 Normal, 2 Hard, 3 No Shields
+							this.shieldsDown = d == 3 ? 1 : 0;
+						}
+					})),
+					...[1, 2].map((c): UiButton => {
+						const locked = c == 2 && this.unlock != 1;
+						return {
+							id: 'ship' + c, x: 25 + (c - 1) * 255, y: 452, w: 245, h: 112, chosen: this.character == c, disabled: locked,
+							draw: (ctx, b) => {
+								ctx.globalAlpha = locked ? 0.4 : 1;
+								ctx.drawImage(c == 1 ? this.img.SShip : this.img.Mooneyship, b.x + b.w / 2 - 40, b.y + 18, 80, 48);
+								text(ctx, c == 1 ? 'SPACESHIP' : 'MOONEYSHIP', b.x + b.w / 2, b.y + 86, { size: 16, family: ARIAL_BLACK, color: Yellow, align: 'center' });
+								ctx.globalAlpha = 1;
+								if (locked) {
+									padlock(ctx, b.x + b.w - 26, b.y + 24, 22, Yellow);
+									text(ctx, 'Unlock: defeat a boss', b.x + b.w / 2, b.y + 104, { size: 12, family: ARIAL, color: '#ff8a80', align: 'center' });
+								} else if (this.character == c) tick(ctx, b.x + b.w - 26, b.y + 24);
+							},
+							onClick: () => (this.character = c)
+						};
+					})
+				];
+			case 8:
+				return [
+					{ id: 'resume', x: 150, y: 300, w: 250, h: 52, label: 'Resume', kind: 'primary', onClick: () => this.press(0) },
+					{ id: 'quit', x: 150, y: 364, w: 250, h: 52, label: 'Main menu', onClick: () => this.press(1) }
+				];
 		}
 		return [];
 	}
+
+	private drawDifficulty(ctx: CanvasRenderingContext2D, b: UiButton, d: number) {
+		const i = this.img;
+		const cx = b.x + b.w / 2;
+		text(ctx, ['', 'NORMAL', 'HARD', 'NO SHIELDS'][d], cx, b.y + 22, { size: 15, family: ARIAL_BLACK, color: Yellow, align: 'center' });
+		ctx.drawImage(i.A11, cx - 66, b.y + 44, 36, 18);
+		ctx.drawImage(i.A21, cx - 18, b.y + 44, 36, 18);
+		ctx.drawImage(i.A31, cx + 30, b.y + 44, 36, 18);
+		const lines = [['Waves of aliens', 'and bunkers'], ['Boss fights', 'every few waves'], ['Hard, with no', 'bunkers to hide']][d - 1];
+		if (d == 2) ctx.drawImage(i.MMAlien1, cx + 34, b.y + 6, 34, 17);
+		if (d == 3) {
+			ctx.drawImage(i.Shield1, cx - 12, b.y + 66, 24, 24);
+			ctx.strokeStyle = '#ff5252';
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.moveTo(cx - 14, b.y + 64); ctx.lineTo(cx + 14, b.y + 92);
+			ctx.moveTo(cx + 14, b.y + 64); ctx.lineTo(cx - 14, b.y + 92);
+			ctx.stroke();
+		}
+		lines.forEach((l, k) => text(ctx, l, cx, b.y + 102 + k * 16, { size: 12, family: ARIAL, color: '#ddd', align: 'center', bold: false }));
+		if (this.difficulty == d) tick(ctx, b.x + b.w - 18, b.y + 18);
+	}
+
 	pointerMove(x: number, y: number) {
-		const s = spotAt(this.spots(), x, y);
-		s?.hover?.();
-		return !!s && this.game != 2;
+		const b = buttonAt(this.ui(), x, y);
+		this.hover = b?.id ?? null;
+		if (this.game == 2) return false;
+		return !!b;
 	}
 	pointerDown(x: number, y: number) {
-		spotAt(this.spots(), x, y)?.click();
+		if (this.game == 2) {
+			this.keyPressed('Enter'); // game over: a click does what Enter does
+			return;
+		}
+		const b = buttonAt(this.ui(), x, y);
+		if (!b) return;
+		if (b.id != 'clear') this.confirm.clear();
+		b.onClick();
+		this.hover = null;
+		this.save();
+	}
+
+	private paintMenus(ctx: CanvasRenderingContext2D) {
+		const g = this.g;
+		const img = this.img;
+		const buttons = this.ui();
+		const title = (s: string, y = 64) => text(ctx, s, 275, y, { size: 34, family: ARIAL_BLACK, color: Yellow, align: 'center' });
+
+		if (this.game == 0) {
+			g.img(img.SpaceMM, 0, 0, 550, 700);
+			// The art's painted-on labels are blacked out; drawn buttons replace them.
+			ctx.fillStyle = '#000';
+			ctx.fillRect(0, 335, 550, 292);
+			// The alien cursor sits beside the button under the pointer.
+			const b = buttons.find((x) => x.id == this.hover);
+			if (b) {
+				[this.rx, this.ry] = [b.x - 48, b.y + b.h / 2 - 9];
+				this.cursor(g);
+			}
+		}
+
+		if (this.game == 3) {
+			title('HIGH SCORES', 76);
+			const rows: [string, number][] = [
+				['Games played', this.gp], ['High score', this.highscore], ['Highest wave', this.hwave], ['Total kills', this.kills], ['Bosses killed', this.bosses]
+			];
+			panel(ctx, 40, 116, 470, 290, { fill: 'rgba(255,221,15,0.06)', border: 'rgba(255,221,15,0.45)', radius: 6 });
+			rows.forEach(([k, v], i) => {
+				const y = 150 + i * 54;
+				text(ctx, k.toUpperCase(), 68, y, { size: 17, family: ARIAL_BLACK, color: Yellow });
+				text(ctx, '' + v, 482, y, { size: 22, family: ARIAL_BLACK, color: '#fff', align: 'right' });
+				if (i < rows.length - 1) {
+					ctx.fillStyle = 'rgba(255,221,15,0.15)';
+					ctx.fillRect(64, y + 27, 422, 1);
+				}
+			});
+			panel(ctx, 40, 426, 470, 150, { fill: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.2)', radius: 6 });
+			text(ctx, 'GLOBAL RECORD · ' + ['', 'NORMAL', 'HARD', 'NO SHIELDS'][this.difficulty], 68, 456, { size: 14, family: ARIAL_BLACK, color: Yellow });
+			drawRecord(g, {
+				global: this.global, board: this.difficulty, local: this.highscore, loggedIn: this.loggedIn,
+				x: 68, y: 488, family: ARIAL, color: '#fff', dim: 'rgb(200,190,120)', size: 16, rows: 3
+			});
+		}
+
+		if (this.game == 4) {
+			title('OPTIONS');
+			text(ctx, 'CONTROLS', 25, 110, { size: 15, family: ARIAL_BLACK, color: '#fff' });
+			text(ctx, 'DIFFICULTY', 25, 252, { size: 15, family: ARIAL_BLACK, color: '#fff' });
+			text(ctx, 'SHIP', 25, 434, { size: 15, family: ARIAL_BLACK, color: '#fff' });
+			// The other keys, for reference.
+			const w1 = keyRow(ctx, ['Space'], 120, 594, KEY);
+			text(ctx, 'shoot', 128 + w1, 609, { size: 14, family: ARIAL, color: '#ddd', bold: false });
+			const w2 = keyRow(ctx, ['Shift'], 290, 594, KEY);
+			text(ctx, 'pause', 298 + w2, 609, { size: 14, family: ARIAL, color: '#ddd', bold: false });
+		}
+
+		if (this.game == 8) {
+			ctx.fillStyle = 'rgba(0,0,0,0.6)';
+			ctx.fillRect(0, 0, GAME_W, GAME_H);
+			panel(ctx, 120, 200, 310, 240, { fill: 'rgba(10,10,20,0.95)', border: Yellow, width: 2, radius: 8 });
+			text(ctx, 'PAUSED', 275, 248, { size: 34, family: ARIAL_BLACK, color: Yellow, align: 'center' });
+			if (!touchScreen()) text(ctx, 'Shift or Enter to resume', 275, 466, { size: 14, family: ARIAL, color: 'rgba(255,255,255,0.7)', align: 'center', bold: false });
+		}
+
+		drawButtons(ctx, buttons, UI, this.hover);
 	}
 
 	// ── Keyboard ──
 	keyPressed(code: string): boolean {
 		const k = keyOf(code);
 		if (!k) return false;
+		// Menus are clicked or tapped. Paused, Shift (the pause key) or Enter resumes.
+		if (this.game == 0 || this.game == 3 || this.game == 4 || this.game == 5 || this.game == 6 || this.game == 7) return true;
+		if (this.game == 8) {
+			if (k == 'ENTER' || k == 'SHIFT') this.press(0);
+			return true;
+		}
 		const wasPaused = this.game == 8;
 		const score = this.score;
 		const before = { game: this.game, select: this.select, launch: this.launch };
@@ -888,13 +1092,6 @@ export class SpaceInvaders implements ArcadeGame {
 		ctx.fillStyle = '#000';
 		ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-		// Main Menu
-		if (this.game == 0) {
-			g.img(img.SpaceMM, 0, 0, 550, 700);
-			this.at([[100, 370], [70, 440], [120, 515], [100, 590]]);
-			this.cursor(g);
-		}
-
 		// GAME GRAPHICS
 		if (this.game == 1 || this.game == 2 || this.game == 8) {
 			g.setColor('#000');
@@ -966,78 +1163,7 @@ export class SpaceInvaders implements ArcadeGame {
 			g.drawString('Press Enter to Return to the Main Menu', 40, 380);
 		}
 
-		// Highscores
-		if (this.game == 3) {
-			g.img(img.SpaceHS, 0, 0, 550, 700);
-			this.at([[105, 18], [380, 630]]);
-			this.cursor(g);
-			g.setColor(Yellow);
-			g.font(30, COMIC);
-			if (this.highscore > 9999) this.hsx = 425;
-			g.drawString('' + this.gp, 450, 305);
-			g.drawString('' + this.highscore, this.hsx, 365);
-			g.drawString('' + this.hwave, 450, 425);
-			g.drawString('' + this.kills, 450, 485);
-			g.drawString('' + this.bosses, 450, 545);
-			// Global board, between the title and the stats.
-			g.setColor(Yellow);
-			g.font(14, ARIAL_BLACK);
-			g.drawString('GLOBAL RECORD · ' + ['', 'NORMAL', 'HARD', 'NO SHIELDS'][this.difficulty], 52, 208);
-			drawRecord(g, {
-				global: this.global,
-				board: this.difficulty,
-				local: this.highscore,
-				loggedIn: this.loggedIn,
-				x: 52,
-				y: 230,
-				family: ARIAL,
-				color: '#fff',
-				dim: 'rgb(200,190,120)',
-				size: 16
-			});
-		}
-
-		// Options Menu
-		if (this.game == 4) {
-			g.img(img.SpaceOption0, 0, 0, 550, 700);
-			this.at([[105, 18], [90, 315], [90, 415], [20, 520]]);
-			this.cursor(g);
-		}
-		g.setColor(Yellow);
-		// Controls Menu
-		if (this.game == 5) {
-			g.img(img.SpaceOption1, 0, 0, 550, 700);
-			this.at([[105, 18], [20, 200], [250, 200]]);
-			this.cursor(g);
-			g.setColor(Yellow);
-			if (this.controls == 1) g.fillRect(330, 215, 100, 3);
-			if (this.controls == 2) g.fillRect(100, 215, 100, 3);
-		}
-		// Difficulty Menu
-		if (this.game == 6) {
-			g.img(img.SpaceOption2, 0, 0, 550, 700);
-			this.at([[105, 18], [60, 180], [60, 350], [60, 520]]);
-			this.cursor(g);
-			g.setColor(Yellow);
-			if (this.difficulty == 1) g.fillRect(130, 205, 120, 3);
-			if (this.difficulty == 2) g.fillRect(130, 370, 80, 3);
-			if (this.difficulty == 3) g.fillRect(186, 580, 174, 3);
-		}
-		// Character Select Menu
-		if (this.game == 7) {
-			g.img(img.SpaceOption3, 0, 0, 550, 700);
-			this.at([[105, 18], [30, 270], [30, 480]]);
-			this.cursor(g);
-			g.setColor(Yellow);
-			if (this.character == 1) g.fillRect(150, 300, 220, 3);
-			if (this.character == 2) g.fillRect(145, 510, 250, 3);
-			if (this.unlock == 0) g.img(img.Locked, 95, 477, 367, 137);
-		}
-		// Pause Screen
-		if (this.game == 8) {
-			g.img(img.SpacePaused, 0, 0, 550, 700);
-			this.at([[165, 338], [150, 385]]);
-			this.cursor(g);
-		}
+		// Menus (and the pause screen, over the frozen game).
+		if (this.game == 0 || this.game == 3 || this.game == 4 || this.game == 8) this.paintMenus(ctx);
 	}
 }

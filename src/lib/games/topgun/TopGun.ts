@@ -2,32 +2,33 @@
 // The logic is a line-for-line port of TopGun.java: same fields, same per-tick update order
 // (the Java run() loop), same key handling and the same drawing, including Java's whole-number
 // maths and its quirks (e.g. hit boxes that update a tick late), so it plays like the original.
-// Differences: menus use WASD (as in the browser version), progress saves to localStorage, and
-// "Quit" closes the game instead of exiting the program.
+// Differences: the menus are redrawn and clicked or tapped (each button still runs the Java menu
+// item it replaces), progress saves to localStorage, "Quit" closes the game instead of exiting
+// the program, and destroying the army base in mission 3 is worth a bonus.
 import { ABase, Bullets, Clouds, EnemiesJ, EnemiesR, Missiles, Ships } from './entities';
 import { Rect, idiv, rnd } from './geometry';
-import { spotAt, type ArcadeGame, type Hotspot } from '../common';
+import { Confirm, buttonAt, drawButtons, keyRow, padlock, panel, pips, text, touchScreen, wrap, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
 
 export const GAME_W = 600;
 export const GAME_H = 536; // ends at the bottom of the cockpit dashboard (300 + 236)
 /** One game tick (the Java loop slept ~15 ms per iteration; it ran at ~61 ticks/s). */
 export const TICK_MS = 16;
+/** Score for destroying the army base in mission 3. */
+const BASE_BONUS = 100000;
 
 const BASE = '/games/topgun/';
 const SAVE_KEY = 'topgun-save';
 
 const IMAGES = {
-	TopGunMM: 'TGMM.png', Controls: 'Controls.png', aControls: 'aControls.png', Highscores: 'Highscore.png',
+	TopGunMM: 'TGMM.png',
 	missile: 'Missile.png', ejets: 'eJets.png', ejets2: 'FrontJet.png', eships: 'eShips.png', Base: 'ArmyBase.png',
 	TGBack1: 'TGBack1.png', Runway: 'Runway.png', TakeOff: 'TakeOff.png', Landing: 'Landing.png',
 	LandingBack: 'LandingBack.png', BackDrop1: 'BackDrop1.png', TGBack2: 'TGBack2.png', TGBack3: 'TGBack3.png',
 	Dashboard: 'Dashboard.png', Reticle: 'Reticle.png', Cloud: 'Cloud.png', Radar1: 'Radar1.png',
 	CoverRadar: 'CoverRadar.png', FInd: 'FlightIndicator.png', PInd: 'PositionIndicator.png',
-	MComplete: 'MComplete.png', MFailed: 'MFailed.png', GameOver: 'GameOver.png', Pause: 'PauseMenu.png',
 	Mission1: 'Mission1.png', Mission2: 'Mission2.png', Mission3a: 'Mission3a.png', Mission3b: 'Mission3b.png',
-	Upgrade: 'UpgradeMenu.png', hLvl2: 'hLvl2.png', hLvl3: 'hLvl3.png', mLvl2: 'mLvl2.png', mLvl3: 'mLvl3.png',
-	sLvl2: 'sLvl2.png', sLvl3: 'sLvl3.png', bLvl2: 'bLvl2.png', PMission1: 'PMission1.png',
-	PMission2: 'PMission2.png', PMission3: 'PMission3.png', MissionLocked: 'MissionLocked.png'
+	Upgrade: 'UpgradeMenu.png', PMission1: 'PMission1.png',
+	PMission2: 'PMission2.png', PMission3: 'PMission3.png'
 } as const;
 type ImageName = keyof typeof IMAGES;
 
@@ -101,6 +102,70 @@ const C = {
 };
 const AGENCY = '"Agency FB", "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif';
 
+// ── Menu look: the logo's navy and red on the art's peach ──
+const NAVY = 'rgb(0,0,82)';
+const RED = 'rgb(227,30,36)';
+const PEACH = 'rgb(245,222,178)';
+const MUTED = 'rgba(0,0,82,0.6)';
+const UI: UiTheme = {
+	family: AGENCY,
+	size: 25,
+	detailSize: 14,
+	radius: 6,
+	caps: true,
+	borderWidth: 2,
+	idle: { fill: 'rgba(255,255,255,0.5)', text: NAVY, border: 'rgba(0,0,82,0.45)', detail: 'rgba(0,0,82,0.7)' },
+	hover: { fill: NAVY, text: '#fff', border: RED, detail: 'rgb(254,198,137)' },
+	primary: { fill: RED, text: '#fff', border: RED, detail: 'rgba(255,255,255,0.85)' },
+	danger: { fill: 'rgba(255,255,255,0.5)', text: RED, border: RED, detail: RED },
+	chosen: { fill: NAVY, text: '#fff', border: NAVY },
+	disabled: { fill: 'rgba(0,0,82,0.08)', text: 'rgba(0,0,82,0.4)', border: 'rgba(0,0,82,0.2)', detail: 'rgba(0,0,82,0.4)' }
+};
+/** Pause and mission-over screens: light on dark navy. */
+const NIGHT: UiTheme = {
+	...UI,
+	idle: { fill: 'rgba(255,255,255,0.08)', text: '#fff', border: 'rgba(255,255,255,0.35)' },
+	hover: { fill: '#fff', text: NAVY, border: RED },
+	primary: { fill: RED, text: '#fff', border: RED }
+};
+
+/** Mission briefings (the mission select art's text, redrawn). */
+const MISSIONS = [
+	{
+		difficulty: 'Easy', chip: 'rgb(46,160,67)', sky: 'rgb(182,238,251)', ground: 'rgb(255,255,255)',
+		brief: 'A flock of enemy jets is flying overhead. You decide to attack the unsuspecting pilots, despite not having a full tank of fuel.',
+		objective: 'Shoot down 75 enemy jets'
+	},
+	{
+		difficulty: 'Medium', chip: 'rgb(230,140,20)', sky: 'rgb(182,238,251)', ground: 'rgb(1,42,254)',
+		brief: 'The enemy is running low on supplies and uses cargo ships to move ammunition and food. Cut off their resupply.',
+		objective: 'Sink 30 cargo ships'
+	},
+	{
+		difficulty: 'Hard', chip: RED, sky: 'rgb(98,163,255)', ground: 'rgb(255,171,0)',
+		brief: 'You are deployed to destroy a neighbouring army base in the desert. The base is heavily guarded by enemy fighters.',
+		objective: `Destroy the army base (+${BASE_BONUS})`
+	}
+];
+
+/** The upgrades screen: what each level does, its price, and its icon in the upgrade art (UpgradeMenu.png). */
+interface UpgradeSpec {
+	name: string;
+	levels: string[];
+	icons: [number, number][];
+	level(g: TopGun): number;
+	cost(g: TopGun): number;
+}
+const UPGRADES: UpgradeSpec[] = [
+	{ name: 'Health', levels: ['6 health bars', '12 health bars', '24 health bars'], icons: [[113, 150], [273, 150], [432, 150]], level: (g) => g.health, cost: (g) => g.hCost },
+	{ name: 'Missile', levels: ['No missiles', 'Missiles (Shift)', 'Lock-on missiles'], icons: [[120, 380], [274, 380], [429, 380]], level: (g) => g.miss, cost: (g) => g.mCost },
+	{ name: 'Gun', levels: ['Single gun', 'Rapid fire', 'Twin guns'], icons: [[118, 662], [273, 662], [429, 662]], level: (g) => g.shoot, cost: (g) => g.sCost },
+	{ name: 'Movement', levels: ['Standard', 'Barrel roll'], icons: [[186, 880], [368, 880]], level: (g) => g.move, cost: (g) => g.cCost }
+];
+const CARD_W = 274;
+const CARD_H = 186;
+const cardAt = (i: number) => ({ x: i % 2 ? 306 : 20, y: i < 2 ? 70 : 266 });
+
 /** Thrown where the Java code would hit ArrayIndexOutOfBoundsException (it ends that key handler). */
 class JavaIndexError extends Error {}
 
@@ -157,7 +222,7 @@ export class TopGun implements ArcadeGame {
 	/** Called once when a mission ends (won, failed or game over) with its final score. */
 	onScore: (mission: number, score: number) => void = () => {};
 	/** Global high scores (from the server); null = not loaded, so the screen shows local scores. */
-	global: { missions: Record<number, { name: string; score: number }[]>; you?: Record<number, number> } | null = null;
+	global: Board | null = null;
 	/** Whether the player is signed in (their scores count on the global board). */
 	loggedIn = false;
 
@@ -259,6 +324,13 @@ export class TopGun implements ArcadeGame {
 	keyPressed(code: string): boolean {
 		const k = keyOf(code);
 		if (!k) return false;
+		// Menus are clicked or tapped. Enter is kept as a shortcut where a mission is in progress:
+		// it continues from the pause screen, and picks the main action after a mission.
+		if (this.game == 0 || this.game == 5 || this.game == 6 || this.game == 7 || this.game == -1) return true;
+		if (this.game == 3 || this.game == 4) {
+			if (k == 'ENTER') this.press(0);
+			return true;
+		}
 		const before = { game: this.game, select: this.select, count: this.count, fired: this.missiles.fired, shoot: this.shoot };
 		try {
 			this.keyPressedJava(k);
@@ -294,50 +366,305 @@ export class TopGun implements ArcadeGame {
 		this.save();
 	}
 
-	// ── Mouse: menu items can be hovered (moves the cursor dot) and clicked (= Enter) ──
-	private spots(): Hotspot[] {
-		const item = (x: number, y: number, w: number, h: number, sel: number, hover = true): Hotspot => ({
-			x, y, w, h,
-			hover: hover ? () => (this.select = sel) : undefined,
-			click: () => {
-				this.select = sel;
-				this.keyPressed('Enter');
-			}
-		});
-		const to = (x: number, y: number, w: number, h: number, sel: () => number): Hotspot => ({ x, y, w, h, click: () => (this.select = sel()) });
-		const back = item(4, 4, 76, 32, 0, false);
+	// ── Menus: drawn buttons, clicked or tapped (the keyboard is for flying) ──
+	private hover: string | null = null;
+	private confirm = new Confirm();
+
+	/** Picks menu item `sel` the way the Java menus did (cursor on it, then Enter). */
+	private press(sel: number) {
+		this.select = sel;
+		try {
+			this.keyPressedJava('ENTER');
+		} catch (e) {
+			if (!(e instanceof JavaIndexError)) throw e;
+		}
+		this.sfx('confirm');
+	}
+
+	/** The current screen's buttons: drawn, hovered and clicked from this one list. */
+	private ui(): UiButton[] {
+		const go = (sel: number) => () => this.press(sel);
+		const back: UiButton = { id: 'back', x: 14, y: 12, w: 96, h: 36, label: '‹ Back', size: 20, onClick: go(0) };
 		switch (this.game) {
-			case 0:
-				return [item(8, 150, 250, 50, 0), item(0, 222, 260, 52, 1), item(0, 300, 260, 55, 2), item(0, 383, 260, 52, 3), item(40, 458, 180, 52, 4)];
-			case 5:
-				return [item(4, 4, 76, 32, 0), item(385, 456, 200, 32, 1), item(415, 488, 175, 34, 2)];
-			case 4:
-				return [item(220, 180, 175, 40, 0), item(220, 240, 175, 38, 1), item(220, 298, 180, 40, 2)];
-			case 3:
-				return [item(60, 360, 245, 56, 0), item(330, 360, 245, 56, 1)];
-			case 6:
-				return this.uy == 0
-					? [item(4, 4, 108, 46, 0), item(80, 94, 460, 186, 1), item(80, 324, 460, 186, 2), to(10, 476, 64, 56, () => 3)]
-					: [to(0, 0, 600, 42, () => 2), item(80, 45, 460, 190, 3), item(80, 269, 460, 186, 4), item(466, 474, 112, 46, 5)];
-			case -1:
+			case 0: {
+				const unlocked = Math.min(3, this.mComplete + 1);
+				const rows: [string, string?][] = [
+					['Play', `${unlocked} of 3 missions unlocked`],
+					['High Scores'],
+					['Upgrades', `$${this.money} to spend`],
+					['Controls'],
+					['Quit', 'Progress is saved']
+				];
+				return rows.map(([label, detail], i) => ({
+					id: 'main' + i, label, detail, x: 16, y: 150 + i * 66, w: 196, h: 54, kind: i == 0 ? ('primary' as const) : undefined, onClick: go(i)
+				}));
+			}
+			case 5: {
+				const armedS = this.confirm.isArmed('scores');
+				const armedG = this.confirm.isArmed('game');
 				return [
 					back,
-					to(0, 232, 48, 60, () => Math.max(1, this.select - 1)),
-					to(552, 232, 48, 60, () => Math.min(3, Math.max(1, this.select) + 1)),
-					{ x: 222, y: 436, w: 156, h: 60, click: () => { if (this.select < 1) this.select = 1; this.keyPressed('Enter'); } }
+					{
+						id: 'scores', x: 196, y: 470, w: 180, h: 46, label: armedS ? 'Click again' : 'Reset scores', detail: armedS ? 'clears high scores' : undefined,
+						kind: armedS ? 'danger' : undefined, onClick: () => this.confirm.press('scores') && this.press(1)
+					},
+					{
+						id: 'game', x: 390, y: 470, w: 196, h: 46, label: armedG ? 'Click again' : 'Reset game', detail: armedG ? 'clears all progress' : undefined,
+						kind: 'danger', onClick: () => this.confirm.press('game') && this.press(2)
+					}
 				];
+			}
+			case 6: {
+				const buttons: UiButton[] = [back];
+				UPGRADES.forEach((u, i) => {
+					const { x, y } = cardAt(i);
+					const level = u.level(this);
+					const maxed = level >= u.levels.length - 1;
+					const cost = u.cost(this);
+					const short = !maxed && this.money < cost;
+					buttons.push({
+						id: 'buy' + i, x: x + 14, y: y + 134, w: CARD_W - 28, h: 40, size: 20,
+						label: maxed ? 'Maxed out' : short ? `Need $${cost}` : `Buy  ·  $${cost}`,
+						kind: 'primary', disabled: maxed || short, onClick: go(i + 1)
+					});
+				});
+				buttons.push({ id: 'fly', x: 446, y: 476, w: 140, h: 46, label: 'Fly ›', kind: 'primary', onClick: go(5) });
+				return buttons;
+			}
+			case -1: {
+				const page = Math.max(1, this.select);
+				const locked = this.mComplete < page - 1;
+				const tabs: UiButton[] = [1, 2, 3].map((m) => ({
+					id: 'tab' + m, x: 24 + (m - 1) * 128, y: 110, w: 120, h: 34, size: 18,
+					label: `Mission ${m}`, chosen: m == page,
+					onClick: () => {
+						this.select = m;
+						this.sfx('select');
+					}
+				}));
+				return [
+					{ ...back, onClick: go(0) },
+					...tabs,
+					{ id: 'prev', x: 140, y: 440, w: 60, h: 56, label: '‹', size: 34, disabled: page <= 1, onClick: () => { this.select = page - 1; this.sfx('select'); } },
+					{
+						id: 'play', x: 212, y: 436, w: 176, h: 64, label: locked ? 'Locked' : 'Play', detail: `Mission ${page}`,
+						kind: 'primary', disabled: locked, size: 30, onClick: go(page)
+					},
+					{ id: 'next', x: 400, y: 440, w: 60, h: 56, label: '›', size: 34, disabled: page >= 3, onClick: () => { this.select = page + 1; this.sfx('select'); } }
+				];
+			}
 			case 7:
-				return [back, to(8, 480, 56, 50, () => (this.select == 1 ? 0 : 1))];
+				return [back];
+			case 4:
+				return [
+					{ id: 'resume', x: 180, y: 196, w: 240, h: 50, label: 'Continue', kind: 'primary', onClick: go(0) },
+					{ id: 'restart', x: 180, y: 258, w: 240, h: 50, label: 'Restart mission', onClick: go(1) },
+					{ id: 'menu', x: 180, y: 320, w: 240, h: 50, label: 'Main menu', onClick: go(2) }
+				];
+			case 3:
+				return [
+					{ id: 'end0', x: 120, y: 392, w: 172, h: 52, label: this.success == 2 ? 'Upgrades' : 'Retry', kind: 'primary', onClick: go(0) },
+					{ id: 'end1', x: 308, y: 392, w: 172, h: 52, label: 'Main menu', onClick: go(1) }
+				];
 		}
 		return [];
 	}
+
 	pointerMove(x: number, y: number) {
-		const s = spotAt(this.spots(), x, y);
-		s?.hover?.();
-		return !!s;
+		const b = buttonAt(this.ui(), x, y);
+		this.hover = b?.id ?? null;
+		return !!b;
 	}
 	pointerDown(x: number, y: number) {
-		spotAt(this.spots(), x, y)?.click();
+		const b = buttonAt(this.ui(), x, y);
+		if (!b) return;
+		if (!b.id.startsWith('scores') && !b.id.startsWith('game')) this.confirm.clear();
+		b.onClick();
+		this.hover = null;
+	}
+
+	/** Peach page with a title (high scores, upgrades, controls). */
+	private page(title: string) {
+		const ctx = this.ctx;
+		ctx.fillStyle = PEACH;
+		ctx.fillRect(0, 0, GAME_W, GAME_H);
+		text(ctx, title.toUpperCase(), 300, 32, { size: 36, family: AGENCY, color: NAVY, align: 'center' });
+		ctx.fillStyle = RED;
+		ctx.fillRect(270, 54, 60, 3);
+	}
+
+	private paintMenus() {
+		const ctx = this.ctx;
+		const buttons = this.ui();
+		let theme = UI;
+
+		if (this.game == 0) {
+			this.img('TopGunMM', 0, 0, 600, 560);
+			this.anim('JetMM', 232, 352, 400, 203);
+			// The art's painted-on labels are covered by the panel colour; drawn buttons replace them.
+			ctx.fillStyle = 'rgb(254,198,137)';
+			ctx.fillRect(0, 140, 228, 400);
+		}
+
+		// High scores: each mission's best (yours and the global record), games played, resets.
+		if (this.game == 5) {
+			this.page('High Scores');
+			const g = this.global;
+			const local: Record<number, number> = { 1: this.h1, 2: this.h2, 3: this.h3 };
+			const status = !g ? 'Loading global records…' : `${g.period === 'all' ? 'All-time' : 'This month’s'} records${this.loggedIn ? '' : '  ·  log in to rank your scores'}`;
+			text(ctx, status, 300, 76, { size: 15, family: AGENCY, color: MUTED, align: 'center', bold: false });
+			text(ctx, 'YOUR BEST', 372, 100, { size: 14, family: AGENCY, color: MUTED, align: 'center' });
+			text(ctx, 'RECORD', 500, 100, { size: 14, family: AGENCY, color: MUTED, align: 'center' });
+			MISSIONS.forEach((m, i) => {
+				const y = 112 + i * 84;
+				panel(ctx, 24, y, 552, 74, { fill: 'rgba(255,255,255,0.55)', border: 'rgba(0,0,82,0.18)', radius: 8 });
+				text(ctx, `MISSION ${i + 1}`, 42, y + 26, { size: 26, family: AGENCY, color: NAVY });
+				text(ctx, m.objective, 42, y + 52, { size: 15, family: AGENCY, color: MUTED, bold: false });
+				const mine = this.loggedIn && g ? (g.you?.[i + 1] ?? 0) : local[i + 1];
+				text(ctx, '' + mine, 372, y + 37, { size: 30, family: AGENCY, color: NAVY, align: 'center' });
+				const top = g?.missions[i + 1]?.[0];
+				text(ctx, top ? '' + top.score : '—', 500, y + 30, { size: 24, family: AGENCY, color: RED, align: 'center' });
+				text(ctx, top ? top.name : g ? 'no record yet' : '', 500, y + 54, { size: 13, family: 'Arial, sans-serif', color: MUTED, align: 'center', bold: false, max: 140 });
+			});
+			panel(ctx, 24, 368, 552, 52, { fill: 'rgba(255,255,255,0.35)', radius: 8 });
+			text(ctx, 'GAMES PLAYED', 42, 395, { size: 22, family: AGENCY, color: NAVY });
+			text(ctx, '' + this.gp, 372, 395, { size: 28, family: AGENCY, color: NAVY, align: 'center' });
+			text(ctx, 'Reset game also clears money, upgrades and missions.', 24, 446, { size: 14, family: AGENCY, color: MUTED, bold: false });
+		}
+
+		// Upgrades: one card per upgrade, with its level, what it does now and next, and the price.
+		if (this.game == 6) {
+			this.page('Upgrades');
+			panel(ctx, 446, 12, 140, 38, { fill: NAVY, radius: 8 });
+			text(ctx, '$' + this.money, 516, 32, { size: 24, family: AGENCY, color: '#fff', align: 'center' });
+			const sheet = this.a.img.Upgrade;
+			UPGRADES.forEach((u, i) => {
+				const { x, y } = cardAt(i);
+				const level = u.level(this);
+				const max = u.levels.length - 1;
+				panel(ctx, x, y, CARD_W, CARD_H, { fill: 'rgba(255,255,255,0.6)', border: 'rgba(0,0,82,0.25)', radius: 10 });
+				text(ctx, u.name.toUpperCase(), x + 14, y + 20, { size: 22, family: AGENCY, color: NAVY });
+				pips(ctx, x + CARD_W - 14 - u.levels.length * 27 + 5, y + 16, level + 1, u.levels.length, { on: RED, off: 'rgba(0,0,82,0.15)' });
+				// Now → next, with the art's icons.
+				const icon = (n: number, ix: number, iy: number, dim = false) => {
+					const [sx, sy] = u.icons[n];
+					ctx.save();
+					if (dim) ctx.globalAlpha = 0.55;
+					ctx.drawImage(sheet, sx, sy, 84, 78, ix, iy, 64, 60);
+					ctx.restore();
+				};
+				icon(level, x + 14, y + 40);
+				text(ctx, 'NOW', x + 92, y + 52, { size: 13, family: AGENCY, color: MUTED });
+				text(ctx, u.levels[level], x + 92, y + 70, { size: 17, family: AGENCY, color: NAVY, max: CARD_W - 106 });
+				if (level < max) {
+					text(ctx, 'NEXT', x + 92, y + 94, { size: 13, family: AGENCY, color: MUTED });
+					text(ctx, u.levels[level + 1], x + 92, y + 112, { size: 17, family: AGENCY, color: RED, max: CARD_W - 106 });
+				} else text(ctx, 'Fully upgraded', x + 92, y + 100, { size: 16, family: AGENCY, color: MUTED, bold: false });
+			});
+			text(ctx, 'Earn money by flying missions.', 24, 499, { size: 16, family: AGENCY, color: MUTED, bold: false });
+		}
+
+		// Mission select: the mission's own backdrop, a briefing card, and Play.
+		if (this.game == -1) {
+			const page = Math.max(1, this.select);
+			const m = MISSIONS[page - 1];
+			this.img(page == 1 ? 'PMission1' : page == 2 ? 'PMission2' : 'PMission3', 0, 0, 600, 555);
+			// Cover the art's painted text, arrows and buttons; the card and buttons below replace them.
+			ctx.fillStyle = m.sky;
+			ctx.fillRect(0, 0, 130, 56);
+			panel(ctx, 6, 96, 588, 326, { fill: 'rgb(250,250,252)', border: NAVY, width: 3, radius: 12, shadow: 'rgba(0,0,40,0.35)' });
+			ctx.fillStyle = m.ground;
+			ctx.fillRect(130, 428, 340, 80);
+			const locked = this.mComplete < page - 1;
+			text(ctx, `MISSION ${page}`, 28, 178, { size: 38, family: AGENCY, color: NAVY });
+			const tw = (() => { ctx.save(); ctx.font = `bold 38px ${AGENCY}`; const w = ctx.measureText(`MISSION ${page}`).width; ctx.restore(); return w; })();
+			panel(ctx, 40 + tw, 165, 74, 26, { fill: m.chip, radius: 13 });
+			text(ctx, m.difficulty.toUpperCase(), 77 + tw, 179, { size: 15, family: AGENCY, color: '#fff', align: 'center' });
+			const lines = wrap(ctx, m.brief, 540, `20px ${AGENCY}`);
+			lines.forEach((l, i) => text(ctx, l, 28, 216 + i * 24, { size: 20, family: AGENCY, color: 'rgb(40,40,70)', bold: false }));
+			const oy = 222 + lines.length * 24 + 14;
+			text(ctx, 'OBJECTIVE', 28, oy, { size: 14, family: AGENCY, color: MUTED });
+			text(ctx, m.objective, 28, oy + 22, { size: 22, family: AGENCY, color: RED });
+			text(ctx, 'FUEL', 330, oy, { size: 14, family: AGENCY, color: MUTED });
+			text(ctx, page == 1 ? '3 tanks' : '8 tanks', 330, oy + 22, { size: 22, family: AGENCY, color: NAVY });
+			text(ctx, 'YOUR BEST', 450, oy, { size: 14, family: AGENCY, color: MUTED });
+			text(ctx, '' + [this.h1, this.h2, this.h3][page - 1], 450, oy + 22, { size: 22, family: AGENCY, color: NAVY });
+			if (locked) {
+				panel(ctx, 6, 152, 588, 270, { fill: 'rgba(250,250,252,0.9)', radius: 12 });
+				padlock(ctx, 300, 250, 56, NAVY);
+				text(ctx, `Complete Mission ${page - 1} to unlock`, 300, 312, { size: 24, family: AGENCY, color: NAVY, align: 'center' });
+			}
+		}
+
+		// Controls: every key, and the moves that upgrades unlock.
+		if (this.game == 7) {
+			this.page('Controls');
+			const key = { family: 'Arial, sans-serif', fill: '#fff', text: NAVY, border: 'rgba(0,0,82,0.45)', size: 13, h: 28 };
+			panel(ctx, 20, 74, 272, 380, { fill: 'rgba(255,255,255,0.5)', border: 'rgba(0,0,82,0.18)', radius: 10 });
+			text(ctx, 'FLYING', 38, 98, { size: 20, family: AGENCY, color: NAVY });
+			const basic: [string[], string][] = [
+				[['W'], 'Climb'], [['S'], 'Dive'], [['A'], 'Tilt left'], [['D'], 'Tilt right'],
+				[['Space'], 'Fire guns'], [['Shift'], 'Fire a missile'], [['Enter'], 'Pause']
+			];
+			basic.forEach(([keys, what], i) => {
+				const y = 122 + i * 44;
+				keyRow(ctx, keys, 38, y, key);
+				text(ctx, what, 132, y + 15, { size: 19, family: AGENCY, color: NAVY, bold: false });
+			});
+			panel(ctx, 308, 74, 272, 380, { fill: 'rgba(255,255,255,0.5)', border: 'rgba(0,0,82,0.18)', radius: 10 });
+			text(ctx, 'UNLOCKED BY UPGRADES', 326, 98, { size: 20, family: AGENCY, color: NAVY });
+			const adv: [string, string[], string, string][] = [
+				['Rapid fire', ['Space'], 'hold to keep firing', 'Gun level 2'],
+				['Twin guns', ['Space'], 'fires from both wings', 'Gun level 3'],
+				['Lock-on missile', ['Shift'], 'target in the reticle', 'Missile level 3'],
+				['Barrel roll', ['A', 'A'], 'or D, D: dodge fire', 'Movement level 2']
+			];
+			adv.forEach(([name, keys, how, need], i) => {
+				const y = 120 + i * 82;
+				text(ctx, name.toUpperCase(), 326, y + 8, { size: 18, family: AGENCY, color: RED });
+				const w = keyRow(ctx, keys, 326, y + 22, key);
+				text(ctx, how, 336 + w, y + 37, { size: 16, family: AGENCY, color: NAVY, bold: false, max: 262 - w - 20 });
+				text(ctx, 'Needs ' + need, 326, y + 66, { size: 13, family: AGENCY, color: MUTED, bold: false });
+			});
+			text(ctx, 'On phones: the joystick flies; the Fire, Missile and Pause buttons sit beside it.', 300, 478, { size: 15, family: AGENCY, color: MUTED, align: 'center', bold: false });
+		}
+
+		// Paused (drawn over the frozen mission).
+		if (this.game == 4) {
+			theme = NIGHT;
+			ctx.fillStyle = 'rgba(0,0,30,0.55)';
+			ctx.fillRect(0, 0, GAME_W, GAME_H);
+			panel(ctx, 150, 112, 300, 280, { fill: 'rgba(0,0,60,0.94)', border: RED, width: 3, radius: 14 });
+			text(ctx, 'PAUSED', 300, 152, { size: 40, family: AGENCY, color: '#fff', align: 'center' });
+			if (!touchScreen()) text(ctx, 'Enter to continue', 300, 418, { size: 16, family: AGENCY, color: 'rgba(255,255,255,0.8)', align: 'center', bold: false });
+		}
+
+		// Mission over: the result, score and pay.
+		if (this.game == 3) {
+			theme = NIGHT;
+			ctx.fillStyle = 'rgb(6,10,34)';
+			ctx.fillRect(0, 0, GAME_W, GAME_H);
+			const [title, color] =
+				this.success == 2 ? ['MISSION COMPLETE', 'rgb(113,200,117)'] : this.success == 1 ? ['MISSION FAILED', 'rgb(255,170,60)'] : ['GAME OVER', 'rgb(255,80,80)'];
+			panel(ctx, 100, 60, 400, 400, { fill: 'rgba(0,0,60,0.9)', border: color, width: 3, radius: 14 });
+			text(ctx, title, 300, 104, { size: 40, family: AGENCY, color, align: 'center' });
+			text(ctx, `Mission ${this.mission}`, 300, 136, { size: 18, family: AGENCY, color: 'rgba(255,255,255,0.7)', align: 'center', bold: false });
+			this.earned = this.success == 0 ? idiv(this.score, 250) : idiv(this.score, 100);
+			const rows: [string, string, string?][] = [['SCORE', '' + this.score]];
+			if (this.success == 2 && this.mission == 3) rows.push(['BASE DESTROYED', '+' + BASE_BONUS, 'rgb(113,200,117)']);
+			rows.push(['EARNED', '$' + this.earned]);
+			if (this.success == 2) rows.push(['MISSION BONUS', '+$300', 'rgb(113,200,117)']);
+			rows.forEach(([k, v, c], i) => {
+				const y = 182 + i * 48;
+				text(ctx, k, 140, y, { size: 20, family: AGENCY, color: 'rgba(255,255,255,0.75)' });
+				text(ctx, v, 460, y, { size: 28, family: AGENCY, color: c ?? '#fff', align: 'right' });
+			});
+			if (this.mission == 1 && this.h1 < this.score) this.h1 = this.score;
+			else if (this.mission == 2 && this.h2 < this.score) this.h2 = this.score;
+			else if (this.mission == 3 && this.h3 < this.score) this.h3 = this.score;
+		}
+
+		drawButtons(ctx, buttons, theme, this.hover);
 	}
 
 	private keyPressedJava(keyCode: Key) {
@@ -981,7 +1308,11 @@ export class TopGun implements ArcadeGame {
 		};
 		if (this.mission == 1 && this.kills >= 75) done(1);
 		if (this.mission == 2 && this.killsShip >= 30) done(2);
-		if (this.mission == 3 && this.aBase.health <= 0) done(3);
+		if (this.mission == 3 && this.aBase.health <= 0) {
+			// Destroying the army base is worth a bonus (once, as the mission completes).
+			if (this.complete == 0) this.score += BASE_BONUS;
+			done(3);
+		}
 	}
 
 	rotating() {
@@ -1155,40 +1486,6 @@ export class TopGun implements ArcadeGame {
 		c.restore();
 	}
 
-	/** High scores screen, global version: each mission's record holder, plus your own best. */
-	private paintGlobalScores() {
-		const g = this.global!;
-		const ctx = this.ctx;
-		const local: Record<number, number> = { 1: this.h1, 2: this.h2, 3: this.h3 };
-		ctx.save();
-		ctx.textAlign = 'center';
-		this.setColor('rgb(90,90,90)');
-		this.font(15, 'Arial, sans-serif');
-		this.drawString(this.loggedIn ? 'GLOBAL RECORDS' : 'GLOBAL RECORDS · LOG IN TO SAVE YOURS', 300, 128);
-		ctx.restore();
-		for (const [m, y] of [[1, 170], [2, 250], [3, 350]] as const) {
-			const top = g.missions[m]?.[0];
-			const score = '' + (top?.score ?? 0);
-			this.setColor(C.DEFAULT);
-			this.font(30);
-			this.drawString(score, 580 - this.stringWidth(score), y);
-			const scoreW = this.stringWidth(score);
-			if (top) {
-				this.font(15, 'Arial, sans-serif');
-				this.setColor('rgb(90,90,90)');
-				this.drawString(top.name, 580 - scoreW - 14 - this.stringWidth(top.name), y - 4);
-			}
-			const mine = this.loggedIn ? (g.you?.[m] ?? 0) : local[m];
-			const you = `you: ${mine}`;
-			this.font(14, 'Arial, sans-serif');
-			this.setColor('rgb(110,110,110)');
-			this.drawString(you, 580 - this.stringWidth(you), y + 22);
-		}
-		this.setColor(C.DEFAULT);
-		this.font(30);
-		this.drawString('' + this.gp, 580 - this.stringWidth('' + this.gp), 430);
-	}
-
 	paint(ctx: CanvasRenderingContext2D, now: number) {
 		this.ctx = ctx;
 		this.now = now;
@@ -1196,18 +1493,6 @@ export class TopGun implements ArcadeGame {
 		ctx.imageSmoothingEnabled = false; // Java's default (nearest neighbour) when scaling
 		ctx.fillStyle = 'rgb(238,238,238)';
 		ctx.fillRect(0, 0, GAME_W, GAME_H);
-
-		// Main Menu
-		if (this.game == 0) {
-			this.img('TopGunMM', 0, 0, 600, 560);
-			this.anim('JetMM', 232, 352, 400, 203);
-			if (this.select == 0) { this.cx = 200; this.cy = 170; }
-			if (this.select == 1) { this.cx = 240; this.cy = 240; }
-			if (this.select == 2) { this.cx = 240; this.cy = 325; }
-			if (this.select == 3) { this.cx = 240; this.cy = 405; }
-			if (this.select == 4) { this.cx = 170; this.cy = 480; }
-			this.fillOval(this.cx, this.cy, 15, 15);
-		}
 
 		// GAME GRAPHICS
 		if (this.game == 1 || this.game == 4) {
@@ -1346,105 +1631,8 @@ export class TopGun implements ArcadeGame {
 			}
 		}
 
-		// GAME OVER
-		if (this.game == 3) {
-			if (this.success == 0) this.img('GameOver', 0, 0, 600, 600);
-			if (this.success == 1) this.img('MFailed', 0, 0, 600, 600);
-			if (this.success == 2) {
-				this.img('MComplete', 0, 0, 600, 600);
-				this.setColor(C.Green);
-				this.font(20);
-				this.drawString('+$300', 310, 330);
-			}
-			if (this.select == 0) { this.cx = 80; this.cy = 380; }
-			if (this.select == 1) { this.cx = 340; this.cy = 380; }
-			this.setColor(C.Green);
-			this.fillOval(this.cx, this.cy, 15, 15);
-			this.font(30);
-			this.drawString('' + this.score, 240, 210);
-			this.earned = this.success == 0 ? idiv(this.score, 250) : idiv(this.score, 100);
-			this.drawString('$' + this.earned, 280, 300);
-			if (this.mission == 1 && this.h1 < this.score) this.h1 = this.score;
-			else if (this.mission == 2 && this.h2 < this.score) this.h2 = this.score;
-			else if (this.mission == 3 && this.h3 < this.score) this.h3 = this.score;
-		}
-
-		if (this.game == 4) {
-			this.img('Pause', 0, 0, 600, 600);
-			if (this.select == 0) { this.cx = 200; this.cy = 199; }
-			if (this.select == 1) { this.cx = 200; this.cy = 255; }
-			if (this.select == 2) { this.cx = 200; this.cy = 315; }
-			this.setColor(C.GREEN);
-			this.fillOval(this.cx, this.cy, 15, 15);
-		}
-
-		// Highscores
-		if (this.game == 5) {
-			this.img('Highscores', 0, 0, 600, 555);
-			if (this.select == 0) { this.cx = 70; this.cy = 15; }
-			if (this.select == 1) { this.cx = 370; this.cy = 465; }
-			if (this.select == 2) { this.cx = 400; this.cy = 498; }
-			this.fillOval(this.cx, this.cy, 15, 15);
-			if (this.global) this.paintGlobalScores();
-			else {
-				this.font(30);
-				for (const [v, y] of [[this.h1, 170], [this.h2, 250], [this.h3, 350], [this.gp, 430]] as const) {
-					this.drawString('' + v, 580 - this.stringWidth('' + v), y);
-				}
-			}
-		}
-
-		// Upgrades Menu
-		if (this.game == 6) {
-			this.img('Upgrade', 0, this.uy, 600, 1110);
-			if (this.select == 0) { this.cx = 110; this.cy = 25; }
-			if (this.select == 1) { this.cx = 50; this.cy = 100; }
-			if (this.select == 2) { this.cx = 50; this.cy = 330; this.uy = 0; }
-			if (this.select == 3) { this.cx = 50; this.cy = 55; this.uy = -555; }
-			if (this.select == 4) { this.cx = 50; this.cy = 285; }
-			if (this.select == 5) { this.cx = 450; this.cy = 490; }
-			if (this.select < 3) {
-				if (this.health < 1) this.img('hLvl2', 250, this.u2y, 140, 147);
-				if (this.health < 2) this.img('hLvl3', 395, this.u3y, 140, 147);
-				if (this.miss < 1) this.img('mLvl2', 250, this.u4y, 140, 147);
-				if (this.miss < 2) this.img('mLvl3', 395, this.u5y, 140, 147);
-			}
-			if (this.select > 2) {
-				// Page 2 has no way back up in the art: a small ▲ (click it, or press W).
-				this.ctx.fillStyle = 'rgba(255,255,255,0.85)';
-				this.ctx.beginPath();
-				this.ctx.moveTo(20, 30); this.ctx.lineTo(40, 30); this.ctx.lineTo(30, 14);
-				this.ctx.fill();
-				if (this.shoot < 1) this.img('sLvl2', 250, this.u6y, 140, 147);
-				if (this.shoot < 2) this.img('sLvl3', 395, this.u7y, 140, 147);
-				if (this.move == 0) this.img('bLvl2', 340, this.u8y, 140, 147);
-			}
-			this.setColor(C.Green);
-			this.fillOval(this.cx, this.cy, 15, 15);
-			this.font(30);
-			const money = '$' + this.money;
-			this.drawString(money, 580 - this.stringWidth(money), 40);
-		}
-
-		// Level Select
-		if (this.game == -1) {
-			if (this.select == 0 || this.select == 1) this.img('PMission1', 0, 0, 600, 555);
-			if (this.select == 2) this.img('PMission2', 0, 0, 600, 555);
-			if (this.select == 3) this.img('PMission3', 0, 0, 600, 555);
-			if (this.select > 0 && this.mComplete < this.select - 1) this.img('MissionLocked', 0, 0, 600, 555);
-			if (this.select == 0) { this.cx = 70; this.cy = 15; }
-			if (this.select > 0) { this.cx = 210; this.cy = 460; }
-			this.setColor(C.BLACK);
-			this.fillOval(this.cx, this.cy, 15, 15);
-		}
-
-		// Controls Menu
-		if (this.game == 7) {
-			this.img('Controls', 0, 0, 600, 555);
-			if (this.select == 0) { this.cx = 70; this.cy = 15; }
-			this.fillOval(this.cx, this.cy, 15, 15);
-			if (this.select == 1) this.img('aControls', 0, 0, 600, 555);
-		}
+		// Menus (and the pause / mission-over screens) are drawn over whatever is above.
+		if (this.game != 1) this.paintMenus();
 	}
 }
 

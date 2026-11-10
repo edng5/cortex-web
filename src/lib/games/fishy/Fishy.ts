@@ -6,7 +6,7 @@
 //  - Single player moves with WASD or the arrow keys (so either on-screen joystick works on
 //    phones); in multiplayer, player 1 has WASD and player 2 the arrow keys, as before.
 //  - A moment of safety after losing a life, so you can't be eaten again where you respawn.
-import { COMIC, Gfx, Mask, drawRecord, loadImages, loadSave, pixelsTouch, writeSave, type ArcadeGame, type Board, type Sprite } from '../common';
+import { COMIC, Gfx, Mask, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, pips, pixelsTouch, text, writeSave, type ArcadeGame, type Board, type Sprite, type UiButton, type UiTheme } from '../common';
 
 export const GAME_W = 900;
 export const GAME_H = 662;
@@ -14,15 +14,11 @@ export const TICK_MS = 10;
 
 const BASE = '/games/fishy/';
 const IMAGES = {
-	Mainmenu: 'TitleScreen.jpg', Highscore: 'Highscore.jpg', Records: 'Records.jpg', Difficulty: 'Difficulty.jpg',
-	Characters: 'Characters.jpg', Background1: 'Background1.png', FishyR: 'FishyCharR.png', FishyL: 'FishyCharL.png',
+	Mainmenu: 'TitleScreenClean.jpg', Sea: 'SeaClean.jpg', Background1: 'Background1.png', FishyR: 'FishyCharR.png', FishyL: 'FishyCharL.png',
 	FishyUp: 'FishyCharUp.png', EnemyFishR: 'EnemyFishR.png', EnemyFishL: 'EnemyFishL.png', SharkCharR: 'SharkCharR.png',
 	SharkCharL: 'SharkCharL.png', SharkCharUp: 'SharkCharUp.png', MooneyFishR: 'MooneyFishR.png', MooneyFishL: 'MooneyFishL.png',
-	MooneyFishUp: 'MooneyFishUp.png', GameOver: 'GameOver.jpg', WinScreen: 'WinScreen.jpg', HowToPlay1: 'HowToPlay1.jpg',
-	HowToPlay2: 'HowToPlay2.jpg', EnemySharkR: 'SharkR.png', EnemySharkL: 'SharkL.png', TheHook: 'TheHook.png',
-	UnlockShark: 'UnlockS.png', UnlockMooney: 'UnlockM.png', SelectedChar: 'SelectedChar.png', livesCount: 'livesCount.png',
-	P1: 'P1.png', P2: 'P2.png', Fishy2R: 'FishyChar2R.png', Fishy2L: 'FishyChar2L.png', P1Win: 'P1Win.jpg', P2Win: 'P2Win.jpg',
-	HSMulti: 'HSMulti.jpg'
+	MooneyFishUp: 'MooneyFishUp.png', GameOver: 'GameOver.jpg', WinScreen: 'WinScreen.jpg', EnemySharkR: 'SharkR.png', EnemySharkL: 'SharkL.png', TheHook: 'TheHook.png', livesCount: 'livesCount.png',
+	P1: 'P1.png', P2: 'P2.png', Fishy2R: 'FishyChar2R.png', Fishy2L: 'FishyChar2L.png', P1Win: 'P1Win.jpg', P2Win: 'P2Win.jpg'
 };
 type ImageName = keyof typeof IMAGES;
 type Images = Record<ImageName, HTMLImageElement>;
@@ -37,6 +33,36 @@ const SPRITES = [
 type SpriteName = (typeof SPRITES)[number];
 /** Ticks of safety after a respawn (0.8 s). */
 const SAFE_TICKS = 80;
+
+// ── Menu look: white bubbles on the sea, coral for the main action and the picked option ──
+const INK = 'rgb(10,55,85)';
+const INK_SOFT = 'rgba(10,55,85,0.75)';
+const CORAL = 'rgb(240,110,70)';
+const CARD = 'rgba(255,255,255,0.72)';
+const UI: UiTheme = {
+	family: COMIC,
+	size: 26,
+	detailSize: 15,
+	radius: 26,
+	borderWidth: 3,
+	glow: 'rgba(0,50,110,0.35)',
+	cardHover: 'rgb(0,120,190)',
+	idle: { fill: 'rgba(255,255,255,0.6)', text: 'rgb(14,74,110)', border: 'rgba(255,255,255,0.95)', detail: 'rgba(14,74,110,0.75)' },
+	hover: { fill: 'rgb(255,255,255)', text: 'rgb(0,100,155)', border: CORAL, detail: 'rgb(220,90,50)' },
+	primary: { fill: CORAL, text: '#fff', border: 'rgba(255,255,255,0.95)', detail: 'rgba(255,255,255,0.9)' },
+	chosen: { fill: 'rgba(255,255,255,0.92)', text: INK, border: CORAL },
+	disabled: { fill: 'rgba(255,255,255,0.6)', text: 'rgba(14,74,110,0.5)', border: 'rgba(255,255,255,0.8)' }
+};
+const DIFFICULTIES = ['', 'Easy', 'Medium', 'Hard'];
+const CHARACTERS = ['', 'Fishy', 'Shark', 'Mooney Fish'];
+/** The menu screens (title, high scores tabs, options, how to play). */
+const MENU_SCREENS = [0, 3, 4, 5, 12, 13];
+
+/** A small "Selected" pill under a picked card. */
+function badge(ctx: CanvasRenderingContext2D, cx: number, cy: number, label: string) {
+	panel(ctx, cx - 50, cy - 13, 100, 26, { fill: CORAL, radius: 13 });
+	text(ctx, label, cx, cy + 1, { size: 15, family: COMIC, color: '#fff', align: 'center' });
+}
 
 export class Fishy implements ArcadeGame {
 	// ── Fields (as in Fishy.java; its four identical copies of each fish are one fish here) ──
@@ -127,84 +153,202 @@ export class Fishy implements ArcadeGame {
 		this.save();
 	}
 
-	// ── Mouse: the original menus. Java measured clicks on the window, so add its insets. ──
+	// ── Menus: drawn buttons and cards, clicked or tapped ──
+	// Screens (`game`): 0 title, 3 / 12 / 13 high scores (single player, records, multiplayer tabs),
+	// 4 options (difficulty and character), 5 how to play.
+	private hover: string | null = null;
+
 	pointerDown(px: number, py: number) {
 		if (this.game == 7 || this.game == 8 || this.game == 10 || this.game == 11) {
 			this.keyPressed('Enter'); // "Press Enter to Play Again": a click works too
 			return;
 		}
-		const before = { game: this.game, difficulty: this.difficulty, character: this.character };
-		this.mousePressed(px + 8, py + 31);
-		if (this.game != before.game || this.difficulty != before.difficulty || this.character != before.character) this.sfx('confirm');
+		const b = buttonAt(this.ui(), px, py);
+		if (!b) return;
+		this.sfx('confirm');
+		b.onClick();
+		this.hover = null;
 		this.save();
 	}
 	pointerMove(px: number, py: number) {
-		if (this.game == 7 || this.game == 8 || this.game == 10 || this.game == 11) return false;
-		const mx = px + 8, my = py + 31;
-		const inR = (x0: number, x1: number, y0: number, y1: number) => mx >= x0 && mx <= x1 && my >= y0 && my < y1;
-		const back = inR(10, 110, 40, 100), next = inR(810, 860, 40, 110);
-		switch (this.game) {
-			case 0:
-				return (
-					(mx >= 380 && mx <= 520 && [[200, 230], [260, 300], [330, 360], [400, 425], [470, 500]].some(([a, b]) => my >= a && my < b)) || next
-				);
-			case 3: case 4: case 5: case 12: return back || next;
-			case 9: case 13: return back;
-			case 6:
-				return (
-					back ||
-					(mx >= 200 && mx <= 800 && (inR(200, 800, 290, 320) || (inR(200, 800, 430, 460) && this.unlockS == 1) || (inR(200, 800, 575, 605) && this.unlockM == 1)))
-				);
-		}
-		return false;
+		if (!MENU_SCREENS.includes(this.game)) return false;
+		const b = buttonAt(this.ui(), px, py);
+		this.hover = b?.id ?? null;
+		return !!b;
 	}
 
-	private mousePressed(mouseX: number, mouseY: number) {
-		const inR = (x0: number, x1: number, y0: number, y1: number) => mouseX >= x0 && mouseX <= x1 && mouseY >= y0 && mouseY < y1;
-		if (this.game == 0) {
-			if (inR(380, 520, 200, 230)) this.game = 1;
-			if (inR(380, 520, 260, 300)) this.game = 2;
-			if (inR(380, 520, 330, 360)) this.game = 3;
-			if (inR(380, 520, 400, 425)) this.game = 4;
-			if (inR(380, 520, 470, 500)) {
-				this.save();
-				this.onQuit();
+	private ui(): UiButton[] {
+		const back: UiButton = { id: 'back', x: 20, y: 18, w: 128, h: 46, label: '‹ Back', size: 22, onClick: () => (this.game = 0) };
+		switch (this.game) {
+			case 0: {
+				const rows: [string, string | undefined, () => void][] = [
+					['Single Player', `${DIFFICULTIES[this.difficulty]} · playing as ${CHARACTERS[this.character]}`, () => (this.game = 1)],
+					['Multiplayer', '2 players · one keyboard', () => (this.game = 2)],
+					['High Scores', 'Records and 2P wins', () => (this.game = 3)],
+					['Options', 'Difficulty and character', () => (this.game = 4)],
+					['Exit Game', undefined, () => { this.save(); this.onQuit(); }]
+				];
+				return [
+					...rows.map(([label, detail, onClick], i): UiButton => ({
+						id: 'main' + i, label, detail, x: 300, y: 150 + i * 68, w: 300, h: 56, kind: i == 0 ? 'primary' : undefined, onClick
+					})),
+					// The art's "?" bubble: How to Play.
+					{ id: 'help', x: 804, y: 22, w: 64, h: 64, label: '?', size: 34, onClick: () => (this.game = 5) }
+				];
 			}
-			if (inR(810, 860, 40, 110)) this.game = 5;
-		} else if (this.game == 4) {
-			if (inR(810, 860, 40, 110)) this.game = 6;
-			else if (inR(50, 300, 190, 550)) this.difficulty = 1;
-			else if (inR(320, 570, 190, 550)) this.difficulty = 2;
-			else if (inR(600, 850, 190, 550)) this.difficulty = 3;
+			case 3: case 12: case 13:
+				return [
+					back,
+					...([[3, 'Single player'], [12, 'Records'], [13, 'Multiplayer']] as const).map(([screen, label], i): UiButton => ({
+						id: 'tab' + screen, label, x: 216 + i * 160, y: 100, w: 150, h: 44, size: 20, chosen: this.game == screen,
+						onClick: () => (this.game = screen)
+					}))
+				];
+			case 4:
+				return [
+					back,
+					...[1, 2, 3].map((d): UiButton => ({
+						id: 'diff' + d, x: 60 + (d - 1) * 270, y: 136, w: 240, h: 190, chosen: this.difficulty == d,
+						draw: (ctx, b) => this.drawDifficulty(ctx, b, d),
+						onClick: () => (this.difficulty = d)
+					})),
+					...[1, 2, 3].map((c): UiButton => {
+						const locked = (c == 2 && this.unlockS != 1) || (c == 3 && this.unlockM != 1);
+						return {
+							id: 'char' + c, x: 60 + (c - 1) * 270, y: 392, w: 240, h: 216, chosen: this.character == c, disabled: locked,
+							draw: (ctx, b) => this.drawCharacter(ctx, b, c, locked),
+							onClick: () => {
+								// As the original: the character sets your speed and lives.
+								this.character = c; this.speed = c; this.lives = c;
+							}
+						};
+					})
+				];
+			case 5:
+				return [back];
 		}
-		if (this.game == 3 || this.game == 4 || this.game == 5) {
-			if (inR(10, 110, 40, 100)) this.game = 0;
-		}
+		return [];
+	}
+
+	private drawDifficulty(ctx: CanvasRenderingContext2D, b: UiButton, d: number) {
+		const i = this.img;
+		const cx = b.x + b.w / 2;
+		text(ctx, DIFFICULTIES[d], cx, b.y + 30, { size: 28, family: COMIC, color: INK, align: 'center' });
+		// Who's in the water.
+		ctx.drawImage(i.EnemyFishR, b.x + 24, b.y + 62, 72, 24);
+		if (d >= 2) ctx.drawImage(i.EnemySharkR, b.x + 104, b.y + 56, 84, 28);
+		if (d == 3) ctx.drawImage(i.TheHook, b.x + 200, b.y + 46, 16, 60);
+		const lines = [['Fish only', 'Fish and sharks', 'Fish, sharks and hooks'][d - 1], 'Speed: ' + ['slow', 'moderate', 'fast'][d - 1]];
+		lines.forEach((l, k) => text(ctx, l, cx, b.y + 120 + k * 26, { size: 17, family: COMIC, color: INK_SOFT, align: 'center', bold: false }));
+		if (this.difficulty == d) badge(ctx, cx, b.y + b.h - 20, 'Selected');
+	}
+
+	private drawCharacter(ctx: CanvasRenderingContext2D, b: UiButton, c: number, locked: boolean) {
+		const i = this.img;
+		const cx = b.x + b.w / 2;
+		ctx.globalAlpha = locked ? 0.45 : 1;
+		const sprite = c == 1 ? i.FishyR : c == 2 ? i.SharkCharR : i.MooneyFishR;
+		ctx.drawImage(sprite, cx - 75, b.y + 14, 150, 50);
+		text(ctx, CHARACTERS[c], cx, b.y + 86, { size: 24, family: COMIC, color: INK, align: 'center' });
+		text(ctx, 'Speed', b.x + 30, b.y + 120, { size: 16, family: COMIC, color: INK_SOFT, bold: false });
+		pips(ctx, b.x + 100, b.y + 114, c, 3, { on: 'rgb(60,200,90)', off: 'rgba(14,74,110,0.18)', w: 30, h: 12 });
+		text(ctx, 'Lives', b.x + 30, b.y + 146, { size: 16, family: COMIC, color: INK_SOFT, bold: false });
+		pips(ctx, b.x + 100, b.y + 140, c, 3, { on: 'rgb(60,200,90)', off: 'rgba(14,74,110,0.18)', w: 30, h: 12 });
+		ctx.globalAlpha = 1;
+		if (locked) {
+			padlock(ctx, b.x + b.w - 30, b.y + 28, 26, INK);
+			text(ctx, c == 2 ? 'Unlock: eat a shark' : 'Unlock: win on Hard', cx, b.y + 186, { size: 16, family: COMIC, color: 'rgb(190,60,30)', align: 'center' });
+		} else if (this.character == c) badge(ctx, cx, b.y + b.h - 22, 'Selected');
+	}
+
+	private paintMenus(ctx: CanvasRenderingContext2D) {
+		const g = this.g;
+		const i = this.img;
+		g.img(this.game == 0 ? i.Mainmenu : i.Sea, 0, 0, 900, 700);
+		const title = (s: string) => text(ctx, s, 450, 46, { size: 40, family: COMIC, color: INK, align: 'center' });
+
+		// High scores: three tabs.
 		if (this.game == 3) {
-			if (inR(810, 860, 40, 110)) this.game = 12;
-		} else if (this.game == 12) {
-			if (inR(10, 110, 40, 100)) this.game = 3;
-			else if (inR(810, 860, 40, 110)) this.game = 13;
-		} else if (this.game == 13) {
-			if (inR(10, 110, 40, 100)) this.game = 12;
+			title('High Scores');
+			[[1, 'Easy', this.ehs], [2, 'Medium', this.mhs], [3, 'Hard', this.hhs]].forEach(([board, name, best], k) => {
+				const y = 170 + k * 118;
+				panel(ctx, 110, y, 680, 100, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
+				text(ctx, name as string, 140, y + 50, { size: 30, family: COMIC, color: INK });
+				text(ctx, 'YOUR BEST', 360, y + 32, { size: 13, family: COMIC, color: INK_SOFT });
+				text(ctx, '' + best, 360, y + 64, { size: 30, family: COMIC, color: INK });
+				text(ctx, 'GLOBAL RECORD', 540, y + 32, { size: 13, family: COMIC, color: INK_SOFT });
+				drawRecord(g, { global: this.global, board: board as number, local: best as number, loggedIn: this.loggedIn, x: 540, y: y + 60, family: COMIC, color: INK, dim: INK_SOFT, size: 17 });
+			});
 		}
-		if (this.game == 6) {
-			if (inR(10, 110, 40, 100)) this.game = 4;
-			else if (inR(200, 800, 290, 320)) {
-				this.character = 1; this.speed = 1; this.lives = 1;
-			} else if (inR(200, 800, 430, 460)) {
-				if (this.unlockS == 1) { this.character = 2; this.speed = 2; this.lives = 2; }
-			} else if (inR(200, 800, 575, 605)) {
-				if (this.unlockM == 1) { this.character = 3; this.speed = 3; this.lives = 3; }
-			}
+		if (this.game == 12) {
+			title('High Scores');
+			const block = (x: number, heading: string, rows: [string, number][]) => {
+				panel(ctx, x, 170, 330, 300, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
+				text(ctx, heading, x + 28, 206, { size: 26, family: COMIC, color: INK });
+				rows.forEach(([k, v], n) => {
+					text(ctx, k, x + 28, 254 + n * 48, { size: 19, family: COMIC, color: INK_SOFT, bold: false });
+					text(ctx, '' + v, x + 302, 254 + n * 48, { size: 24, family: COMIC, color: INK, align: 'right' });
+				});
+			};
+			block(110, 'All games', [['Games played', this.gp], ['Fish eaten', this.Tfa], ['Sharks eaten', this.Tsa], ['Caught by hooks', this.dbh]]);
+			block(460, 'Best in one game', [['Fish eaten', this.fa], ['Sharks eaten', this.sa]]);
 		}
+		if (this.game == 13) {
+			title('High Scores');
+			[[i.P1, 'Player 1', this.p1s], [i.P2, 'Player 2', this.p2s]].forEach(([icon, name, wins], k) => {
+				const x = 150 + k * 320;
+				panel(ctx, x, 180, 280, 260, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
+				ctx.drawImage(icon as HTMLImageElement, x + 100, 196, 80, 80);
+				text(ctx, name as string, x + 140, 300, { size: 26, family: COMIC, color: INK, align: 'center' });
+				text(ctx, '' + wins, x + 140, 354, { size: 48, family: COMIC, color: CORAL, align: 'center' });
+				text(ctx, 'wins', x + 140, 396, { size: 18, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+			});
+		}
+
+		if (this.game == 4) {
+			title('Options');
+			text(ctx, 'Difficulty', 60, 116, { size: 24, family: COMIC, color: INK });
+			text(ctx, 'Character', 60, 372, { size: 24, family: COMIC, color: INK });
+		}
+
+		// How to play: both modes on one page.
 		if (this.game == 5) {
-			if (inR(10, 110, 40, 100)) this.game = 0;
-			if (inR(810, 860, 40, 110)) this.game = 9;
+			title('How to Play');
+			const key = { family: 'Arial, sans-serif', fill: '#fff', text: INK, border: 'rgba(14,74,110,0.45)', size: 13, h: 28 };
+			const col = (x: number, heading: string) => {
+				panel(ctx, x, 96, 400, 470, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
+				text(ctx, heading, x + 200, 128, { size: 28, family: COMIC, color: INK, align: 'center' });
+			};
+			const line = (x: number, y: number, s: string) => text(ctx, s, x, y, { size: 17, family: COMIC, color: INK_SOFT, bold: false, max: 360 });
+			col(40, 'Single player');
+			ctx.drawImage(i.FishyR, 70, 160, 90, 30);
+			ctx.drawImage(i.EnemyFishR, 190, 168, 45, 15);
+			line(70, 214, 'Eat fish smaller than you to grow.');
+			ctx.drawImage(i.EnemyFishL, 70, 240, 150, 50);
+			ctx.drawImage(i.FishyL, 240, 256, 54, 18);
+			line(70, 312, 'Avoid bigger fish: swim into their');
+			line(70, 334, 'mouth and you lose a life.');
+			line(70, 372, 'Medium adds sharks; Hard adds hooks.');
+			line(70, 398, 'Reach 9000 points to win.');
+			keyRow(ctx, ['W', 'A', 'S', 'D'], 70, 432, key);
+			line(70, 482, 'or the arrow keys to swim');
+			col(460, 'Multiplayer');
+			ctx.drawImage(i.P1, 500, 156, 44, 44);
+			ctx.drawImage(i.FishyR, 550, 166, 90, 30);
+			ctx.drawImage(i.P2, 680, 156, 44, 44);
+			ctx.drawImage(i.Fishy2L, 730, 166, 90, 30);
+			line(490, 230, 'Eat the other player to win.');
+			line(490, 262, 'If a CPU fish eats you, you shrink');
+			line(490, 284, 'back to your starting size.');
+			text(ctx, 'Player 1', 490, 340, { size: 17, family: COMIC, color: INK });
+			keyRow(ctx, ['W', 'A', 'S', 'D'], 600, 326, key);
+			text(ctx, 'Player 2', 490, 392, { size: 17, family: COMIC, color: INK });
+			keyRow(ctx, ['↑', '←', '↓', '→'], 600, 378, key);
+			panel(ctx, 230, 576, 440, 34, { fill: 'rgba(255,255,255,0.85)', radius: 17 });
+			text(ctx, 'On phones: the joystick swims (two in multiplayer).', 450, 592, { size: 17, family: COMIC, color: INK, align: 'center', bold: false });
 		}
-		if (this.game == 9) {
-			if (inR(10, 110, 40, 100)) this.game = 5;
-		}
+
+		drawButtons(ctx, this.ui(), UI, this.hover);
 	}
 
 	// ── Keyboard ──
@@ -555,7 +699,7 @@ export class Fishy implements ArcadeGame {
 		ctx.fillStyle = '#000';
 		ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-		if (this.game == 0) g.img(i.Mainmenu, 0, 0, 900, 700);
+		if (MENU_SCREENS.includes(this.game)) this.paintMenus(ctx);
 
 		if (this.game == 1) {
 			g.img(i.Background1, 0, 0, 900, 700);
@@ -604,52 +748,6 @@ export class Fishy implements ArcadeGame {
 			g.drawString('' + this.p2s, 840, 660);
 		}
 
-		// Highscore screen, with each difficulty's global record beside it.
-		if (this.game == 3) {
-			g.img(i.Highscore, 0, 0, 900, 700);
-			g.font(24, COMIC);
-			g.setColor('#000');
-			g.drawString('' + this.ehs, 450, 260);
-			g.drawString('' + this.mhs, 450, 370);
-			g.drawString('' + this.hhs, 450, 480);
-			g.font(18, COMIC);
-			g.setColor('rgb(10,60,90)');
-			g.drawString('Global records', 590, 200);
-			for (const [board, y, local] of [[1, 252, this.ehs], [2, 362, this.mhs], [3, 472, this.hhs]] as const) {
-				drawRecord(g, { global: this.global, board, local, loggedIn: this.loggedIn, x: 590, y, family: COMIC, color: '#000', dim: 'rgb(20,80,110)', size: 17 });
-			}
-		}
-		if (this.game == 12) {
-			g.img(i.Records, 0, 0, 900, 700);
-			g.font(24, COMIC);
-			g.setColor('#000');
-			for (const [v, y] of [[this.gp, 250], [this.Tfa, 300], [this.Tsa, 350], [this.dbh, 400], [this.fa, 505], [this.sa, 555]]) {
-				g.drawString('' + v, 450, y);
-			}
-		}
-		if (this.game == 13) {
-			g.img(i.HSMulti, 0, 0, 900, 700);
-			g.font(24, COMIC);
-			g.setColor('#000');
-			g.drawString('' + this.p1s, 450, 260);
-			g.drawString('' + this.p2s, 450, 370);
-		}
-		// Options screen
-		if (this.game == 4) {
-			g.img(i.Difficulty, 0, 0, 900, 700);
-			const sx = [0, 150, 440, 730][this.difficulty];
-			if (sx) g.img(i.SelectedChar, sx, 120, 45, 20);
-		}
-		if (this.game == 6) {
-			g.img(i.Characters, 0, 0, 900, 700);
-			if (this.unlockS == 0) g.img(i.UnlockShark, 400, 310, 379, 130);
-			if (this.unlockM == 0) g.img(i.UnlockMooney, 400, 460, 379, 130);
-			const sy = [0, 210, 365, 515][this.character];
-			if (sy) g.img(i.SelectedChar, 25, sy, 45, 20);
-		}
-		// How to Play
-		if (this.game == 5) g.img(i.HowToPlay2, 0, 0, 900, 700);
-		if (this.game == 9) g.img(i.HowToPlay1, 0, 0, 900, 700);
 		// Game Over
 		if (this.game == 7) {
 			g.img(i.GameOver, -150, 0, 1200, 700);

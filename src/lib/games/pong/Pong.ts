@@ -5,14 +5,14 @@
 // Java coordinates: mouse clicks were measured on the window (title bar and border included), so
 // the menu buttons here are the original hit boxes moved by the window insets (8, 31).
 import { Rect } from '../topgun/geometry';
-import { ARIAL, ARIAL_BLACK, Gfx, drawRecord, loadImages, loadSave, spotAt, writeSave, type ArcadeGame, type Board, type Hotspot } from '../common';
+import { ARIAL, ARIAL_BLACK, Gfx, buttonAt, drawButtons, drawRecord, loadImages, loadSave, panel, text, writeSave, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
 
 export const GAME_W = 550;
 export const GAME_H = 670;
 export const TICK_MS = 10;
 
 const BASE = '/games/pong/';
-const IMAGES = { PongMM: 'PongMM.jpg', BrickMM: 'BrickMM.jpg', PongHS: 'PongHS.jpg', BrickHS: 'BrickHS.jpg' };
+const IMAGES = { PongMM: 'PongMM.jpg', BrickMM: 'BrickMM.jpg' };
 type Images = Record<keyof typeof IMAGES, HTMLImageElement>;
 export const loadAssets = () => loadImages(BASE, IMAGES);
 
@@ -21,6 +21,22 @@ const Blue = 'rgb(18,38,169)';
 const Orange = 'rgb(247,148,29)';
 const WHITE = 'rgb(255,255,255)';
 const BLACK = 'rgb(0,0,0)';
+const Red = 'rgb(237,27,36)';
+
+/** Menu look, in each game's colour: Pong red on black, Brick Breaker orange on blue. */
+const theme = (accent: string, bg: string): UiTheme => ({
+	family: ARIAL_BLACK,
+	size: 26,
+	detailSize: 13,
+	radius: 4,
+	caps: true,
+	borderWidth: 3,
+	idle: { fill: 'rgba(255,255,255,0.04)', text: WHITE, border: accent, detail: 'rgba(255,255,255,0.7)' },
+	hover: { fill: accent, text: WHITE, border: WHITE, detail: 'rgba(255,255,255,0.9)' },
+	primary: { fill: accent, text: WHITE, border: accent, detail: 'rgba(255,255,255,0.9)' },
+	chosen: { fill: WHITE, text: bg, border: WHITE },
+	disabled: { fill: 'rgba(255,255,255,0.04)', text: 'rgba(255,255,255,0.4)', border: 'rgba(255,255,255,0.2)' }
+});
 
 class Ball {
 	size = 20; y_speed = 0; x_speed = 0; x = 260; y = 330;
@@ -113,27 +129,77 @@ export class Pong implements ArcadeGame {
 		this.save();
 	}
 
-	// ── Mouse (the original menus) ──
-	private spots(): Hotspot[] {
-		const s: Hotspot[] = [];
+	// ── Menus: drawn buttons, clicked or tapped ──
+	// A Pong / Brick Breaker switch sits at the top of the main menu and the high scores screen.
+	private hover: string | null = null;
+
+	private ui(): UiButton[] {
+		const modes: UiButton[] = [
+			{ id: 'mode1', label: 'Pong', x: 95, y: 240, w: 176, h: 44, size: 15, chosen: this.mode == 1, onClick: () => { if (this.mode != 1) this.switchMode(); } },
+			{ id: 'mode2', label: 'Brick Breaker', x: 279, y: 240, w: 176, h: 44, size: 15, chosen: this.mode == 2, onClick: () => { if (this.mode != 2) this.switchMode(); } }
+		];
 		if (this.game == 0) {
-			s.push({ x: 92, y: 259, w: 400, h: 81, click: () => this.play() });
-			s.push({ x: 92, y: 359, w: 400, h: 91, click: () => (this.game = 3) });
-			s.push({ x: 92, y: 479, w: 400, h: 81, click: () => { this.save(); this.onQuit(); } });
+			const rows: [string, string | undefined, () => void][] = [
+				['Play', this.mode == 1 ? 'Keep the ball in play' : 'Clear all 50 bricks', () => this.play()],
+				['High Scores', undefined, () => (this.game = 3)],
+				['Exit Game', undefined, () => { this.save(); this.onQuit(); }]
+			];
+			return [
+				...modes,
+				...rows.map(([label, detail, onClick], i): UiButton => ({
+					id: 'main' + i, label, detail, x: 95, y: 312 + i * 88, w: 360, h: 70, kind: i == 0 ? 'primary' : undefined, onClick
+				}))
+			];
 		}
-		if (this.game == 0 || this.game == 3) s.push({ x: 212, y: 634, w: 330, h: 36, click: () => this.switchMode() });
-		if (this.game == 3) s.push({ x: 0, y: 0, w: 122, h: 49, click: () => (this.game = 0) });
-		// Game over: a click does what Enter does.
-		if (this.game == 2) s.push({ x: 0, y: 0, w: GAME_W, h: GAME_H, click: () => this.keyPressed('Enter') });
-		return s;
+		if (this.game == 3) {
+			return [{ id: 'back', label: '‹ Back', x: 16, y: 16, w: 110, h: 40, size: 16, onClick: () => (this.game = 0) }, ...modes];
+		}
+		return [];
 	}
 	pointerMove(x: number, y: number) {
-		return !!spotAt(this.spots(), x, y) && this.game != 2;
+		const b = buttonAt(this.ui(), x, y);
+		this.hover = b?.id ?? null;
+		return !!b;
 	}
 	pointerDown(x: number, y: number) {
-		const spot = spotAt(this.spots(), x, y);
-		if (spot && this.game != 2) this.sfx('confirm');
-		spot?.click();
+		// Game over: a click does what Enter does.
+		if (this.game == 2) {
+			this.keyPressed('Enter');
+			return;
+		}
+		const b = buttonAt(this.ui(), x, y);
+		if (!b) return;
+		this.sfx('confirm');
+		b.onClick();
+		this.hover = null;
+	}
+
+	private paintMenus(ctx: CanvasRenderingContext2D) {
+		const pong = this.mode == 1;
+		const bg = pong ? BLACK : Blue;
+		const accent = pong ? Red : Orange;
+		// The art's logo, with its painted-on buttons covered; drawn buttons replace them.
+		this.g.img(pong ? this.img.PongMM : this.img.BrickMM, 0, 0, 550, 700);
+		ctx.fillStyle = bg;
+		ctx.fillRect(0, 225, 550, 475);
+		if (this.game == 3) {
+			// Stats for the game picked in the switch.
+			const rows: [string, number][] = pong
+				? [['High score', this.highscore], ['Games played', this.pgp], ['Balls hit', this.pbh]]
+				: [['High score', this.bhighscore], ['Games played', this.bgp], ['Bricks broken', this.bbb]];
+			panel(ctx, 60, 312, 430, 196, { fill: 'rgba(255,255,255,0.05)', border: accent, width: 2, radius: 6 });
+			rows.forEach(([k, v], i) => {
+				const y = 352 + i * 58;
+				text(ctx, k.toUpperCase(), 88, y, { size: 18, family: ARIAL_BLACK, color: WHITE });
+				text(ctx, '' + v, 462, y, { size: 24, family: ARIAL_BLACK, color: WHITE, align: 'right' });
+			});
+			text(ctx, 'GLOBAL RECORD', 60, 540, { size: 13, family: ARIAL_BLACK, color: pong ? 'rgb(255,120,120)' : 'rgb(255,190,110)' });
+			drawRecord(this.g, {
+				global: this.global, board: this.mode, local: pong ? this.highscore : this.bhighscore, loggedIn: this.loggedIn,
+				x: 60, y: 566, family: ARIAL, color: WHITE, dim: 'rgb(190,200,230)', size: 15, rows: 3
+			});
+		}
+		drawButtons(ctx, this.ui(), theme(accent, bg), this.hover);
 	}
 
 	private play() {
@@ -347,7 +413,7 @@ export class Pong implements ArcadeGame {
 		ctx.fillStyle = BLACK;
 		ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-		if (this.game == 0) g.img(this.mode == 1 ? img.PongMM : img.BrickMM, 0, 0, 550, 700);
+		if (this.game == 0 || this.game == 3) this.paintMenus(ctx);
 
 		if (this.game == 1 || this.game == 2) {
 			if (this.mode == 1) {
@@ -399,30 +465,6 @@ export class Pong implements ArcadeGame {
 			}
 		}
 
-		if (this.game == 3) {
-			const pong = this.mode == 1;
-			g.img(pong ? img.PongHS : img.BrickHS, 0, 0, 550, 700);
-			g.setColor(WHITE);
-			g.font(30, ARIAL);
-			g.drawString('' + (pong ? this.highscore : this.bhighscore), 400, 320);
-			g.drawString('' + (pong ? this.pgp : this.bgp), 400, 420);
-			g.drawString('' + (pong ? this.pbh : this.bbb), 400, 540);
-			// Global board, in the space under the stats.
-			g.setColor(pong ? 'rgb(120,220,140)' : 'rgb(255,190,110)');
-			g.font(13, ARIAL_BLACK);
-			g.drawString('GLOBAL RECORD', 40, 584);
-			drawRecord(g, {
-				global: this.global,
-				board: this.mode,
-				local: pong ? this.highscore : this.bhighscore,
-				loggedIn: this.loggedIn,
-				x: 40,
-				y: 604,
-				family: ARIAL,
-				color: WHITE,
-				dim: 'rgb(190,200,230)',
-				size: 15
-			});
-		}
+
 	}
 }
