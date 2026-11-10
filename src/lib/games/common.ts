@@ -26,6 +26,8 @@ export interface ArcadeGame {
 	gestures?(): boolean;
 	/** Touch screens: the on-screen buttons (by key code) that do nothing right now, shown greyed out. */
 	disabledButtons?(): string[];
+	/** Touch screens: the on-screen buttons (by key code) not shown right now (e.g. not unlocked yet). */
+	hiddenButtons?(): string[];
 	/** Sound effects: the host sets this; the game calls it with a sound's name. */
 	sfx: (name: string) => void;
 	/** The soundtrack for what's on screen ('<game>-menu', '<game>-<difficulty>'…), or null for silence. */
@@ -553,4 +555,56 @@ export class Confirm {
 	clear() {
 		this.armed = null;
 	}
+}
+
+// ── Game over: an arcade font, centred, dropping in as before ──
+
+/** "Press Start 2P" (Google Fonts), for game-over titles; Arial Black until it has loaded. */
+export const ARCADE = '"Press Start 2P", "Arial Black", sans-serif';
+let arcadeFont = false;
+/** Loads the arcade font once (the first game that needs it). */
+export function loadArcadeFont() {
+	if (arcadeFont || typeof document === 'undefined') return;
+	arcadeFont = true;
+	const link = document.createElement('link');
+	link.rel = 'stylesheet';
+	link.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
+	link.onload = () => void document.fonts?.load('32px "Press Start 2P"').catch(() => {});
+	document.head.appendChild(link);
+}
+
+/**
+ * The game-over title, centred at `y` (which the game animates down from above the screen), with
+ * lines under it once it has landed.
+ */
+export function drawGameOver(
+	ctx: CanvasRenderingContext2D,
+	o: { width: number; height: number; y: number; landed: boolean; title?: string; color: string; lines: string[] }
+) {
+	ctx.save();
+	ctx.fillStyle = 'rgba(0,0,0,0.55)';
+	ctx.fillRect(0, 0, o.width, o.height);
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	const title = o.title ?? 'GAME OVER';
+	let size = 40;
+	ctx.font = `${size}px ${ARCADE}`;
+	while (ctx.measureText(title).width > o.width - 40 && size > 16) ctx.font = `${(size -= 2)}px ${ARCADE}`;
+	ctx.shadowColor = o.color;
+	ctx.shadowBlur = 18;
+	ctx.fillStyle = o.color;
+	ctx.fillText(title, o.width / 2, o.y);
+	ctx.shadowBlur = 0;
+	ctx.lineWidth = 2;
+	ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+	ctx.strokeText(title, o.width / 2, o.y);
+	if (o.landed) {
+		ctx.fillStyle = '#fff';
+		o.lines.forEach((line, i) => {
+			ctx.font = `${i == o.lines.length - 1 ? 10 : 14}px ${ARCADE}`;
+			if (i == o.lines.length - 1) ctx.fillStyle = 'rgba(255,255,255,0.75)';
+			ctx.fillText(line, o.width / 2, o.y + 56 + i * 30);
+		});
+	}
+	ctx.restore();
 }

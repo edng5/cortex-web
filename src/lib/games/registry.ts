@@ -24,6 +24,8 @@ export interface TouchSpec {
 	stick2?: boolean;
 	/** A wide game: on phones, ask for landscape (it's too small held upright). */
 	landscape?: boolean;
+	/** Joystick in the middle of the screen with the buttons beside it (instead of at the edges). */
+	center?: boolean;
 	/** Re-press the held direction every this many ms (for one-action-per-press games). */
 	repeat?: number;
 	buttons: { label: string; code: string; big?: boolean }[];
@@ -80,7 +82,11 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'pause' },
 			MOUSE
 		],
-		touch: { stick: '8', buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Missile', code: 'ShiftLeft' }, { label: 'Fire', code: 'Space', big: true }] },
+		touch: {
+			stick: '8',
+			// Missile and Roll appear once those upgrades are bought.
+			buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Roll', code: 'Roll' }, { label: 'Missile', code: 'ShiftLeft' }, { label: 'Fire', code: 'Space', big: true }]
+		},
 		boards: { 1: 'Mission 1', 2: 'Mission 2', 3: 'Mission 3' },
 		load: async () => {
 			const m = await import('./topgun/TopGun');
@@ -102,10 +108,10 @@ export const GAMES: GameSpec[] = [
 		help: [
 			{ keys: ['W', 'A', 'S', 'D'], label: 'swim' },
 			{ keys: ['←', '↑', '↓', '→'], label: 'player 2' },
-			{ keys: ['Enter'], label: 'play again' },
+			{ keys: ['Enter'], label: 'pause / play again' },
 			MOUSE
 		],
-		touch: { stick: '8', stick2: true, landscape: true, buttons: [] },
+		touch: { stick: '8', stick2: true, landscape: true, buttons: [{ label: 'Pause', code: 'Enter' }] },
 		boards: { 1: 'Easy', 2: 'Medium', 3: 'Hard' },
 		load: async () => {
 			const m = await import('./fishy/Fishy');
@@ -179,7 +185,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'menu after game over' },
 			MOUSE
 		],
-		touch: { stick: 'h', buttons: [{ label: 'Serve', code: 'Space', big: true }] },
+		touch: { stick: 'h', center: true, buttons: [{ label: 'Serve', code: 'Space', big: true }] },
 		boards: { 1: 'Pong', 2: 'Brick Breaker' },
 		load: async () => {
 			const m = await import('./pong/Pong');

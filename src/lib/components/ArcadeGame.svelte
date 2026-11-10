@@ -13,8 +13,6 @@
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import TouchControls from './TouchControls.svelte';
 	import GameLoading from './GameLoading.svelte';
-	import BoardToggle from './BoardToggle.svelte';
-	import { boardPeriod } from '$lib/games/board-period.svelte';
 	import { accountTag, pullSave, watchSave } from '$lib/games/cloud-save';
 
 	let { spec, active = true, onquit }: { spec: GameSpec; active?: boolean; onquit?: () => void } = $props();
@@ -29,6 +27,7 @@
 	let gestures = $state(false);
 	/** On-screen buttons the game has turned off for now (Pong's Serve mid-rally). */
 	let disabled = $state('');
+	let hiddenButtons = $state('');
 	/** Wide games held upright on a phone: ask to rotate, and wait (paused) until they do. */
 	const rotate = $derived(touch && portrait && !!spec.touch.landscape);
 	const playing = $derived(active && !rotate);
@@ -134,6 +133,8 @@
 					if (g !== gestures) gestures = g;
 					const d = game.disabledButtons?.().join(' ') ?? '';
 					if (d !== disabled) disabled = d;
+					const h = game.hiddenButtons?.().join(' ') ?? '';
+					if (h !== hiddenButtons) hiddenButtons = h;
 					// The soundtrack for this screen (menu, or gameplay by mode / difficulty).
 					gameAudio.music(game.musicTrack());
 					// Fixed-rate game ticks (like the Java loop), drawn once per screen refresh.
@@ -190,7 +191,8 @@
 	}
 
 	// ── Global high scores ──
-	const url = $derived(`/api/games/${spec.id}/scores?period=${boardPeriod.value}`);
+	// In-game high score screens show all-time records (the monthly boards live in the games menu).
+	const url = $derived(`/api/games/${spec.id}/scores?period=all`);
 	async function loadBoard() {
 		try {
 			const res = await fetch(url);
@@ -235,7 +237,7 @@
 	$effect(() => {
 		if (playing) resumeLoop?.();
 	});
-	// A new leaderboard name, or Monthly / All-time switched: show it on the board.
+	// A new leaderboard name: show it on the board.
 	$effect(() => {
 		void session.playerName;
 		void url;
@@ -350,10 +352,7 @@
 			<p>Rotate your phone to play {spec.title}</p>
 		</div>
 	{:else if touch && status === 'running' && active}
-		<TouchControls spec={spec.touch} {gestures} disabled={disabled ? disabled.split(' ') : []} press={touchPress} release={touchRelease} />
-	{/if}
-	{#if !spec.ui}
-		<div class="period"><span>Leaderboard</span><BoardToggle /></div>
+		<TouchControls spec={spec.touch} {gestures} disabled={disabled ? disabled.split(' ') : []} hidden={hiddenButtons ? hiddenButtons.split(' ') : []} press={touchPress} release={touchRelease} />
 	{/if}
 	<ul class="help" class:hidden={touch} aria-label="Controls">
 		{#each spec.help as h (h.label)}
@@ -467,13 +466,6 @@
 		100% {
 			transform: rotate(-90deg);
 		}
-	}
-	.period {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 0.8rem;
-		color: var(--muted, #94a3b8);
 	}
 	.help.hidden {
 		display: none;

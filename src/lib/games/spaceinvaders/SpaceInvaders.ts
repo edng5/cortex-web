@@ -4,7 +4,7 @@
 // No Shields (the original's "Shields Down" switch) is a third difficulty: Hard's waves and
 // bosses without bunkers, so each difficulty has its own leaderboard.
 import { Rect } from '../topgun/geometry';
-import { ARIAL, ARIAL_BLACK, Confirm, Gfx, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, text, touchScreen, writeSave, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
+import { ARIAL, ARIAL_BLACK, Confirm, drawGameOver, loadArcadeFont, Gfx, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, text, touchScreen, writeSave, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
 
 export const GAME_W = 550;
 export const GAME_H = 664;
@@ -15,7 +15,7 @@ const IMAGES = {
 	SpaceMM: 'SpaceMM.jpg', A11: 'A11.png', A12: 'A12.png', A21: 'A21.png', A22: 'A22.png', A31: 'A31.png', A32: 'A32.png',
 	SShip: 'SShip.png', MShip: 'MShip.png', Mooneyship: 'Mooneyship.png', AlienShot: 'AlienShot.png', ShipShot: 'ShipShot.png',
 	MMAlien1: 'MMAlien1.png', MMAlien2: 'MMAlien2.png',
-	Shield1: 'Shield1.png', Shield2: 'Shield2.png', Shield3: 'Shield3.png', LCorner: 'LCorner.png', RCorner: 'RCorner.png'
+	Shield1: 'Shield1.png'
 };
 type Images = Record<keyof typeof IMAGES, HTMLImageElement>;
 export const loadAssets = () => loadImages(BASE, IMAGES);
@@ -126,6 +126,44 @@ class Mothership {
 	}
 }
 
+/**
+ * A bunker block, drawn as chunky arcade pixels (10 × 10 cells of 3 px). The top outer corners of
+ * each bunker are bevelled and the middle of its second row has the arch; damage eats away cells
+ * in a pattern fixed for each block, more with every hit. Cached per block and damage level.
+ */
+const shieldCache = new Map<string, HTMLCanvasElement>();
+function shieldSprite(i: number, lives: number): HTMLCanvasElement {
+	const key = i + ':' + lives;
+	const hit = shieldCache.get(key);
+	if (hit) return hit;
+	const N = 10, C = 3;
+	let seed = i * 9301 + 49297;
+	const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+	const cells: { r: number; c: number; order: number }[] = [];
+	for (let r = 0; r < N; r++) {
+		for (let c = 0; c < N; c++) {
+			if ([0, 3, 6].includes(i) && r < (N - 1 - c) * 0.6) continue; // bevel, top left
+			if ([2, 5, 8].includes(i) && r < c * 0.6) continue; // bevel, top right
+			if ([10, 13, 16].includes(i) && Math.hypot(c + 0.5 - N / 2, r + 0.5 - N) < 4.6) continue; // arch
+			// Damage starts at the edges and spreads in.
+			const edge = Math.min(r, c, N - 1 - r, N - 1 - c);
+			cells.push({ r, c, order: rand() + edge * 0.12 });
+		}
+	}
+	const gone = Math.round(cells.length * (lives >= 3 ? 0 : lives == 2 ? 0.3 : 0.58));
+	const keep = cells.sort((a, b) => a.order - b.order).slice(gone);
+	const cv = document.createElement('canvas');
+	cv.width = cv.height = N * C;
+	const x = cv.getContext('2d')!;
+	for (const { r, c } of keep) {
+		const light = r < 2 ? 18 : r > N - 3 ? -18 : 0; // lit from above
+		x.fillStyle = `rgb(${50 + light},${lives == 1 ? 205 : 235 + Math.min(20, light)},${50 + light})`;
+		x.fillRect(c * C, r * C, C, C);
+	}
+	shieldCache.set(key, cv);
+	return cv;
+}
+
 class Shields {
 	sizeW = 30; sizeH = 30; x = 50; y = 450; lives = 3;
 	boundaryS = new Rect(this.x, this.y, this.sizeW, this.sizeH);
@@ -221,6 +259,7 @@ export class SpaceInvaders implements ArcadeGame {
 	private g = new Gfx();
 
 	constructor(private img: Images) {
+		loadArcadeFont();
 		Object.assign(
 			this,
 			loadSave(SAVE_KEY, { gp: 0, highscore: 0, hwave: 0, kills: 0, bosses: 0, unlock: 0, controls: 2, difficulty: 1, character: 1, shieldsDown: 0 })
@@ -869,7 +908,7 @@ export class SpaceInvaders implements ArcadeGame {
 	private checkHitsB() {
 		const { boss, ship } = this;
 		if (boss.battle == 1 && this.missile.boundaryM.intersects(boss.boundaryB)) {
-			this.score += 5;
+			this.score += 10; // each hit (beating the boss adds 1000)
 			this.missileReturn();
 			boss.health--;
 			this.healthw -= 8;
@@ -1098,16 +1137,9 @@ export class SpaceInvaders implements ArcadeGame {
 			g.fillRect(0, 0, 550, 700);
 			// Shields
 			if (this.shieldsDown == 0) {
-				for (const s of this.shields) {
-					if (s.lives == 3) g.img(img.Shield3, s.x, s.y, s.sizeW, s.sizeH);
-					if (s.lives == 2) g.img(img.Shield2, s.x, s.y, s.sizeW, s.sizeH);
-					if (s.lives == 1) g.img(img.Shield1, s.x, s.y, s.sizeW, s.sizeH);
-				}
-				for (let i = 0; i < 9; i++) {
-					const s = this.shields[i];
-					if (i == 0 || i == 3 || i == 6) g.img(img.LCorner, s.x, s.y, s.sizeW, s.sizeH);
-					if (i == 2 || i == 5 || i == 8) g.img(img.RCorner, s.x, s.y, s.sizeW, s.sizeH);
-				}
+				this.shields.forEach((s, i) => {
+					if (s.lives > 0) ctx.drawImage(shieldSprite(i, s.lives), s.x, s.y, s.sizeW, s.sizeH);
+				});
 			}
 			// Ship
 			g.setColor('rgb(0,255,0)');
@@ -1154,13 +1186,12 @@ export class SpaceInvaders implements ArcadeGame {
 			g.drawString('' + this.wave, 250, 660);
 		}
 
-		// GAME OVER
+		// GAME OVER: the title drops in (as before), centred, then the score and how to go on.
 		if (this.game == 2) {
-			g.setColor('rgb(255,0,0)');
-			g.font(50, ARIAL_BLACK);
-			g.drawString('Game Over!', 100, this.goy);
-			g.font(20, ARIAL_BLACK);
-			g.drawString('Press Enter to Return to the Main Menu', 40, 380);
+			drawGameOver(ctx, {
+				width: GAME_W, height: GAME_H, y: this.goy, landed: this.goy >= 330, color: 'rgb(255,60,60)',
+				lines: [`SCORE ${this.score}`, `WAVE ${this.wave}`, touchScreen() ? 'TAP TO RETURN TO THE MENU' : 'PRESS ENTER FOR THE MENU']
+			});
 		}
 
 		// Menus (and the pause screen, over the frozen game).

@@ -57,6 +57,8 @@ const DIFFICULTIES = ['', 'Easy', 'Medium', 'Hard'];
 const CHARACTERS = ['', 'Fishy', 'Shark', 'Mooney Fish'];
 /** The menu screens (title, high scores tabs, options, how to play). */
 const MENU_SCREENS = [0, 3, 4, 5, 12, 13];
+/** `game` while a game is paused. */
+const PAUSED = 14;
 
 /** A small "Selected" pill under a picked card. */
 function badge(ctx: CanvasRenderingContext2D, cx: number, cy: number, label: string) {
@@ -111,8 +113,9 @@ export class Fishy implements ArcadeGame {
 	/** Soundtrack: menus, one per difficulty in single player, and one for 2P local. */
 	musicTrack() {
 		if ([0, 3, 4, 5, 6, 9, 12, 13].includes(this.game)) return 'fishy-menu';
-		if (this.game == 1) return 'fishy-' + this.difficulty;
-		if (this.game == 2) return 'fishy-2p';
+		const mode = this.game == PAUSED ? this.pausedFrom : this.game;
+		if (mode == 1) return 'fishy-' + this.difficulty;
+		if (mode == 2) return 'fishy-2p';
 		return null;
 	}
 	global: Board | null = null;
@@ -148,9 +151,31 @@ export class Fishy implements ArcadeGame {
 	}
 
 	leave() {
-		// Single player mid-game: the high score is already kept live; send it to the board too.
-		if (this.game == 1 && this.score > 0) this.onScore(this.difficulty, this.score);
+		// Single player mid-game (or paused): the high score is already kept live; send it to the board too.
+		const mode = this.game == PAUSED ? this.pausedFrom : this.game;
+		if (mode == 1 && this.score > 0) this.onScore(this.difficulty, this.score);
 		this.save();
+	}
+
+	// ── Pause: Enter or P (or the pause button) during a game ──
+	/** The mode that was paused (1 single player, 2 multiplayer). */
+	private pausedFrom = 1;
+	private pause() {
+		this.pausedFrom = this.game;
+		this.game = PAUSED;
+		this.dx = 0; this.dy = 0; this.mdx = 0; this.mdy = 0;
+	}
+	private resume() {
+		this.game = this.pausedFrom;
+	}
+	/** Ends the paused run: single player scores count, as they do when a game ends. */
+	private endRun() {
+		if (this.pausedFrom == 1 && this.score > 0) this.onScore(this.difficulty, this.score);
+		this.playAgain(); // resets the fish and goes to the title screen
+	}
+	/** Touch screens: Pause only during a game. */
+	hiddenButtons() {
+		return this.game == 1 || this.game == 2 || this.game == PAUSED ? [] : ['Enter'];
 	}
 
 	// ── Menus: drawn buttons and cards, clicked or tapped ──
@@ -171,7 +196,7 @@ export class Fishy implements ArcadeGame {
 		this.save();
 	}
 	pointerMove(px: number, py: number) {
-		if (!MENU_SCREENS.includes(this.game)) return false;
+		if (!MENU_SCREENS.includes(this.game) && this.game != 1 && this.game != 2 && this.game != PAUSED) return false;
 		const b = buttonAt(this.ui(), px, py);
 		this.hover = b?.id ?? null;
 		return !!b;
@@ -226,6 +251,14 @@ export class Fishy implements ArcadeGame {
 				];
 			case 5:
 				return [back];
+			case 1: case 2:
+				return [{ id: 'pause', x: 838, y: 12, w: 48, h: 48, label: 'II', size: 18, onClick: () => this.pause() }];
+			case PAUSED:
+				return [
+					{ id: 'resume', x: 330, y: 270, w: 240, h: 54, label: 'Resume', kind: 'primary', onClick: () => this.resume() },
+					{ id: 'restart', x: 330, y: 336, w: 240, h: 54, label: 'Restart', onClick: () => { const m = this.pausedFrom; this.endRun(); this.game = m; } },
+					{ id: 'quit', x: 330, y: 402, w: 240, h: 54, label: 'Main menu', onClick: () => this.endRun() }
+				];
 		}
 		return [];
 	}
@@ -355,8 +388,20 @@ export class Fishy implements ArcadeGame {
 	keyPressed(code: string): boolean {
 		const sp = this.speed;
 		const enter = code == 'Enter' || code == 'NumpadEnter';
-		const known = enter || /^Key[WASD]$/.test(code) || /^Arrow(Up|Down|Left|Right)$/.test(code);
+		const known = enter || code == 'KeyP' || /^Key[WASD]$/.test(code) || /^Arrow(Up|Down|Left|Right)$/.test(code);
 		if (!known) return false;
+		if ((enter || code == 'KeyP') && (this.game == 1 || this.game == 2)) {
+			this.pause();
+			this.sfx('confirm');
+			return true;
+		}
+		if (this.game == PAUSED) {
+			if (enter || code == 'KeyP') {
+				this.resume();
+				this.sfx('confirm');
+			}
+			return true;
+		}
 		if (this.game == 1 && this.hooked == 0) {
 			if (code == 'KeyA' || code == 'ArrowLeft') { this.direction = 2; this.dx = -sp; }
 			if (code == 'KeyD' || code == 'ArrowRight') { this.direction = 1; this.dx = sp; }
@@ -413,6 +458,7 @@ export class Fishy implements ArcadeGame {
 
 	// ── Game loop: run() moves things, then the rules Java kept in paintComponent ──
 	tick() {
+		if (this.game == PAUSED) return;
 		const before = this.game;
 		const was = { lives: this.lives, w: this.fishw, w2: this.fishw2, w3: this.fishw3, hooked: this.hooked };
 		this.run();
@@ -693,6 +739,23 @@ export class Fishy implements ArcadeGame {
 
 	// ── Drawing (paintComponent) ──
 	paint(ctx: CanvasRenderingContext2D, now: number) {
+		if (this.game == PAUSED) {
+			// The game as it was, dimmed, with the pause menu on top.
+			this.game = this.pausedFrom;
+			this.paintFrame(ctx, now);
+			this.game = PAUSED;
+			ctx.fillStyle = 'rgba(0,30,60,0.55)';
+			ctx.fillRect(0, 0, GAME_W, GAME_H);
+			panel(ctx, 300, 180, 300, 300, { fill: 'rgba(255,255,255,0.9)', border: CORAL, width: 3, radius: 22 });
+			text(ctx, 'Paused', 450, 226, { size: 36, family: COMIC, color: INK, align: 'center' });
+			drawButtons(ctx, this.ui(), UI, this.hover);
+			return;
+		}
+		this.paintFrame(ctx, now);
+		if (this.game == 1 || this.game == 2) drawButtons(ctx, this.ui(), UI, this.hover);
+	}
+
+	private paintFrame(ctx: CanvasRenderingContext2D, now: number) {
 		const g = this.g;
 		const i = this.img;
 		g.begin(ctx);

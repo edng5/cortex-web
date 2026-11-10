@@ -322,8 +322,26 @@ export class TopGun implements ArcadeGame {
 	// ── Keyboard ──
 	/** Returns true if the key belongs to the game (so the page shouldn't scroll etc.). */
 	keyPressed(code: string): boolean {
+		// Phones: the Roll button does the keyboard's double-tap barrel roll (once it's unlocked).
+		if (code == 'Roll') {
+			if (this.game == 1 && this.sequence == 1 && this.move >= 1) {
+				const side = this.rollSide;
+				// A clean double tap, whatever was tapped before.
+				this.count2 = 0; this.count3 = 0; this.count4 = 0; this.count5 = 0;
+				try {
+					this.keyPressedJava(side);
+					this.keyReleasedJava(side);
+					this.keyPressedJava(side);
+				} catch (e) {
+					if (!(e instanceof JavaIndexError)) throw e;
+				}
+				this.rolling = true;
+			}
+			return true;
+		}
 		const k = keyOf(code);
 		if (!k) return false;
+		if (k == 'A' || k == 'D') this.rollSide = k;
 		// Menus are clicked or tapped. Enter is kept as a shortcut where a mission is in progress:
 		// it continues from the pause screen, and picks the main action after a mission.
 		if (this.game == 0 || this.game == 5 || this.game == 6 || this.game == 7 || this.game == -1) return true;
@@ -345,6 +363,17 @@ export class TopGun implements ArcadeGame {
 		return true;
 	}
 	keyReleased(code: string): boolean {
+		if (code == 'Roll') {
+			if (this.rolling) {
+				this.rolling = false;
+				try {
+					this.keyReleasedJava(this.rollSide);
+				} catch (e) {
+					if (!(e instanceof JavaIndexError)) throw e;
+				}
+			}
+			return true;
+		}
 		const k = keyOf(code);
 		if (!k) return false;
 		try {
@@ -353,6 +382,17 @@ export class TopGun implements ArcadeGame {
 			if (!(e instanceof JavaIndexError)) throw e;
 		}
 		return true;
+	}
+
+	/** The roll goes the way you last tilted (A or D). */
+	private rollSide: 'A' | 'D' = 'A';
+	private rolling = false;
+	/** Touch screens: Missile and Roll only once they're unlocked. */
+	hiddenButtons() {
+		const hide: string[] = [];
+		if (this.miss < 1) hide.push('ShiftLeft');
+		if (this.move < 1) hide.push('Roll');
+		return hide;
 	}
 
 	leave() {
@@ -1486,6 +1526,55 @@ export class TopGun implements ArcadeGame {
 		c.restore();
 	}
 
+	/** Your gun rounds: a hot tracer with a fading streak behind it (same position and size as before). */
+	private tracer(b: Bullets) {
+		if (b.x_speed == 0 && b.y_speed == 0) return; // waiting in the gun
+		const ctx = this.ctx;
+		const r = Math.max(2, b.size / 2);
+		const cx = b.x + r, cy = b.y + r;
+		const tx = cx - b.x_speed * 3.2, ty = cy - b.y_speed * 3.2;
+		ctx.save();
+		const streak = ctx.createLinearGradient(tx, ty, cx, cy);
+		streak.addColorStop(0, 'rgba(230,90,0,0)');
+		streak.addColorStop(1, 'rgba(255,170,30,0.95)');
+		ctx.strokeStyle = streak;
+		ctx.lineWidth = Math.max(2, r * 0.9);
+		ctx.lineCap = 'round';
+		ctx.beginPath();
+		ctx.moveTo(tx, ty);
+		ctx.lineTo(cx, cy);
+		ctx.stroke();
+		const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.6);
+		glow.addColorStop(0, 'rgba(255,255,230,1)');
+		glow.addColorStop(0.35, 'rgba(255,190,40,0.95)');
+		glow.addColorStop(1, 'rgba(230,90,0,0)');
+		ctx.fillStyle = glow;
+		ctx.beginPath();
+		ctx.arc(cx, cy, r * 1.6, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.restore();
+	}
+
+	/** Enemy fire: a pulsing red plasma ball that grows as it comes at you. */
+	private plasma(b: Bullets) {
+		if (b.launch != 1) return; // not fired yet (it waits inside its jet)
+		const ctx = this.ctx;
+		const r = b.size / 2;
+		const cx = b.x + r, cy = b.y + r;
+		const R = r * 1.8 * (1 + 0.12 * Math.sin(this.now / 60));
+		ctx.save();
+		const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+		glow.addColorStop(0, 'rgba(255,255,255,1)');
+		glow.addColorStop(0.3, 'rgba(255,110,70,0.95)');
+		glow.addColorStop(0.65, 'rgba(220,20,20,0.55)');
+		glow.addColorStop(1, 'rgba(160,0,0,0)');
+		ctx.fillStyle = glow;
+		ctx.beginPath();
+		ctx.arc(cx, cy, R, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.restore();
+	}
+
 	paint(ctx: CanvasRenderingContext2D, now: number) {
 		this.ctx = ctx;
 		this.now = now;
@@ -1542,10 +1631,7 @@ export class TopGun implements ArcadeGame {
 
 					// Enemy Bullets
 					if (this.mission == 2 || this.mission == 3) {
-						for (const b of this.eBullets) {
-							this.setColor(C.RED);
-							this.fillOval(b.x, b.y, b.size, b.size);
-						}
+						for (const b of this.eBullets) this.plasma(b);
 					}
 
 					// Enemies
@@ -1570,9 +1656,8 @@ export class TopGun implements ArcadeGame {
 
 			// Bullets, cockpit and radar
 			if (this.sequence == 1 || this.sequence == 0 || this.sequence == 2 || this.sequence == 3) {
-				this.setColor(C.ORANGE);
-				for (const b of this.bulletsR) this.fillOval(b.x, b.y, b.size, b.size);
-				for (const b of this.bulletsL) this.fillOval(b.x, b.y, b.size, b.size);
+				for (const b of this.bulletsR) this.tracer(b);
+				for (const b of this.bulletsL) this.tracer(b);
 
 				this.img('Reticle', 195, 80, 200, 200);
 				this.img('Dashboard', 0, 300, 600, 236);

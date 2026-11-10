@@ -11,9 +11,10 @@
 		spec,
 		gestures = false,
 		disabled = [],
+		hidden = [],
 		press,
 		release
-	}: { spec: TouchSpec; gestures?: boolean; disabled?: string[]; press: (code: string) => void; release: (code: string) => void } = $props();
+	}: { spec: TouchSpec; gestures?: boolean; disabled?: string[]; hidden?: string[]; press: (code: string) => void; release: (code: string) => void } = $props();
 
 	/** Tap = forward; swipe = that direction (a key tap: press then release). */
 	function swipeArea(el: HTMLElement) {
@@ -170,7 +171,7 @@
 		<p class="hint">Tap to hop · Swipe to turn</p>
 	</div>
 {/if}
-<div class="touch" aria-hidden="true">
+<div class="touch" class:center={spec.center} aria-hidden="true">
 	{#if spec.stick}
 		<div class="pad stick" use:stick={{ keys: WASD, mode: spec.stick, repeat: spec.repeat }}>
 			<div class="knob"></div>
@@ -180,7 +181,7 @@
 		<span></span>
 	{/if}
 	<div class="right">
-		{#each spec.buttons as b (b.code)}
+		{#each spec.buttons.filter((b) => !hidden.includes(b.code)) as b (b.code)}
 			<div class="btn" class:big={b.big} class:off={disabled.includes(b.code)} use:button={b.code}>{b.label}</div>
 		{/each}
 		{#if spec.stick2}
@@ -206,6 +207,20 @@
 		pointer-events: none;
 		user-select: none;
 		-webkit-user-select: none;
+	}
+	/* The joystick in the middle, the buttons just beside it (Pong). */
+	.touch.center {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+	}
+	.touch.center .stick {
+		grid-column: 2;
+	}
+	.touch.center .right {
+		grid-column: 3;
+		justify-content: flex-start;
+		max-width: none;
+		margin-left: 28px;
 	}
 	/* Tap / swipe anywhere below the top bar (the ✕ and the buttons stay on top). */
 	.swipe {
