@@ -157,6 +157,28 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k.hhs.hhk.hhs.hh'
 	},
+	// Check-up: laid-back boom-bap for the park (menu): dusty minor chords, a walking bass, a lazy beat.
+	'checkup-menu': {
+		bpm: 88,
+		gain: 0.85,
+		parts: [
+			{ voice: 'pluck', level: 0.05, notes: 'Eb4 . . Eb4 . . . . D4 . . D4 . . . . C4 . . C4 . . . . D4 . . F4 . Eb4 . . ' },
+			{ voice: 'pluck', level: 0.045, notes: 'G4 . . G4 . . . . F4 . . F4 . . . . Eb4 . . Eb4 . . . . F4 . . Ab4 . G4 . . ' },
+			{ voice: 'sine', level: 0.11, notes: 'C2 . . C2 . . Eb2 . Bb1 . . Bb1 . . D2 . Ab1 . . Ab1 . . C2 . G1 . . G1 . Bb1 B1 . ' },
+			{ voice: 'bell', level: 0.016, notes: '. . . . . . G5 . . . . . . . F5 . . . . . . . Eb5 . . . . . . . D5 . ' }
+		],
+		drums: 'k.s.kks.k.s.k.sh'
+	},
+	// Check-up in a game: the same groove, harder and quicker, so it stays under the sound effects.
+	'checkup-play': {
+		bpm: 96,
+		gain: 0.45,
+		parts: [
+			{ voice: 'sine', level: 0.12, notes: 'C2 . C2 . Eb2 . C2 Bb1 . . Ab1 . Ab1 . G1 Bb1 ' },
+			{ voice: 'pluck', level: 0.04, notes: '. . Eb4 . . . G4 . . . Eb4 . . . F4 . ' }
+		],
+		drums: 'k.skk.s.k.sk.ksh'
+	},
 	// Chess: calm and thoughtful, a slow arpeggio in D minor.
 	'chess-menu': {
 		bpm: 72,
@@ -706,6 +728,49 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 		tick: (a) => a._tone('square', 1200, 1200, 0.03, 0.03),
 		levelUp: (a) => a._arp([67, 72, 76, 79, 84, 88], 0.08, 'triangle', 0.09, 0.22),
 		guess: (a) => a._arp([72, 74, 76], 0.08, 'sine', 0.08, 0.14)
+	},
+	checkup: {
+		// The ball on the court, a swish (and the crowd for a two), the rim, a block…
+		bounce: (a) => {
+			a._tone('sine', 150, 55, 0.09, 0.22);
+			a._fx(0.04, 0.05, 'lowpass', 500, 200);
+		},
+		check: (a) => {
+			a._tone('sine', 150, 55, 0.09, 0.2);
+			a._tone('sine', 150, 55, 0.09, 0.2, 0.32);
+		},
+		swish: (a) => a._fx(0.35, 0.11, 'highpass', 3500, 7500),
+		swish2: (a) => {
+			a._fx(0.35, 0.11, 'highpass', 3500, 7500);
+			a._fx(1.3, 0.07, 'bandpass', 900, 1300, 0.15);
+			a._arp([72, 76, 79, 84], 0.07, 'square', 0.04, 0.16);
+		},
+		rim: (a) => {
+			a._tone('square', 540, 480, 0.2, 0.05);
+			a._tone('triangle', 1080, 1000, 0.3, 0.05);
+		},
+		block: (a) => {
+			a._fx(0.14, 0.22, 'lowpass', 400, 90);
+			a._tone('square', 130, 60, 0.12, 0.06);
+			a._fx(0.9, 0.06, 'bandpass', 700, 1100, 0.1);
+		},
+		steal: (a) => a._arp([67, 60], 0.08, 'square', 0.05, 0.12),
+		squeak: (a) => {
+			a._tone('sine', 2600, 3400, 0.07, 0.04);
+			a._tone('sine', 3300, 2500, 0.06, 0.035, 0.08);
+		},
+		ooh: (a) => {
+			a._tone('sawtooth', 230, 175, 0.7, 0.025);
+			a._fx(0.8, 0.07, 'bandpass', 650, 480);
+		},
+		whistle: (a) => {
+			a._tone('sine', 2900, 3000, 0.12, 0.06);
+			a._tone('sine', 2900, 3050, 0.3, 0.06, 0.16);
+		},
+		buzzer: (a) => a._tone('sawtooth', 210, 205, 0.7, 0.07),
+		move: (a) => a._arp([72, 79], 0.05, 'square', 0.04, 0.1),
+		perfect: (a) => a._arp([76, 83, 88], 0.06, 'triangle', 0.08, 0.16),
+		recorded: (a) => a._arp([67, 72, 76, 79], 0.07, 'triangle', 0.08, 0.18)
 	},
 	chess: {
 		move: (a) => {

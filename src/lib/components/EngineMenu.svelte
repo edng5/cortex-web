@@ -130,7 +130,7 @@
 				{/each}
 				{#if r == 2}
 					<!-- Placeholders for the next games. -->
-					{#each [1, 2] as n (n)}
+					{#each Array.from({ length: Math.max(0, 3 - GAMES.filter((g) => g.row == 2).length) }, (_, i) => i) as n (n)}
 						<li>
 							<div class="game soon" aria-label="Coming soon">
 								<span class="mystery" aria-hidden="true">?</span>

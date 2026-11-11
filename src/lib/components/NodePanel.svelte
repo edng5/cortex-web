@@ -11,6 +11,8 @@
 	import MediaCarousel from './MediaCarousel.svelte';
 	import ReelPlayer from './ReelPlayer.svelte';
 	import NeosSim from './NeosSim.svelte';
+	import Modal from './Modal.svelte';
+	import { portal } from '$lib/actions/portal';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { brandFor } from '$lib/brand';
 	import type { GraphData, OntologyNode } from '$lib/types';
@@ -41,18 +43,36 @@
 	// Split the body at `<!-- carousel: name [round] -->` markers → html / carousel parts, and
 	// at `<!-- play: engine -->` (or a game id) markers → a "Play" button (shown under the title)
 	// that opens the in-browser games.
+	// `<!-- details: Title -->` … `<!-- /details -->` blocks: kept out of the panel, shown behind a
+	// "Details" button as a pop-up (how to play, controls, how it was made).
 	type BodyPart =
 		| { html: string }
 		| { carousel: ReturnType<typeof carouselMedia>; round: boolean }
-		| { play: string };
+		| { play: string }
+		| { details: number };
+	const details = $derived.by(() => {
+		const found: { title: string; html: string }[] = [];
+		html.replace(/<!--\s*details:\s*([^>]*?)\s*-->([\s\S]*?)<!--\s*\/details\s*-->/g, (_m, title: string, inner: string) => {
+			found.push({ title, html: inner });
+			return '';
+		});
+		return found;
+	});
+	let openDetails = $state<number | null>(null);
 	const bodyParts = $derived.by(() => {
-		const bits = html.split(/<!--\s*carousel:\s*([\w-]+)(?:\s+(round))?\s*-->/);
+		let n = 0;
+		const body = html.replace(/<!--\s*details:\s*([^>]*?)\s*-->([\s\S]*?)<!--\s*\/details\s*-->/g, () => `<!-- detailsbtn: ${n++} -->`);
+		const bits = body.split(/<!--\s*carousel:\s*([\w-]+)(?:\s+(round))?\s*-->/);
 		const parts: BodyPart[] = [];
 		// split() with 2 capture groups yields [html, name, style, html, name, style, …]
 		for (let i = 0; i < bits.length; i += 3) {
 			const sub = bits[i].split(/<!--\s*play:\s*([\w-]+)\s*-->/);
 			for (let j = 0; j < sub.length; j += 2) {
-				parts.push({ html: sub[j] });
+				const d = sub[j].split(/<!--\s*detailsbtn:\s*(\d+)\s*-->/);
+				for (let k = 0; k < d.length; k += 2) {
+					parts.push({ html: d[k] });
+					if (k + 1 < d.length) parts.push({ details: Number(d[k + 1]) });
+				}
 				if (j + 1 < sub.length) parts.push({ play: sub[j + 1] });
 			}
 			if (i + 1 < bits.length) parts.push({ carousel: carouselMedia(node, bits[i + 1]), round: bits[i + 2] === 'round' });
@@ -243,6 +263,10 @@
 					{@html part.html}
 				{:else if 'play' in part}
 					<!-- shown under the title instead -->
+				{:else if 'details' in part}
+					<button class="details-btn" onclick={() => (openDetails = part.details)}>
+						Details <span aria-hidden="true">›</span>
+					</button>
 				{:else if part.carousel.length}
 					<div class="inline-carousel">
 						<MediaCarousel
@@ -255,6 +279,14 @@
 					</div>
 				{/if}
 			{/each}
+			{#if openDetails != null && details[openDetails]}
+				{@const d = details[openDetails]}
+				<div use:portal>
+					<Modal title={d.title} width="560px" z={70} onclose={() => (openDetails = null)}>
+						<div class="details-pop">{@html d.html}</div>
+					</Modal>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -696,6 +728,48 @@
 	}
 	.body :global(a) {
 		color: var(--accent);
+	}
+	.details-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		margin: 2px 0 10px;
+		padding: 5px 12px;
+		border-radius: 999px;
+		border: 1px solid rgba(129, 140, 248, 0.45);
+		background: rgba(99, 102, 241, 0.14);
+		color: #c7d2fe;
+		font: inherit;
+		font-size: 0.82rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.details-btn:hover {
+		background: rgba(99, 102, 241, 0.26);
+	}
+	.details-pop :global(h3) {
+		margin: 14px 0 4px;
+		font-size: 0.95rem;
+		color: #c7d2fe;
+	}
+	.details-pop :global(h3:first-child) {
+		margin-top: 0;
+	}
+	.details-pop :global(p),
+	.details-pop :global(li) {
+		line-height: 1.55;
+		color: var(--text, #e2e8f0);
+	}
+	.details-pop :global(ul) {
+		padding-left: 20px;
+		margin: 4px 0;
+	}
+	.details-pop :global(kbd) {
+		padding: 1px 6px;
+		border-radius: 5px;
+		border: 1px solid rgba(255, 255, 255, 0.3);
+		background: rgba(255, 255, 255, 0.08);
+		font: 600 0.8rem ui-monospace, monospace;
 	}
 	.body :global(ul) {
 		padding-left: 20px;

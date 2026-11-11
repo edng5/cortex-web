@@ -3,7 +3,7 @@
 import type { Component } from 'svelte';
 import type { ArcadeGame } from './common';
 
-export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ispy' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow';
+export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ispy' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow' | 'checkup';
 
 /** What a component game (spec.ui) is given. */
 export interface GameUiProps {
@@ -300,6 +300,25 @@ export const GAMES: GameSpec[] = [
 		},
 		boards: { 1: 'Score' },
 		load: async () => (await import('./blockdrop/BlockDrop')).create()
+	},
+	{
+		id: 'checkup',
+		saveKey: 'checkup-save',
+		title: 'Check-up',
+		blurb: '1-on-1 street ball played with your body: the camera tracks you. Practice your shot, then climb the Street Ladder.',
+		icon: '/games/icons/checkup.png',
+		preview: '/games/previews/checkup.jpg',
+		tagline: 'Motion-controlled street ball',
+		accent: '#f97316',
+		row: 2,
+		w: 1100,
+		h: 700,
+		tickMs: 1000,
+		help: [],
+		touch: { buttons: [] },
+		boards: {},
+		// Picks its own soundtrack (menus, and a harder beat in games).
+		ui: async () => (await import('./hoops/CheckUp.svelte')).default
 	}
 ];
 

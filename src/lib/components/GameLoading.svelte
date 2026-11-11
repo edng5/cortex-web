@@ -20,7 +20,8 @@
 		blockdrop: 'Stacking the blocks',
 		chess: 'Setting up the board',
 		fourrow: 'Polishing the discs',
-		ispy: 'Hiding things'
+		ispy: 'Hiding things',
+		checkup: 'Lacing up'
 	};
 </script>
 
@@ -67,6 +68,10 @@
 				<span class="thing" style="--c: {c}; left: {x}%; top: {y}%"></span>
 			{/each}
 			<span class="lens"></span>
+		{:else if spec.id === 'checkup'}
+			<span class="cu-floor"></span>
+			<span class="cu-hoop"><span class="cu-board"></span><span class="cu-rim"></span><span class="cu-net"></span></span>
+			<span class="cu-ball"></span>
 		{:else}
 			<span class="paddle left"></span>
 			<span class="paddle right"></span>
@@ -591,5 +596,90 @@
 		50% { left: 34%; top: 50%; }
 		75% { left: 76%; top: 8%; }
 		100% { left: 8%; top: 12%; }
+	}
+
+	/* Check-up: a blocky ball dribbled, then shot up and through the chain net. */
+	.checkup {
+		background: radial-gradient(ellipse at 50% 30%, #7c2d12, #0b1020 75%);
+	}
+	.checkup .scene {
+		background: linear-gradient(#5aa7e6, #bcdcf2 70%);
+	}
+	.cu-floor {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 26px;
+		background: repeating-linear-gradient(90deg, #2f6690 0 16px, #2a5d86 16px 32px);
+		border-top: 4px solid #f8fafc;
+	}
+	.cu-hoop {
+		position: absolute;
+		right: 14%;
+		top: 14px;
+		width: 60px;
+		height: 70px;
+	}
+	.cu-board {
+		position: absolute;
+		left: 10px;
+		top: 0;
+		width: 44px;
+		height: 30px;
+		background: #f1f5f9;
+		border: 3px solid #94a3b8;
+	}
+	.cu-board::after {
+		content: '';
+		position: absolute;
+		left: 12px;
+		top: 9px;
+		width: 14px;
+		height: 10px;
+		border: 3px solid #ea580c;
+	}
+	.cu-rim {
+		position: absolute;
+		left: 4px;
+		top: 32px;
+		width: 34px;
+		height: 6px;
+		background: #ea580c;
+	}
+	.cu-net {
+		position: absolute;
+		left: 8px;
+		top: 38px;
+		width: 26px;
+		height: 20px;
+		background: repeating-linear-gradient(90deg, #e5e7eb 0 3px, transparent 3px 7px);
+		clip-path: polygon(0 0, 100% 0, 80% 100%, 20% 100%);
+		animation: swish 2.4s infinite;
+	}
+	.cu-ball {
+		position: absolute;
+		width: 20px;
+		height: 20px;
+		border-radius: 5px;
+		background:
+			linear-gradient(90deg, transparent 8px, #7c2d12 8px 11px, transparent 11px),
+			linear-gradient(transparent 8px, #7c2d12 8px 11px, transparent 11px),
+			#f97316;
+		animation: cu-shot 2.4s infinite;
+	}
+	@keyframes cu-shot {
+		0%, 10%, 20%, 30% { left: 12%; top: 80px; }
+		5%, 15%, 25% { left: 12%; top: 98px; }
+		38% { left: 22%; top: 60px; }
+		55% { left: 48%; top: 0; }
+		70% { left: calc(86% - 60px + 14px); top: 30px; }
+		82% { left: calc(86% - 60px + 14px); top: 70px; }
+		100% { left: calc(86% - 60px + 14px); top: 98px; opacity: 0; }
+	}
+	@keyframes swish {
+		0%, 68% { transform: scaleY(1); }
+		76% { transform: scaleY(1.35); }
+		90%, 100% { transform: scaleY(1); }
 	}
 </style>

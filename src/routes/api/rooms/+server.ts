@@ -16,7 +16,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!isRatedGame(game)) error(400, 'Unknown game.');
 	if (!rateLimit(`room-create:${locals.user.id}`, 30, 10 * 60_000)) error(429, 'Too many rooms, slow down.');
 	const player = roomPlayer(locals.user);
-	if (game == 'fishy') return json({ code: createRoom(game, player, { rated: true, matchmade: false, first: 'random', takebacks: false, clockMin: 0 }) });
+	// Real-time games (run in the host's browser): rated rooms by code.
+	if (game == 'fishy' || game == 'checkup') return json({ code: createRoom(game, player, { rated: true, matchmade: false, first: 'random', takebacks: false, clockMin: 0 }) });
 	if (body?.ranked === true) return json({ code: findRanked(game, player) });
 	const first = ['host', 'guest', 'random'].includes(body?.first) ? (body.first as RoomSettings['first']) : 'random';
 	const clockMin = CLOCK_CHOICES.includes(Number(body?.clock)) ? Number(body.clock) : 0;

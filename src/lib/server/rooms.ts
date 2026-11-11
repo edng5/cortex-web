@@ -4,8 +4,8 @@
 // against their session: only the room's two players can see or act in it.
 //
 // Chess and Four in a Row are played on the server: every move is checked against the rules here,
-// so a player can't cheat their way up the ratings. Fishy is real-time, so the host's browser runs
-// the game and the room only passes messages between the two players.
+// so a player can't cheat their way up the ratings. Fishy and Check-up are real-time, so the host's
+// browser runs the game and the room only passes messages between the two players.
 //
 // Chess and Four in a Row rooms are either custom (made with a code for a friend: the host picks who
 // goes first, takebacks and a clock; no rating) or ranked (matched with whoever else is looking:
@@ -432,7 +432,7 @@ export function act(code: string, userId: string, msg: Record<string, unknown>):
 			return { ok: true };
 		// Fishy (real-time, run in the host's browser): pass the message on to the other player.
 		case 'relay': {
-			if (room.game != 'fishy') return bad('Not a real-time game.');
+			if (room.game != 'fishy' && room.game != 'checkup') return bad('Not a real-time game.');
 			const sec = Math.floor(Date.now() / 1000);
 			if (room.relays.second != sec) room.relays = { second: sec, count: 0 };
 			if (++room.relays.count > 80) return bad('Too many messages.', 429);
@@ -441,7 +441,7 @@ export function act(code: string, userId: string, msg: Record<string, unknown>):
 		}
 		// Fishy: the host reports who won the round.
 		case 'result': {
-			if (room.game != 'fishy' || seat != 0) return bad('Only the host reports the result.');
+			if ((room.game != 'fishy' && room.game != 'checkup') || seat != 0) return bad('Only the host reports the result.');
 			const w = msg.winner;
 			finish(room, w === 0 || w === 1 ? w : null, 'eaten');
 			return { ok: true };

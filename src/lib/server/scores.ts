@@ -18,6 +18,8 @@ export const GAMES = {
 	ifish: { boards: [] as number[], max: 0 },
 	// iSpy has no public leaderboard; listed so its progress saves to accounts.
 	ispy: { boards: [1], max: 20_000_000 },
+	// Check-up keeps its progress (look, stats, ladder, shot templates) in the account; no high scores.
+	checkup: { boards: [] as number[], max: 0 },
 	// Online games: ratings are kept separately (ratings.ts); listed so their themes save to accounts.
 	chess: { boards: [] as number[], max: 0 },
 	fourrow: { boards: [] as number[], max: 0 }

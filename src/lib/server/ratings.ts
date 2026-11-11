@@ -2,7 +2,7 @@
 // stronger player gains more than a win against a weaker one. Private to each player.
 import { getDb } from './db';
 
-export const RATED_GAMES = ['chess', 'fourrow', 'fishy'] as const;
+export const RATED_GAMES = ['chess', 'fourrow', 'fishy', 'checkup'] as const;
 export type RatedGame = (typeof RATED_GAMES)[number];
 export const isRatedGame = (g: string): g is RatedGame => (RATED_GAMES as readonly string[]).includes(g);
 
