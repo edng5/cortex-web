@@ -614,8 +614,10 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		box(0.9, 0.9, 0.9, look.skin, hips, 0, 2.65);
 		face(look, box, hips);
 		hair(look, hips);
-		// The number on the back, in voxel digits.
-		digits(look.number, look.jersey == '#f8fafc' || look.jersey == '#f59e0b' ? '#0f172a' : '#f8fafc', hips);
+		// The number on the back and (smaller, under the chest on a curvy shape) on the front, in voxel digits.
+		const ink = look.jersey == '#f8fafc' || look.jersey == '#f59e0b' ? '#0f172a' : '#f8fafc';
+		digits(look.number, ink, hips, 'back', B.td / 2 + 0.02, 1.55, 0.13);
+		digits(look.number, ink, hips, 'front', B.td / 2 + 0.02, curvy ? 1.1 : 1.62, 0.1);
 		const part = (w: number, h: number, c: string, parent: Three, x: number, y: number) => {
 			const pivot = new T.Group();
 			pivot.position.set(x, y, 0);
@@ -856,9 +858,10 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		'0': '111101101101111', '1': '010110010010111', '2': '111001111100111', '3': '111001111001111', '4': '101101111001001',
 		'5': '111100111001111', '6': '111100111101111', '7': '111001001001001', '8': '111101111101111', '9': '111101111001111'
 	};
-	function digits(n: number, colour: string, hips: Three) {
+	function digits(n: number, colour: string, hips: Three, side: 'back' | 'front', depth: number, top: number, px: number) {
 		const s = String(Math.max(0, Math.min(99, Math.round(n))));
-		const px = 0.13;
+		// Seen from behind, left to right is +x; seen from the front (the -z side) it's -x.
+		const dir = side == 'back' ? 1 : -1;
 		const totalW = s.length * 3 * px + (s.length - 1) * px;
 		s.split('').forEach((ch, i) => {
 			const bits = FONT[ch];
@@ -866,8 +869,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 				for (let c = 0; c < 3; c++)
 					if (bits[r * 3 + c] == '1') {
 						const m = new T.Mesh(new T.BoxGeometry(px, px, 0.04), mat(colour));
-						// The back faces +z (the camera behind the player); read left to right from there.
-						m.position.set(-totalW / 2 + i * 4 * px + c * px + px / 2, 1.55 - r * px, 0.47);
+						m.position.set(dir * (-totalW / 2 + i * 4 * px + c * px + px / 2), top - r * px, dir * depth);
 						hips.add(m);
 					}
 		});
