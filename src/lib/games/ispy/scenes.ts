@@ -17,6 +17,8 @@ export interface Spot {
 	s: number;
 	float?: boolean;
 	depth?: boolean;
+	/** How busy it is (1: as many as fit). */
+	w?: number;
 	/** Keep out of this ellipse (cx, cy, rx, ry). */
 	avoid?: [number, number, number, number];
 	/** Names of the things that belong here (see ITEMS). */
@@ -62,13 +64,13 @@ export const SPOTS: Record<Scene, Spot[]> = {
 	kitchen: [
 		{ x0: 84, x1: 386, y0: 300, y1: 300, s: 0.6, pool: ['cookie', 'cheese', 'donut', 'egg', 'potato', 'eggplant', 'pineapple', 'corn', 'blueberries', 'grapes', 'pumpkin'] },
 		{ x0: 24, x1: 668, y0: 410, y1: 432, s: 0.8, depth: true, pool: [...FRUIT, 'cookie', 'donut', 'egg', 'cheese', 'mushroom', 'pumpkin'] },
-		{ x0: 712, x1: 860, y0: 190, y1: 600, s: 0.5, float: true, avoid: [785, 338, 100, 10], pool: ['magnet', 'star', 'ribbon', 'blossom', 'clover', 'gem'] },
+		{ x0: 712, x1: 860, y0: 190, y1: 600, s: 0.5, float: true, w: 0.35, avoid: [785, 338, 100, 10], pool: ['magnet', 'star', 'ribbon', 'blossom', 'clover', 'gem'] },
 		{ x0: 708, x1: 862, y0: 152, y1: 152, s: 0.6, pool: ['cookie', 'toilet roll', 'pumpkin', 'cheese'] }
 	],
 	jungle: [
 		{ x0: 30, x1: 360, y0: 246, y1: 246, s: 0.72, pool: ['parrot', 'monkey', 'spider', 'snake', 'chick', 'banana', 'coconut', 'pineapple'] },
 		{ x0: 540, x1: 880, y0: 326, y1: 326, s: 0.72, pool: ['parrot', 'monkey', 'spider', 'snake', 'banana', 'coconut', 'butterfly'] },
-		{ x0: 400, x1: 880, y0: 165, y1: 270, s: 0.6, float: true, pool: ['butterfly', 'bee', 'parrot', 'butterfly'] },
+		{ x0: 400, x1: 880, y0: 165, y1: 270, s: 0.6, float: true, w: 0.5, pool: ['butterfly', 'bee', 'parrot', 'butterfly'] },
 		{ x0: 30, x1: 870, y0: 508, y1: 522, s: 0.85, depth: true, pool: ['crocodile', 'frog', 'turtle', 'fish', 'flamingo'] },
 		{
 			x0: 20, x1: 880, y0: 565, y1: 630, s: 1, depth: true,

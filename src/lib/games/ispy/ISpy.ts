@@ -159,37 +159,45 @@ export class ISpy implements ArcadeGame {
 	/** Puts `n` things where they belong in the scene (books on shelves, frogs in the pond). */
 	private populate(n: number, size: number) {
 		const spots = SPOTS[this.scene];
-		const weight = spots.map((p) => (p.x1 - p.x0) * (p.float ? (p.y1 - p.y0) * 0.4 : 110 + (p.y1 - p.y0)) * p.s);
+		// Each spot gets things by how many fit in it (floating ones a bit sparser).
+		const weight = spots.map((p) => {
+			const d = size * p.s;
+			return (p.w ?? 1) * (p.float ? ((p.x1 - p.x0) * (p.y1 - p.y0) * 0.45) / (d * d) : ((p.x1 - p.x0) / d) * (1 + (p.y1 - p.y0) / (d * 0.6)));
+		});
 		const total = weight.reduce((a, b) => a + b, 0);
 		const placed: Placed[] = [];
 		for (let i = 0; i < n; i++) {
-			let r = Math.random() * total;
-			let k = 0;
-			while (r > weight[k] && k < spots.length - 1) r -= weight[k++];
-			const spot = spots[k];
-			const pool = poolOf(spot);
-			const item = pick(pool);
 			let best: Placed | null = null;
-			let bestGap = -1;
-			// Try a few spots; keep the one furthest from the rest.
-			for (let t = 0; t < 16; t++) {
-				const x = spot.x0 + Math.random() * (spot.x1 - spot.x0);
-				const y = spot.y0 + Math.random() * (spot.y1 - spot.y0);
-				if (spot.avoid) {
-					const [ax, ay, rx, ry] = spot.avoid;
-					if (((x - ax) / rx) ** 2 + ((y - ay) / ry) ** 2 < 1) continue;
+			let bestGap = -Infinity;
+			// Pick a spot; if it's full, another one (a little overlap is fine, piles look natural).
+			for (let tries = 0; tries < 5 && !(best && bestGap > -best.size * 0.3); tries++) {
+				let r = Math.random() * total;
+				let k = 0;
+				while (r > weight[k] && k < spots.length - 1) r -= weight[k++];
+				const spot = spots[k];
+				const pool = poolOf(spot);
+				const item = pick(pool);
+				// Try a few places in it; keep the one furthest from the rest.
+				for (let t = 0; t < 16; t++) {
+					const x = spot.x0 + Math.random() * (spot.x1 - spot.x0);
+					const y = spot.y0 + Math.random() * (spot.y1 - spot.y0);
+					if (spot.avoid) {
+						const [ax, ay, rx, ry] = spot.avoid;
+						if (((x - ax) / rx) ** 2 + ((y - ay) / ry) ** 2 < 1) continue;
+					}
+					const far = spot.depth && spot.y1 > spot.y0 ? 0.78 + 0.32 * ((y - spot.y0) / (spot.y1 - spot.y0)) : 1;
+					const s = size * spot.s * far * (SCALE[item.name] ?? 1) * (0.92 + Math.random() * 0.16);
+					const p: Placed = { item, x, y: spot.float ? y : y - s * 0.42, size: s, rot: (Math.random() - 0.5) * 0.16, base: spot.float ? null : y, pool, found: 0 };
+					const gap = placed.reduce((m, q) => Math.min(m, Math.hypot(q.x - p.x, q.y - p.y) - (q.size + p.size) * 0.45), 1e9);
+					if (gap > bestGap) {
+						bestGap = gap;
+						best = p;
+					}
+					if (gap > 2) break;
 				}
-				const far = spot.depth && spot.y1 > spot.y0 ? 0.78 + 0.32 * ((y - spot.y0) / (spot.y1 - spot.y0)) : 1;
-				const s = size * spot.s * far * (SCALE[item.name] ?? 1) * (0.92 + Math.random() * 0.16);
-				const p: Placed = { item, x, y: spot.float ? y : y - s * 0.42, size: s, rot: (Math.random() - 0.5) * 0.16, base: spot.float ? null : y, pool, found: 0 };
-				const gap = placed.reduce((m, q) => Math.min(m, Math.hypot(q.x - p.x, q.y - p.y) - (q.size + p.size) * 0.45), 1e9);
-				if (gap > bestGap) {
-					bestGap = gap;
-					best = p;
-				}
-				if (gap > 6) break;
 			}
-			if (best) placed.push(best);
+			// Too crowded everywhere: leave it out rather than bury something.
+			if (best && bestGap > -best.size * 0.45) placed.push(best);
 		}
 		// Back to front: things lower down are nearer, drawn over the ones behind.
 		return placed.sort((p, q) => (p.base ?? p.y) - (q.base ?? q.y));
@@ -211,7 +219,7 @@ export class ISpy implements ArcadeGame {
 		this.found = 0;
 		this.hints = 2;
 		this.hint = null;
-		this.things = this.populate(Math.min(52, 16 + L * 5), Math.max(30, 60 - L * 3));
+		this.things = this.populate(Math.min(90, 40 + L * 7), Math.max(28, 50 - L * 2.5));
 		this.nextClue();
 		this.screen = 'seek';
 	}
@@ -292,7 +300,7 @@ export class ISpy implements ArcadeGame {
 	// ── Stump the Computer ──
 	private startStump() {
 		this.scene = pick(SCENES);
-		this.things = this.populate(26, 52);
+		this.things = this.populate(48, 44);
 		this.stump = { colour: null, guesses: [], at: 0, done: null };
 		this.screen = 'stump';
 	}
