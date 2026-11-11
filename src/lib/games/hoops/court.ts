@@ -92,7 +92,8 @@ export interface Court {
 	ball(mode: 'hold' | 'dribble' | 'hidden', who?: 'you' | 'cpu'): void;
 	/** The ball flies at the rim from whoever has it; resolves when it's in (or off the rim / swatted). */
 	shoot(made: boolean, blocked?: boolean, dunk?: boolean): Promise<void>;
-	camera(mode: CamMode): void;
+	/** Change the view: 'cut' jumps there at once, 'glide' moves there slowly (cut scenes); default eases. */
+	camera(mode: CamMode, move?: 'cut' | 'glide'): void;
 	/** Which hand you're dribbling with (the ball follows it). */
 	setYouHand(hand: 'left' | 'right' | null): void;
 	onBounce: () => void;
@@ -792,6 +793,8 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 
 	// ── Camera ──
 	let camMode: CamMode = 'menu';
+	let camCut = false;
+	let camGlide = false;
 	const camPos = new T.Vector3(0, 12, 20);
 	const camLook = new T.Vector3(0, 4, -6);
 	function updateCamera(now: number) {
@@ -812,8 +815,9 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			pos = new T.Vector3(2, 5.5, 1);
 			look = new T.Vector3(-16, 2.5, -4 + Math.sin(now / 3000) * 3);
 		} else if (camMode == 'skyline') {
-			pos = new T.Vector3(Math.sin(now / 8000) * 3, 7, 10);
-			look = new T.Vector3(0, 13, -46);
+			// High above the court (over the players' heads), looking out at the city.
+			pos = new T.Vector3(Math.sin(now / 8000) * 3, 13, 13);
+			look = new T.Vector3(0, 15, -46);
 		} else if (camMode == 'locker') {
 			// In front of your player, who stands left of the customising panel.
 			// (Seen from the front, the screen's right is -x: aim right of them so they stand on the left.)
@@ -829,9 +833,16 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		}
 		hoopFade += ((camMode == 'defense' ? 0.18 : 1) - hoopFade) * 0.1;
 		for (const m of [...hoopMeshes, ...boardMeshes, ...netMeshes]) m.material.opacity = hoopFade;
+		if (camCut) {
+			camPos.copy(pos);
+			camLook.copy(look);
+			camCut = false;
+		}
 		const snap = camMode == 'menu' || camMode == 'skyline' || camMode == 'crowd';
-		camPos.lerp(pos, snap ? 0.25 : 0.08);
-		camLook.lerp(look, snap ? 0.25 : 0.1);
+		const k = camGlide ? 0.03 : snap ? 0.25 : 0.08;
+		camPos.lerp(pos, k);
+		camLook.lerp(look, camGlide ? 0.035 : snap ? 0.25 : 0.1);
+		if (camGlide && camPos.distanceTo(pos) < 0.05) camGlide = false;
 		camera.position.copy(camPos);
 		camera.lookAt(camLook);
 	}
@@ -951,8 +962,10 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 				}, dur + 1200);
 			});
 		},
-		camera(m) {
+		camera(m, move) {
 			camMode = m;
+			camCut = move == 'cut';
+			camGlide = move == 'glide';
 		},
 		setYouHand(h) {
 			if (h) youHand = h;

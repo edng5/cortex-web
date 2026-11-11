@@ -203,6 +203,7 @@
 	// Cut scenes: letterboxed, captioned, read aloud; tap to go on, or skip.
 	let scene = $state<{ lines: SceneLine[]; i: number; at: number; then: () => void } | null>(null);
 	let sceneTimer: ReturnType<typeof setTimeout> | undefined;
+	let flashAt = $state(0);
 	function play(lines: SceneLine[], then: () => void) {
 		if (!lines.length) return then();
 		scene = { lines, i: 0, at: performance.now(), then };
@@ -211,7 +212,12 @@
 	function showLine() {
 		if (!scene) return;
 		const l = scene.lines[scene.i];
-		court?.camera(l.cam);
+		// A hard cut flashes white; a glide moves the camera there slowly.
+		court?.camera(l.cam, l.cut == 'flash' ? 'cut' : 'glide');
+		if (l.cut == 'flash') {
+			flashAt = performance.now();
+			sfx('swish');
+		}
 		court?.showCpu(l.cam == 'intro' || l.cam == 'offense');
 		speak(l.text);
 		clearTimeout(sceneTimer);
@@ -250,7 +256,7 @@
 		court?.setCrowd(i);
 		court?.ball('hidden');
 		court?.setCpu(CHECK.x, CHECK.z - 1.8, 1, 'stance', 0);
-		const intro: SceneLine = { who: LADDER[i].name, cam: 'intro', text: LINES[LADDER[i].name]?.intro ?? LADDER[i].tag };
+		const intro: SceneLine = { who: LADDER[i].name, cam: 'intro', cut: 'flash', text: LINES[LADDER[i].name]?.intro ?? LADDER[i].tag };
 		const first = !save.seen.includes('prologue');
 		if (first) {
 			save.seen = [...save.seen, 'prologue'];
@@ -747,7 +753,7 @@
 			</ol>
 			{#if camStatus}<p class="err">{camStatus}</p>{/if}
 		</div>
-	{:else if screen == 'calibrate'}
+	{:else if screen == 'calibrate' && !scene}
 		<div class="center-card">
 			<h2>vs {opp.name}</h2>
 			<p>{opp.tag}</p>
@@ -1032,12 +1038,12 @@
 		{@const l = scene.lines[scene.i]}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 		<div class="cutscene" onclick={nextLine}>
-			<div class="bar top"></div>
-			<div class="bar bottom">
-				{#key scene.i}
-					<div class="caption"><b>{l.who}</b><p>{l.text}</p></div>
-				{/key}
-			</div>
+			{#key flashAt}{#if flashAt && now - flashAt < 500}<div class="whiteflash"></div>{/if}{/key}
+			<div class="lb top"></div>
+			<div class="lb bottom"></div>
+			{#key scene.i}
+				<div class="caption"><b>{l.who}</b><p>{l.text}</p></div>
+			{/key}
 			<button class="ghost small skip" onclick={(e) => (e.stopPropagation(), endScene())}>Skip ›</button>
 		</div>
 	{/if}
@@ -1195,33 +1201,60 @@
 		cursor: pointer;
 		z-index: 5;
 	}
-	.cutscene .bar {
+	.cutscene .lb {
 		position: absolute;
 		left: 0;
 		right: 0;
 		background: #000;
 		animation: bars 0.5s ease-out;
 	}
+	/* Narrow letterbox bars that slide in from the edges. */
 	.cutscene .top {
 		top: 0;
-		height: 11%;
+		height: 8%;
+		transform-origin: top;
 	}
 	.cutscene .bottom {
 		bottom: 0;
-		min-height: 20%;
-		display: grid;
-		place-items: center;
-		padding: 10px 24px;
+		height: 8%;
+		transform-origin: bottom;
 	}
 	@keyframes bars {
 		from {
 			transform: scaleY(0);
 		}
 	}
+	/* The caption sits just above the bottom bar, on a soft fade. */
 	.caption {
-		max-width: 760px;
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 8%;
+		padding: 40px 24px 14px;
 		text-align: center;
-		animation: popin2 0.35s ease-out;
+		background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+		animation: popin2 0.45s ease-out;
+	}
+	.caption p {
+		max-width: 760px;
+		margin-inline: auto !important;
+		text-shadow: 0 2px 6px #000;
+	}
+	/* A hard cut: a white flash that fades. */
+	.whiteflash {
+		position: absolute;
+		inset: 0;
+		background: #fff;
+		pointer-events: none;
+		animation: whiteflash 0.5s ease-out forwards;
+	}
+	@keyframes whiteflash {
+		from {
+			opacity: 0.95;
+		}
+		to {
+			opacity: 0;
+		}
 	}
 	.caption b {
 		font: 900 0.95rem Impact, sans-serif;

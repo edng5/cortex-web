@@ -11,34 +11,36 @@ export interface SceneLine {
 	who: string;
 	text: string;
 	cam: 'menu' | 'intro' | 'crowd' | 'skyline' | 'offense';
+	/** How the shot arrives: a smooth glide from the last one, or a hard cut with a white flash. */
+	cut?: 'glide' | 'flash';
 }
 
 export const PROLOGUE: SceneLine[] = [
-	{ who: 'Cortex', cam: 'skyline', text: 'Fifth and Main. The old court. Nobody has played here in years.' },
-	{ who: 'Cortex', cam: 'menu', text: 'So I watched a thousand old game tapes, and I rebuilt the legends. As AIs.' },
-	{ who: 'Cortex', cam: 'menu', text: 'They hold court every night. Fifteen of them, from the bench warmers to the GOAT.' },
-	{ who: 'Cortex', cam: 'crowd', text: "Win, and people will come back to watch. Lose, and, well. The tapes don't lie." },
-	{ who: 'Cortex', cam: 'offense', text: "Lace up. First up is Spud Web 1.0. He's small and a little dated. Don't let that fool you." }
+	{ who: 'Cortex', cam: 'skyline', cut: 'flash', text: 'Fifth and Main. The old court. Nobody has played here in years.' },
+	{ who: 'Cortex', cam: 'menu', cut: 'glide', text: 'So I watched a thousand old game tapes, and I rebuilt the legends. As AIs.' },
+	{ who: 'Cortex', cam: 'menu', cut: 'glide', text: 'They hold court every night. Fifteen of them, from the bench warmers to the GOAT.' },
+	{ who: 'Cortex', cam: 'crowd', cut: 'flash', text: "Win, and people will come back to watch. Lose, and, well. The tapes don't lie." },
+	{ who: 'Cortex', cam: 'offense', cut: 'glide', text: "Lace up. First up is Spud Web 1.0. He's small and a little dated. Don't let that fool you." }
 ];
 
 /** Story beats after beating certain rungs (0-based index of the one just beaten). */
 export const INTERLUDES: Record<number, SceneLine[]> = {
 	4: [
-		{ who: 'Cortex', cam: 'crowd', text: 'Word is getting around. People are bringing lawn chairs.' },
-		{ who: 'Cortex', cam: 'skyline', text: 'The next five trained on harder tapes. Playoff tapes.' }
+		{ who: 'Cortex', cam: 'crowd', cut: 'flash', text: 'Word is getting around. People are bringing lawn chairs.' },
+		{ who: 'Cortex', cam: 'skyline', cut: 'glide', text: 'The next five trained on harder tapes. Playoff tapes.' }
 	],
 	9: [
-		{ who: 'Cortex', cam: 'skyline', text: 'The lights are on now. The bleachers are filling up.' },
-		{ who: 'Cortex', cam: 'crowd', text: "Fair warning: Kobe's been studying your film. Frame by frame." }
+		{ who: 'Cortex', cam: 'skyline', cut: 'flash', text: 'The lights are on now. The bleachers are filling up.' },
+		{ who: 'Cortex', cam: 'crowd', cut: 'glide', text: "Fair warning: Kobe's been studying your film. Frame by frame." }
 	],
 	13: [
-		{ who: 'Cortex', cam: 'skyline', text: "Midnight. One left. He's never lost a game on this court." },
-		{ who: 'Cortex', cam: 'crowd', text: "The whole neighbourhood is here. Let's give them something to remember." }
+		{ who: 'Cortex', cam: 'skyline', cut: 'glide', text: "Midnight. One left. He's never lost a game on this court." },
+		{ who: 'Cortex', cam: 'crowd', cut: 'flash', text: "The whole neighbourhood is here. Let's give them something to remember." }
 	],
 	14: [
-		{ who: 'Cortex', cam: 'crowd', text: "You did it. The GOAT is down. The park is yours." },
-		{ who: 'Cortex', cam: 'skyline', text: 'Fifth and Main is alive again. The legends will be back for a rematch, of course.' },
-		{ who: 'Cortex', cam: 'menu', text: 'King of the Park. Has a nice ring to it.' }
+		{ who: 'Cortex', cam: 'crowd', cut: 'flash', text: "You did it. The GOAT is down. The park is yours." },
+		{ who: 'Cortex', cam: 'skyline', cut: 'glide', text: 'Fifth and Main is alive again. The legends will be back for a rematch, of course.' },
+		{ who: 'Cortex', cam: 'menu', cut: 'glide', text: 'King of the Park. Has a nice ring to it.' }
 	]
 };
 
