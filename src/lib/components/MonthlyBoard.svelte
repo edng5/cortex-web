@@ -48,7 +48,7 @@
 
 <aside class="monthly" aria-label={allTime ? 'All-time leaderboard' : 'Monthly leaderboard'}>
 	<header>
-		<h3>{allTime ? 'All-time leaders' : 'Monthly leaders'}</h3>
+		<h3><span>{allTime ? 'All-time' : 'Monthly'}</span><span>leaders</span></h3>
 		<span class="month">{allTime ? '' : data ? monthName(data.month) : ' '}</span>
 	</header>
 	<BoardToggle />
@@ -133,6 +133,10 @@
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
 		color: #c7d2fe;
+	}
+	/* Always two lines, so switching Monthly / All-time doesn't change the height. */
+	h3 span {
+		display: block;
 	}
 	.month {
 		color: var(--muted, #94a3b8);

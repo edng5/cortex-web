@@ -147,7 +147,7 @@
 	</div>
 
 </div>
-<MonthlyBoard />
+<div class="side"><MonthlyBoard /></div>
 </div></div>
 
 <style>
@@ -165,6 +165,44 @@
 	@container (min-width: 800px) {
 		.cols {
 			grid-template-columns: minmax(0, 1fr) 250px;
+			align-items: stretch;
+		}
+		/* The leaderboard is as tall as the menu beside it, and scrolls inside. */
+		.side {
+			position: relative;
+		}
+		.side > :global(.monthly) {
+			position: absolute;
+			inset: 0;
+			overflow-y: auto;
+			scrollbar-gutter: stable;
+		}
+		/* A slim glowing scrollbar to match the board. */
+		.side > :global(.monthly::-webkit-scrollbar) {
+			width: 8px;
+		}
+		.side > :global(.monthly::-webkit-scrollbar-track) {
+			margin: 14px 0;
+			border-radius: 8px;
+			background: rgba(129, 140, 248, 0.08);
+		}
+		.side > :global(.monthly::-webkit-scrollbar-thumb) {
+			border-radius: 8px;
+			border: 2px solid transparent;
+			background: linear-gradient(#22d3ee, #818cf8, #c084fc) padding-box;
+			box-shadow: 0 0 6px rgba(129, 140, 248, 0.6);
+		}
+		.side > :global(.monthly::-webkit-scrollbar-thumb:hover) {
+			border-width: 1px;
+		}
+		.side > :global(.monthly::-webkit-scrollbar-button) {
+			display: none;
+		}
+		@supports not selector(::-webkit-scrollbar) {
+			.side > :global(.monthly) {
+				scrollbar-width: thin;
+				scrollbar-color: #818cf8 rgba(129, 140, 248, 0.08);
+			}
 		}
 	}
 	.head {
@@ -194,7 +232,18 @@
 	}
 	@container (min-width: 500px) {
 		.picker {
-			grid-template-columns: 230px minmax(0, 1fr);
+			/* Three equal columns: the list takes one, the preview two, and the rows below
+			   line up with them. */
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+		.stack {
+			justify-content: space-between;
+		}
+		.preview {
+			grid-column: span 2;
+		}
+		.row-games {
+			grid-template-columns: subgrid;
 		}
 	}
 	.stack {
@@ -277,7 +326,7 @@
 		grid-column: 1 / -1;
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-		gap: 8px;
+		gap: 8px 12px;
 		margin: 0;
 		padding: 0;
 		list-style: none;
