@@ -710,6 +710,20 @@
 	</div>
 {/snippet}
 
+<svelte:window
+	onkeydown={(e) => {
+		if (!scene || !active) return;
+		if (e.key == 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			endScene();
+		} else if (e.key == ' ' || e.key == 'Enter') {
+			e.preventDefault();
+			nextLine();
+		}
+	}}
+/>
+
 <div class="checkup">
 	<canvas class="three" bind:this={canvas}></canvas>
 
@@ -1037,14 +1051,15 @@
 	{#if scene}
 		{@const l = scene.lines[scene.i]}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="cutscene" onclick={nextLine}>
+		<div class="cutscene" data-esc-owner onclick={nextLine}>
 			{#key flashAt}{#if flashAt && now - flashAt < 500}<div class="whiteflash"></div>{/if}{/key}
 			<div class="lb top"></div>
 			<div class="lb bottom"></div>
 			{#key scene.i}
 				<div class="caption"><b>{l.who}</b><p>{l.text}</p></div>
 			{/key}
-			<button class="ghost small skip" onclick={(e) => (e.stopPropagation(), endScene())}>Skip ›</button>
+			<button class="skip" onclick={(e) => (e.stopPropagation(), endScene())} aria-label="Skip cut scene">Skip <span aria-hidden="true">⏭</span></button>
+			<p class="next-hint">Click for next line · Esc to skip</p>
 		</div>
 	{/if}
 </div>
@@ -1268,10 +1283,38 @@
 		font-weight: 700;
 		color: #f8fafc;
 	}
+	/* Skip: in the top bar, clear and easy to hit. */
 	.skip {
 		position: absolute;
-		top: 3%;
+		top: 1.2%;
 		right: 16px;
+		z-index: 1;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 16px;
+		border-radius: 999px;
+		border: 2px solid rgba(255, 255, 255, 0.7);
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+		box-shadow: none;
+		font-size: 0.85rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.skip:hover {
+		background: #f97316;
+		border-color: #f97316;
+		color: #1c0a00;
+	}
+	.next-hint {
+		position: absolute;
+		left: 16px;
+		top: 1.6%;
+		margin: 0;
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.6);
+		pointer-events: none;
 	}
 	.unlock {
 		color: #94a3b8;

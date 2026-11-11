@@ -90,6 +90,8 @@
 
 	function onKey(e: KeyboardEvent) {
 		if (!open || e.key !== 'Escape') return;
+		// Something in the game wants Esc for itself (Check-up's cut scenes: Esc skips them).
+		if (document.querySelector('[data-esc-owner]')) return;
 		// Handle Esc here only: not in the game, and not the info panel underneath.
 		e.stopImmediatePropagation();
 		e.preventDefault();
