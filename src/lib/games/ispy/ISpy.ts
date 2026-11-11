@@ -131,7 +131,7 @@ export class ISpy implements ArcadeGame {
 
 	sfx: (name: string) => void = () => {};
 	onQuit: () => void = () => {};
-	onScore: (board: number, score: number) => void = () => {};
+	onScore: (board: number, score: number, level?: number) => void = () => {};
 	global: Board | null = null;
 	loggedIn = false;
 
@@ -291,7 +291,7 @@ export class ISpy implements ArcadeGame {
 	}
 	private endSeek() {
 		if (this.score > this.best) this.best = this.score;
-		if (this.score > 0) this.onScore(1, this.score); // Seek & Find's public leaderboard
+		if (this.score > 0) this.onScore(1, this.score, this.level); // Seek & Find's public leaderboard
 		this.screen = 'over';
 		this.goy = -60;
 		this.save();

@@ -206,14 +206,14 @@
 	}
 	/** Best score sent per board this visit, so leaving and coming back doesn't resend it. */
 	const sent: Record<number, number> = {};
-	async function submitScore(board: number, score: number) {
+	async function submitScore(board: number, score: number, level?: number) {
 		if (!session.user || score <= 0 || score <= (sent[board] ?? 0)) return;
 		sent[board] = score;
 		try {
 			const res = await fetch(url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ board, score })
+				body: JSON.stringify({ board, score, level })
 			});
 			if (res.ok && game) {
 				game.global = (await res.json()) as Board;

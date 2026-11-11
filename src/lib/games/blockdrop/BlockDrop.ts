@@ -86,7 +86,7 @@ export class BlockDrop implements ArcadeGame {
 
 	sfx: (name: string) => void = () => {};
 	onQuit: () => void = () => {};
-	onScore: (board: number, score: number) => void = () => {};
+	onScore: (board: number, score: number, level?: number) => void = () => {};
 	global: Board | null = null;
 	loggedIn = false;
 	private hover: string | null = null;
@@ -221,7 +221,7 @@ export class BlockDrop implements ArcadeGame {
 	}
 	private endGame(lost: boolean) {
 		if (this.score > this.best) this.best = this.score;
-		this.onScore(1, this.score);
+		this.onScore(1, this.score, this.level);
 		this.save();
 		if (lost) {
 			this.screen = 'over';

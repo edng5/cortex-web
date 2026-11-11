@@ -1,7 +1,8 @@
 // GET  /api/games/:game/scores[?period=all] → global board (top players per board) + your own bests,
 //      this month's (the default) or all-time.
-// POST /api/games/:game/scores[?period=all] { board, score } → record a finished run (signed-in
-//      players only), and get that board back.
+// POST /api/games/:game/scores[?period=all] { board, score, level? } → record a finished run
+//      (signed-in players only; `level`: the level reached, for games with levels), and get that
+//      board back.
 // (`mission` is accepted as an alias of `board`, as Top Gun calls its boards missions.)
 import { error, json } from '@sveltejs/kit';
 import { GAMES, getBoard, isGame, periodOf, submitScore } from '$lib/server/scores';
@@ -31,6 +32,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url }) => 
 	}
 	// A run takes well over a minute; this only stops scripted floods.
 	if (!rateLimit(`games:${locals.user.id}`, 40, 10 * 60_000)) error(429, 'Too many scores, slow down.');
-	submitScore(locals.user.id, game, board, score);
+	const level = Number.isInteger(body?.level) && body.level >= 0 && body.level <= 999 ? (body.level as number) : null;
+	submitScore(locals.user.id, game, board, score, level);
 	return json(getBoard(game, locals.user.id, periodOf(url.searchParams.get('period'))));
 };

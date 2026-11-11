@@ -181,6 +181,11 @@ export function getDb(): Database.Database {
 	// Which device last wrote each save (so a device's own saves never count as a conflict).
 	const saveCols = (db.prepare('PRAGMA table_info(game_saves)').all() as { name: string }[]).map((c) => c.name);
 	if (!saveCols.includes('device')) db.exec('ALTER TABLE game_saves ADD COLUMN device TEXT');
+	// The level a best score was reached at (Block Drop, iSpy), shown beside it on the boards.
+	for (const t of ['game_scores', 'game_monthly']) {
+		const c = (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((x) => x.name);
+		if (!c.includes('level')) db.exec(`ALTER TABLE ${t} ADD COLUMN level INTEGER`);
+	}
 	purgeExpired();
 	setInterval(purgeExpired, 60 * 60 * 1000).unref(); // hourly
 	return db;

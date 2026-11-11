@@ -40,7 +40,8 @@ export interface ArcadeGame {
 	/** The player picked Quit / Exit on the game's own menu. */
 	onQuit: () => void;
 	/** A run ended with this score, on this board (mission, mode or difficulty). */
-	onScore: (board: number, score: number) => void;
+	/** A finished run's score on a board (and, for games with levels, the level reached). */
+	onScore: (board: number, score: number, level?: number) => void;
 	/** Global high scores from the server; null until loaded (screens fall back to local scores). */
 	global: Board | null;
 	/** Whether the player is signed in (their scores count on the global board). */

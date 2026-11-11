@@ -10,7 +10,7 @@
 	import Modal from './Modal.svelte';
 	import { portal } from '$lib/actions/portal';
 
-	type Entry = { name: string; score: number } | null;
+	type Entry = { name: string; score: number; level?: number | null } | null;
 	type Monthly = {
 		period?: 'month' | 'all';
 		month: string;
@@ -64,7 +64,8 @@
 				{#each Object.entries(g.boards) as [b, label] (b)}
 					{@const e = row?.boards[Number(b)] ?? null}
 					<div class="line">
-						{#if Object.keys(g.boards).length > 1}<dt>{label}</dt>{/if}
+						<!-- Several boards: which one. One board: the level the record was set at. -->
+						<dt>{Object.keys(g.boards).length > 1 ? label : e?.level != null ? `Level ${e.level}` : ''}</dt>
 						<dd class="who">{e ? e.name : data || failed ? '-' : '…'}</dd>
 						<dd class="score">{e ? e.score.toLocaleString() : data || failed ? '-' : ''}</dd>
 					</div>
@@ -95,7 +96,7 @@
 								{@const t = top[i]}
 								<li class:empty={!t}>
 									<span class="medal">{['🥇', '🥈', '🥉'][i]}</span>
-									<span class="who">{t ? t.name : data || failed ? 'No one yet' : '…'}</span>
+									<span class="who">{t ? t.name : data || failed ? 'No one yet' : '…'}{#if t?.level != null}<em class="lv">Level {t.level}</em>{/if}</span>
 									<span class="score">{t ? t.score.toLocaleString() : ''}</span>
 								</li>
 							{/each}
@@ -260,6 +261,12 @@
 	}
 	dd {
 		margin: 0;
+	}
+	.lv {
+		margin-left: 8px;
+		font-style: normal;
+		font-size: 0.8em;
+		color: var(--muted, #94a3b8);
 	}
 	.who {
 		overflow: hidden;
