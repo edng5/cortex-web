@@ -149,6 +149,8 @@ export class Gfx {
 export const ARIAL_BLACK = '"Arial Black", "Arial Bold", Gadget, Arial, sans-serif';
 export const ARIAL = 'Arial, Helvetica, sans-serif';
 export const COMIC = '"Comic Sans MS", "Comic Neue", "Chalkboard SE", cursive';
+/** "Fredoka" (Google Fonts): round and bubbly, for Fishy. Trebuchet until it has loaded. */
+export const BUBBLY = '"Fredoka", "Trebuchet MS", "Segoe UI", sans-serif';
 
 /**
  * Global board for one mode, drawn on a game's high-scores screen: the record holder, and your
@@ -561,16 +563,25 @@ export class Confirm {
 
 /** "Press Start 2P" (Google Fonts), for game-over titles; Arial Black until it has loaded. */
 export const ARCADE = '"Press Start 2P", "Arial Black", sans-serif';
-let arcadeFont = false;
-/** Loads the arcade font once (the first game that needs it). */
-export function loadArcadeFont() {
-	if (arcadeFont || typeof document === 'undefined') return;
-	arcadeFont = true;
+const webFonts = new Set<string>();
+/** Loads a Google font once (`query` as in its css2 URL; `probe` a CSS font naming it). */
+function loadWebFont(query: string, probes: string[]) {
+	if (webFonts.has(query) || typeof document === 'undefined') return;
+	webFonts.add(query);
 	const link = document.createElement('link');
 	link.rel = 'stylesheet';
-	link.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
-	link.onload = () => void document.fonts?.load('32px "Press Start 2P"').catch(() => {});
+	link.href = `https://fonts.googleapis.com/css2?family=${query}&display=swap`;
+	// Canvas text doesn't ask for fonts by itself: load the faces now.
+	link.onload = () => probes.forEach((f) => void document.fonts?.load(f).catch(() => {}));
 	document.head.appendChild(link);
+}
+/** Loads the arcade font once (the first game that needs it). */
+export function loadArcadeFont() {
+	loadWebFont('Press+Start+2P', ['32px "Press Start 2P"']);
+}
+/** Loads Fredoka (regular and bold) once. */
+export function loadBubblyFont() {
+	loadWebFont('Fredoka:wght@400;600;700', ['400 20px "Fredoka"', '600 20px "Fredoka"', '700 20px "Fredoka"']);
 }
 
 /**

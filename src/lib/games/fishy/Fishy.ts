@@ -6,7 +6,7 @@
 //  - Single player moves with WASD or the arrow keys (so either on-screen joystick works on
 //    phones); in multiplayer, player 1 has WASD and player 2 the arrow keys, as before.
 //  - A moment of safety after losing a life, so you can't be eaten again where you respawn.
-import { COMIC, Gfx, Mask, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, pips, pixelsTouch, text, writeSave, type ArcadeGame, type Board, type Sprite, type UiButton, type UiTheme } from '../common';
+import { BUBBLY, Gfx, loadBubblyFont, Mask, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, pips, pixelsTouch, text, writeSave, type ArcadeGame, type Board, type Sprite, type UiButton, type UiTheme } from '../common';
 import { Room, myRating, type Rating, type RoomEvent } from '../net';
 
 export const GAME_W = 900;
@@ -40,8 +40,22 @@ const INK = 'rgb(10,55,85)';
 const INK_SOFT = 'rgba(10,55,85,0.75)';
 const CORAL = 'rgb(240,110,70)';
 const CARD = 'rgba(255,255,255,0.72)';
+/** "P1" / "P2": white with the player's colour round it. */
+function playerTag(ctx: CanvasRenderingContext2D, k: number, x: number, y: number, size: number) {
+	ctx.save();
+	ctx.font = `700 ${size}px ${BUBBLY}`;
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.lineJoin = 'round';
+	ctx.lineWidth = Math.max(3, size / 6);
+	ctx.strokeStyle = k ? 'rgb(0,105,170)' : 'rgb(220,85,45)';
+	ctx.strokeText(k ? 'P2' : 'P1', x, y);
+	ctx.fillStyle = '#fff';
+	ctx.fillText(k ? 'P2' : 'P1', x, y);
+	ctx.restore();
+}
 const UI: UiTheme = {
-	family: COMIC,
+	family: BUBBLY,
 	size: 26,
 	detailSize: 15,
 	radius: 26,
@@ -74,7 +88,7 @@ const PAUSED = 14;
 /** A small "Selected" pill under a picked card. */
 function badge(ctx: CanvasRenderingContext2D, cx: number, cy: number, label: string) {
 	panel(ctx, cx - 50, cy - 13, 100, 26, { fill: CORAL, radius: 13 });
-	text(ctx, label, cx, cy + 1, { size: 15, family: COMIC, color: '#fff', align: 'center' });
+	text(ctx, label, cx, cy + 1, { size: 15, family: BUBBLY, color: '#fff', align: 'center' });
 }
 
 export class Fishy implements ArcadeGame {
@@ -137,6 +151,7 @@ export class Fishy implements ArcadeGame {
 	private readonly initial: Record<string, number | number[]>;
 
 	constructor(private img: Images) {
+		loadBubblyFont();
 		// Snapshot of the starting positions, for "Press Enter to Play Again" (the Java reset tables).
 		this.initial = {};
 		for (const k of RESET_FIELDS) {
@@ -392,44 +407,44 @@ export class Fishy implements ArcadeGame {
 		const g = this.g;
 		if (this.game == 16 || this.game == 17 || this.game == 18) {
 			g.img(this.img.Sea, 0, 0, 900, 700);
-			const title = (s: string) => text(ctx, s, 450, 46, { size: 40, family: COMIC, color: INK, align: 'center' });
+			const title = (s: string) => text(ctx, s, 450, 46, { size: 40, family: BUBBLY, color: INK, align: 'center' });
 			if (this.game == 16) {
 				title('Multiplayer');
 				if (this.loggedIn && this.rating) {
 					panel(ctx, 300, 420, 300, 70, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
-					text(ctx, `Online: ${this.rating.wins} W · ${this.rating.losses} L`, 450, 442, { size: 18, family: COMIC, color: INK, align: 'center' });
-					text(ctx, `Rating ${this.rating.mmr} (only you can see it)`, 450, 470, { size: 15, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+					text(ctx, `Online: ${this.rating.wins} W · ${this.rating.losses} L`, 450, 442, { size: 18, family: BUBBLY, color: INK, align: 'center' });
+					text(ctx, `Rating ${this.rating.mmr} (only you can see it)`, 450, 470, { size: 15, family: BUBBLY, color: INK_SOFT, align: 'center', bold: false });
 				}
 			}
 			if (this.game == 17) {
 				title('Join a room');
 				for (let i = 0; i < 6; i++) {
 					panel(ctx, 300 + i * 52, 150, 44, 60, { fill: 'rgba(255,255,255,0.85)', border: CORAL, radius: 10 });
-					text(ctx, this.codeDraft[i] ?? '', 322 + i * 52, 181, { size: 30, family: COMIC, color: INK, align: 'center' });
+					text(ctx, this.codeDraft[i] ?? '', 322 + i * 52, 181, { size: 30, family: BUBBLY, color: INK, align: 'center' });
 				}
 			}
 			if (this.game == 18 && this.net) {
 				title('Room code');
 				panel(ctx, 300, 140, 300, 110, { fill: 'rgba(255,255,255,0.88)', border: CORAL, radius: 20 });
-				text(ctx, this.net.code.split('').join(' '), 450, 196, { size: 52, family: COMIC, color: CORAL, align: 'center' });
-				text(ctx, this.net.role == 0 ? 'Send this code to a friend. The game starts when they join.' : 'Joining the game…', 450, 290, { size: 20, family: COMIC, color: INK, align: 'center', bold: false });
-				text(ctx, 'You are Player ' + (this.net.role + 1), 450, 330, { size: 18, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+				text(ctx, this.net.code.split('').join(' '), 450, 196, { size: 52, family: BUBBLY, color: CORAL, align: 'center' });
+				text(ctx, this.net.role == 0 ? 'Send this code to a friend. The game starts when they join.' : 'Joining the game…', 450, 290, { size: 20, family: BUBBLY, color: INK, align: 'center', bold: false });
+				text(ctx, 'You are Player ' + (this.net.role + 1), 450, 330, { size: 18, family: BUBBLY, color: INK_SOFT, align: 'center', bold: false });
 			}
-			if (this.netNote) text(ctx, this.netNote, 450, this.game == 17 ? 560 : 520, { size: 18, family: COMIC, color: 'rgb(190,60,30)', align: 'center' });
+			if (this.netNote) text(ctx, this.netNote, 450, this.game == 17 ? 560 : 520, { size: 18, family: BUBBLY, color: 'rgb(190,60,30)', align: 'center' });
 		}
 		const n = this.net;
 		if (n && this.game == 2) {
 			// Who's who, and the opponent's connection.
-			text(ctx, `Room ${n.code} · vs ${n.opponent}${n.opponentOnline ? '' : ' (reconnecting…)'}`, 450, 22, { size: 15, family: COMIC, color: '#fff', align: 'center' });
+			text(ctx, `Room ${n.code} · vs ${n.opponent}${n.opponentOnline ? '' : ' (reconnecting…)'}`, 450, 22, { size: 15, family: BUBBLY, color: '#fff', align: 'center' });
 			const [x, y, w] = n.role == 0 ? [this.x2, this.y2, this.fishw2] : [this.x3, this.y3, this.fishw3];
-			text(ctx, 'YOU', x + w / 2, y - 40, { size: 14, family: COMIC, color: '#fff', align: 'center' });
+			text(ctx, 'YOU', x + w / 2, y - 40, { size: 14, family: BUBBLY, color: '#fff', align: 'center' });
 		}
 		if (n?.end && (this.game == 10 || this.game == 11)) {
 			const won = n.end.winner == n.role;
 			panel(ctx, 280, 470, 340, 80, { fill: 'rgba(255,255,255,0.9)', border: CORAL, radius: 18 });
-			text(ctx, won ? 'You win!' : 'You lose', 450, 494, { size: 26, family: COMIC, color: INK, align: 'center' });
-			text(ctx, `Rating ${n.end.mmr} (${n.end.delta >= 0 ? '+' : ''}${n.end.delta})`, 450, 528, { size: 17, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
-			if (n.theyWantRematch && !n.iWantRematch) text(ctx, 'Your opponent wants a rematch', 450, 630, { size: 16, family: COMIC, color: '#fff', align: 'center' });
+			text(ctx, won ? 'You win!' : 'You lose', 450, 494, { size: 26, family: BUBBLY, color: INK, align: 'center' });
+			text(ctx, `Rating ${n.end.mmr} (${n.end.delta >= 0 ? '+' : ''}${n.end.delta})`, 450, 528, { size: 17, family: BUBBLY, color: INK_SOFT, align: 'center', bold: false });
+			if (n.theyWantRematch && !n.iWantRematch) text(ctx, 'Your opponent wants a rematch', 450, 630, { size: 16, family: BUBBLY, color: '#fff', align: 'center' });
 		}
 		drawButtons(ctx, this.onlineButtons(), UI, this.hover);
 	}
@@ -524,13 +539,13 @@ export class Fishy implements ArcadeGame {
 	private drawDifficulty(ctx: CanvasRenderingContext2D, b: UiButton, d: number) {
 		const i = this.img;
 		const cx = b.x + b.w / 2;
-		text(ctx, DIFFICULTIES[d], cx, b.y + 30, { size: 28, family: COMIC, color: INK, align: 'center' });
+		text(ctx, DIFFICULTIES[d], cx, b.y + 30, { size: 28, family: BUBBLY, color: INK, align: 'center' });
 		// Who's in the water.
 		ctx.drawImage(i.EnemyFishR, b.x + 24, b.y + 62, 72, 24);
 		if (d >= 2) ctx.drawImage(i.EnemySharkR, b.x + 104, b.y + 56, 84, 28);
 		if (d == 3) ctx.drawImage(i.TheHook, b.x + 200, b.y + 46, 16, 60);
 		const lines = [['Fish only', 'Fish and sharks', 'Fish, sharks and hooks'][d - 1], 'Speed: ' + ['slow', 'moderate', 'fast'][d - 1]];
-		lines.forEach((l, k) => text(ctx, l, cx, b.y + 120 + k * 26, { size: 17, family: COMIC, color: INK_SOFT, align: 'center', bold: false }));
+		lines.forEach((l, k) => text(ctx, l, cx, b.y + 120 + k * 26, { size: 17, family: BUBBLY, color: INK_SOFT, align: 'center', bold: false }));
 		if (this.difficulty == d) badge(ctx, cx, b.y + b.h - 20, 'Selected');
 	}
 
@@ -540,15 +555,15 @@ export class Fishy implements ArcadeGame {
 		ctx.globalAlpha = locked ? 0.45 : 1;
 		const sprite = c == 1 ? i.FishyR : c == 2 ? i.SharkCharR : i.MooneyFishR;
 		ctx.drawImage(sprite, cx - 75, b.y + 14, 150, 50);
-		text(ctx, CHARACTERS[c], cx, b.y + 86, { size: 24, family: COMIC, color: INK, align: 'center' });
-		text(ctx, 'Speed', b.x + 30, b.y + 120, { size: 16, family: COMIC, color: INK_SOFT, bold: false });
+		text(ctx, CHARACTERS[c], cx, b.y + 86, { size: 24, family: BUBBLY, color: INK, align: 'center' });
+		text(ctx, 'Speed', b.x + 30, b.y + 120, { size: 16, family: BUBBLY, color: INK_SOFT, bold: false });
 		pips(ctx, b.x + 100, b.y + 114, c, 3, { on: 'rgb(60,200,90)', off: 'rgba(14,74,110,0.18)', w: 30, h: 12 });
-		text(ctx, 'Lives', b.x + 30, b.y + 146, { size: 16, family: COMIC, color: INK_SOFT, bold: false });
+		text(ctx, 'Lives', b.x + 30, b.y + 146, { size: 16, family: BUBBLY, color: INK_SOFT, bold: false });
 		pips(ctx, b.x + 100, b.y + 140, c, 3, { on: 'rgb(60,200,90)', off: 'rgba(14,74,110,0.18)', w: 30, h: 12 });
 		ctx.globalAlpha = 1;
 		if (locked) {
 			padlock(ctx, b.x + b.w - 30, b.y + 28, 26, INK);
-			text(ctx, c == 2 ? 'Unlock: eat a shark' : 'Unlock: win on Hard', cx, b.y + 186, { size: 16, family: COMIC, color: 'rgb(190,60,30)', align: 'center' });
+			text(ctx, c == 2 ? 'Unlock: eat a shark' : 'Unlock: win on Hard', cx, b.y + 186, { size: 16, family: BUBBLY, color: 'rgb(190,60,30)', align: 'center' });
 		} else if (this.character == c) badge(ctx, cx, b.y + b.h - 22, 'Selected');
 	}
 
@@ -556,7 +571,7 @@ export class Fishy implements ArcadeGame {
 		const g = this.g;
 		const i = this.img;
 		g.img(this.game == 0 ? i.Mainmenu : i.Sea, 0, 0, 900, 700);
-		const title = (s: string) => text(ctx, s, 450, 46, { size: 40, family: COMIC, color: INK, align: 'center' });
+		const title = (s: string) => text(ctx, s, 450, 46, { size: 40, family: BUBBLY, color: INK, align: 'center' });
 
 		// High scores: three tabs.
 		if (this.game == 3) {
@@ -564,21 +579,21 @@ export class Fishy implements ArcadeGame {
 			[[1, 'Easy', this.ehs], [2, 'Medium', this.mhs], [3, 'Hard', this.hhs]].forEach(([board, name, best], k) => {
 				const y = 170 + k * 118;
 				panel(ctx, 110, y, 680, 100, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
-				text(ctx, name as string, 140, y + 50, { size: 30, family: COMIC, color: INK });
-				text(ctx, 'YOUR BEST', 360, y + 32, { size: 13, family: COMIC, color: INK_SOFT });
-				text(ctx, '' + best, 360, y + 64, { size: 30, family: COMIC, color: INK });
-				text(ctx, 'GLOBAL RECORD', 540, y + 32, { size: 13, family: COMIC, color: INK_SOFT });
-				drawRecord(g, { global: this.global, board: board as number, local: best as number, loggedIn: this.loggedIn, x: 540, y: y + 60, family: COMIC, color: INK, dim: INK_SOFT, size: 17 });
+				text(ctx, name as string, 140, y + 50, { size: 30, family: BUBBLY, color: INK });
+				text(ctx, 'YOUR BEST', 360, y + 32, { size: 13, family: BUBBLY, color: INK_SOFT });
+				text(ctx, '' + best, 360, y + 64, { size: 30, family: BUBBLY, color: INK });
+				text(ctx, 'GLOBAL RECORD', 540, y + 32, { size: 13, family: BUBBLY, color: INK_SOFT });
+				drawRecord(g, { global: this.global, board: board as number, local: best as number, loggedIn: this.loggedIn, x: 540, y: y + 60, family: BUBBLY, color: INK, dim: INK_SOFT, size: 17 });
 			});
 		}
 		if (this.game == 12) {
 			title('High Scores');
 			const block = (x: number, heading: string, rows: [string, number][]) => {
 				panel(ctx, x, 170, 330, 300, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
-				text(ctx, heading, x + 28, 206, { size: 26, family: COMIC, color: INK });
+				text(ctx, heading, x + 28, 206, { size: 26, family: BUBBLY, color: INK });
 				rows.forEach(([k, v], n) => {
-					text(ctx, k, x + 28, 254 + n * 48, { size: 19, family: COMIC, color: INK_SOFT, bold: false });
-					text(ctx, '' + v, x + 302, 254 + n * 48, { size: 24, family: COMIC, color: INK, align: 'right' });
+					text(ctx, k, x + 28, 254 + n * 48, { size: 19, family: BUBBLY, color: INK_SOFT, bold: false });
+					text(ctx, '' + v, x + 302, 254 + n * 48, { size: 24, family: BUBBLY, color: INK, align: 'right' });
 				});
 			};
 			block(110, 'All games', [['Games played', this.gp], ['Fish eaten', this.Tfa], ['Sharks eaten', this.Tsa], ['Caught by hooks', this.dbh]]);
@@ -586,20 +601,20 @@ export class Fishy implements ArcadeGame {
 		}
 		if (this.game == 13) {
 			title('High Scores');
-			[[i.P1, 'Player 1', this.p1s], [i.P2, 'Player 2', this.p2s]].forEach(([icon, name, wins], k) => {
+			[['Player 1', this.p1s], ['Player 2', this.p2s]].forEach(([name, wins], k) => {
 				const x = 150 + k * 320;
 				panel(ctx, x, 180, 280, 260, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
-				ctx.drawImage(icon as HTMLImageElement, x + 100, 196, 80, 80);
-				text(ctx, name as string, x + 140, 300, { size: 26, family: COMIC, color: INK, align: 'center' });
-				text(ctx, '' + wins, x + 140, 354, { size: 48, family: COMIC, color: CORAL, align: 'center' });
-				text(ctx, 'wins', x + 140, 396, { size: 18, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+				playerTag(ctx, k, x + 140, 238, 54);
+				text(ctx, name as string, x + 140, 300, { size: 26, family: BUBBLY, color: INK, align: 'center' });
+				text(ctx, '' + wins, x + 140, 354, { size: 48, family: BUBBLY, color: CORAL, align: 'center' });
+				text(ctx, 'wins', x + 140, 396, { size: 18, family: BUBBLY, color: INK_SOFT, align: 'center', bold: false });
 			});
 		}
 
 		if (this.game == 4) {
 			title('Options');
-			text(ctx, 'Difficulty', 60, 116, { size: 24, family: COMIC, color: INK });
-			text(ctx, 'Character', 60, 372, { size: 24, family: COMIC, color: INK });
+			text(ctx, 'Difficulty', 60, 116, { size: 24, family: BUBBLY, color: INK });
+			text(ctx, 'Character', 60, 372, { size: 24, family: BUBBLY, color: INK });
 		}
 
 		// How to play: both modes on one page.
@@ -608,9 +623,9 @@ export class Fishy implements ArcadeGame {
 			const key = { family: 'Arial, sans-serif', fill: '#fff', text: INK, border: 'rgba(14,74,110,0.45)', size: 13, h: 28 };
 			const col = (x: number, heading: string) => {
 				panel(ctx, x, 96, 400, 470, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
-				text(ctx, heading, x + 200, 128, { size: 28, family: COMIC, color: INK, align: 'center' });
+				text(ctx, heading, x + 200, 128, { size: 28, family: BUBBLY, color: INK, align: 'center' });
 			};
-			const line = (x: number, y: number, s: string) => text(ctx, s, x, y, { size: 17, family: COMIC, color: INK_SOFT, bold: false, max: 360 });
+			const line = (x: number, y: number, s: string) => text(ctx, s, x, y, { size: 17, family: BUBBLY, color: INK_SOFT, bold: false, max: 360 });
 			col(40, 'Single player');
 			ctx.drawImage(i.FishyR, 70, 160, 90, 30);
 			ctx.drawImage(i.EnemyFishR, 190, 168, 45, 15);
@@ -624,19 +639,19 @@ export class Fishy implements ArcadeGame {
 			keyRow(ctx, ['W', 'A', 'S', 'D'], 70, 432, key);
 			line(70, 482, 'or the arrow keys to swim');
 			col(460, 'Multiplayer');
-			ctx.drawImage(i.P1, 500, 156, 44, 44);
+			playerTag(ctx, 0, 522, 180, 30);
 			ctx.drawImage(i.FishyR, 550, 166, 90, 30);
-			ctx.drawImage(i.P2, 680, 156, 44, 44);
+			playerTag(ctx, 1, 702, 180, 30);
 			ctx.drawImage(i.Fishy2L, 730, 166, 90, 30);
 			line(490, 230, 'Eat the other player to win.');
 			line(490, 262, 'If a CPU fish eats you, you shrink');
 			line(490, 284, 'back to your starting size.');
-			text(ctx, 'Player 1', 490, 340, { size: 17, family: COMIC, color: INK });
+			text(ctx, 'Player 1', 490, 340, { size: 17, family: BUBBLY, color: INK });
 			keyRow(ctx, ['W', 'A', 'S', 'D'], 600, 326, key);
-			text(ctx, 'Player 2', 490, 392, { size: 17, family: COMIC, color: INK });
+			text(ctx, 'Player 2', 490, 392, { size: 17, family: BUBBLY, color: INK });
 			keyRow(ctx, ['↑', '←', '↓', '→'], 600, 378, key);
 			panel(ctx, 230, 576, 440, 34, { fill: 'rgba(255,255,255,0.85)', radius: 17 });
-			text(ctx, 'On phones: the joystick swims (two in multiplayer).', 450, 592, { size: 17, family: COMIC, color: INK, align: 'center', bold: false });
+			text(ctx, 'On phones: the joystick swims (two in multiplayer).', 450, 592, { size: 17, family: BUBBLY, color: INK, align: 'center', bold: false });
 		}
 
 		drawButtons(ctx, this.ui(), UI, this.hover);
@@ -1062,7 +1077,7 @@ export class Fishy implements ArcadeGame {
 			ctx.fillStyle = 'rgba(0,30,60,0.55)';
 			ctx.fillRect(0, 0, GAME_W, GAME_H);
 			panel(ctx, 300, 180, 300, 300, { fill: 'rgba(255,255,255,0.9)', border: CORAL, width: 3, radius: 22 });
-			text(ctx, 'Paused', 450, 226, { size: 36, family: COMIC, color: INK, align: 'center' });
+			text(ctx, 'Paused', 450, 226, { size: 36, family: BUBBLY, color: INK, align: 'center' });
 			drawButtons(ctx, this.ui(), UI, this.hover);
 			return;
 		}
@@ -1103,7 +1118,7 @@ export class Fishy implements ArcadeGame {
 				else if (this.direction == 3) g.img(i[set[2]], this.x, this.y, this.fishh, this.fishw);
 			}
 			// Lives and Score Output
-			g.font(30, COMIC);
+			g.font(30, BUBBLY);
 			g.setColor('rgb(0,0,255)');
 			g.drawString('Lives:', 10, 660);
 			g.drawString('' + this.score, 450, 40);
@@ -1112,27 +1127,28 @@ export class Fishy implements ArcadeGame {
 
 		if (this.game == 2) {
 			g.img(i.Background1, 0, 0, 900, 700);
-			g.img(i.P1, this.x2 + 20, this.y2 - 30, 50, 50);
-			g.img(i.P2, this.x3 + 20, this.y3 - 30, 50, 50);
 			g.img(this.direction == 2 ? i.FishyL : i.FishyR, this.x2, this.y2, this.fishw2, this.fishh2);
 			g.img(this.direction2 == 2 ? i.Fishy2L : i.Fishy2R, this.x3, this.y3, this.fishw3, this.fishh3);
+			playerTag(ctx, 0, this.x2 + 45, this.y2 - 8, 22);
+			playerTag(ctx, 1, this.x3 + 45, this.y3 - 8, 22);
 			for (let a = 0; a < 4; a++) {
 				g.img(i.EnemyFishR, this.enemiesxR[a], this.enemiesy1[a], this.enemiesw[a], this.enemiesh[a]);
 				g.img(i.EnemyFishL, this.enemiesxL[a], this.enemiesy2[a], this.enemiesw2[a], this.enemiesh2[a]);
 			}
-			g.font(30, COMIC);
-			g.setColor('#000');
-			g.img(i.P1, 10, 630, 80, 80);
-			g.img(i.P2, 780, 630, 80, 80);
-			g.drawString('' + this.p1s, 70, 660);
-			g.drawString('' + this.p2s, 840, 660);
+			// The scores, bottom left and right.
+			[this.p1s, this.p2s].forEach((n, k) => {
+				const x = k ? 758 : 14;
+				panel(ctx, x, 612, 128, 40, { fill: 'rgba(255,255,255,0.85)', radius: 20 });
+				playerTag(ctx, k, x + 34, 632, 22);
+				text(ctx, '' + n, x + 92, 633, { size: 24, family: BUBBLY, color: INK, align: 'center' });
+			});
 		}
 
 		// Game Over
 		if (this.game == 7) {
 			g.img(i.GameOver, -150, 0, 1200, 700);
 			g.setColor('rgb(255,118,118)');
-			g.font(50, COMIC);
+			g.font(50, BUBBLY);
 			g.drawString('Game Over!', 100, this.goY);
 		}
 		if (this.game == 8) g.img(i.WinScreen, 0, 0, 900, 700);
