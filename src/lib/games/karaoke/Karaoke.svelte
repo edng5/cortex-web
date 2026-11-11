@@ -377,6 +377,30 @@
 	function skipSong() {
 		finish(true);
 	}
+	/** Start this song again from the top, with a fresh score (in a room, for both singers). */
+	function restartSong(fromHost = false) {
+		if (!song || !scorer || preparing) return;
+		if (room && !isHost && !fromHost) return;
+		trail = [];
+		theirTrail = [];
+		pops = [];
+		sparks = [];
+		health = 100;
+		healthFx = null;
+		lostCrowd = false;
+		beatIdx = -1;
+		beatAt = 0;
+		scorer = new Scorer(chart, TOL[save.level]);
+		live = scorer.live;
+		paused = false;
+		if (synth) synth.play(0);
+		else if (video) {
+			video.seek(0);
+			video.play();
+		}
+		if (room && isHost) send({ k: 'restart' });
+		note = 'From the top!';
+	}
 	function leaveSong() {
 		stopMedia();
 		mic.stop();
@@ -689,6 +713,8 @@
 			partner.h = Math.max(0, Math.min(100, Number(m.h ?? 100)));
 			if (Number(m.m)) theirTrail.push({ t: Number(m.t), midi: Number(m.m) });
 			while (theirTrail.length > 60) theirTrail.shift();
+		} else if (k == 'restart' && !isHost && screen == 'sing') {
+			restartSong(true);
 		} else if (k == 'end' && !isHost && screen == 'sing') {
 			finish(!!m.skipped);
 		} else if (k == 'done' && partner) {
@@ -724,6 +750,7 @@
 		else if (e.code == 'ArrowRight') nudge(0.1);
 		else if (e.code == 'KeyT') tapSync();
 		else if (e.code == 'KeyN' && (!room || isHost)) skipSong();
+		else if (e.code == 'KeyR' && (!room || isHost)) restartSong();
 	}
 
 	// Paste a chart for the song that's on.
@@ -950,6 +977,7 @@
 				{/if}
 				<span class="grow"></span>
 				{#if !room || isHost}
+					<button class="small ghost" onclick={() => restartSong()} title="Start this song again (R)">Restart ↺</button>
 					<button class="small ghost" onclick={skipSong} title="Skip to the next song (N)">Skip ⏭</button>
 					<button class="small ghost" onclick={() => finish()}>End song</button>
 				{/if}
@@ -1045,7 +1073,7 @@
 				<li><b>Difficulty</b> is how close to the note counts (easy: within 1½ semitones; normal: 1; hard: ⅔) and how much a miss costs.</li>
 				<li><b>How it's judged</b>: With a note chart: every moment you're on the right note at the right time (golden notes double). With lyrics only: singing while lines are up, and holding steady notes in key.</li>
 				<li><b>Lyrics</b> are found and timed automatically. Music videos often have intros: nudge the lyrics with − / + (or ← / →), or press <kbd>T</kbd> when the first line starts.</li>
-				<li><b>Keys</b>: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge lyrics, <kbd>T</kbd> tap to sync, <kbd>N</kbd> skip.</li>
+				<li><b>Keys</b>: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge lyrics, <kbd>T</kbd> tap to sync, <kbd>R</kbd> restart, <kbd>N</kbd> skip.</li>
 			</ul>
 		</div>
 	{/if}
@@ -1423,6 +1451,9 @@
 		min-height: 0;
 		display: grid;
 		grid-template-columns: 1.4fr 1fr;
+		/* (One row, the height that's left: without this the row grows to fit a long queue and
+		   pushes the panel off the screen.) */
+		grid-template-rows: minmax(0, 1fr);
 		gap: 18px;
 	}
 	.find,
@@ -1459,7 +1490,11 @@
 		list-style: none;
 		margin: 0;
 		padding: 0;
+		/* Scrolls inside its panel (and gives way to the panel's buttons). */
+		flex: 0 1 auto;
 		overflow: auto;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(232, 121, 249, 0.5) transparent;
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
