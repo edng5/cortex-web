@@ -144,7 +144,7 @@ const MISSIONS = [
 	{
 		difficulty: 'Hard', chip: RED, sky: 'rgb(98,163,255)', ground: 'rgb(255,171,0)',
 		brief: 'You are deployed to destroy a neighbouring army base in the desert. The base is heavily guarded by enemy fighters.',
-		objective: `Destroy the army base (+${BASE_BONUS})`
+		objective: 'Destroy army base'
 	}
 ];
 
