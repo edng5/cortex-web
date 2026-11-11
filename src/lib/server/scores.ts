@@ -13,8 +13,12 @@ export const GAMES = {
 	spaceinvaders: { boards: [1, 2, 3], max: 10_000_000 },
 	frogger: { boards: [1, 2], max: 1_000_000 },
 	pong: { boards: [1, 2], max: 100_000 },
+	blockdrop: { boards: [1], max: 50_000_000 },
 	// FishMart has no high scores; it's listed so its progress can be saved to accounts.
-	ifish: { boards: [] as number[], max: 0 }
+	ifish: { boards: [] as number[], max: 0 },
+	// Online games: ratings are kept separately (ratings.ts); listed so their themes save to accounts.
+	chess: { boards: [] as number[], max: 0 },
+	fourrow: { boards: [] as number[], max: 0 }
 } as const;
 export type GameId = keyof typeof GAMES;
 export const isGame = (g: string): g is GameId => Object.hasOwn(GAMES, g);

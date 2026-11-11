@@ -105,7 +105,63 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k..hk.h.k..hk.hh'
 	},
+	// Block Drop: an original, bouncy minor-key groove (menu), and a quicker one while playing.
+	'blockdrop-menu': {
+		bpm: 112,
+		parts: [
+			{
+				voice: 'square',
+				level: 0.035,
+				notes:
+					'A4 . C5 . E5 . A5 . G5 . E5 . C5 . D5 . ' +
+					'F4 . A4 . C5 . F5 . E5 . C5 . A4 . B4 . ' +
+					'G4 . B4 . D5 . G5 . F#5 . D5 . B4 . A4 . ' +
+					'E5 - - - D5 - C5 - B4 - - - . . . . '
+			},
+			{ voice: 'triangle', level: 0.09, notes: 'A2 A2 E3 A2 F2 F2 C3 F2 G2 G2 D3 G2 E2 E2 B2 E2 ' },
+			{ voice: 'bell', level: 0.02, notes: '. . . . . . . . . . . . . . . . . . . . . . . . . . . . A6 . E6 . ' }
+		],
+		drums: 'k.h.s.h.k.k.s.h.'
+	},
+	// Chess: calm and thoughtful, a slow arpeggio in D minor.
+	'chess-menu': {
+		bpm: 72,
+		gain: 0.6,
+		parts: [
+			{ voice: 'pluck', level: 0.06, notes: 'D4 F4 A4 D5 A4 F4 Bb3 D4 F4 Bb4 F4 D4 C4 E4 G4 C5 G4 E4 A3 C#4 E4 A4 E4 C#4 ' },
+			{ voice: 'sine', level: 0.07, notes: 'D2 - - - - - Bb1 - - - - - C2 - - - - - A1 - - - - - ' },
+			{ voice: 'bell', level: 0.018, notes: '. . . . . . . . . . . . . . . . . . . . . . A5 . ' }
+		]
+	},
+	// Four in a Row: playful and light, in Bb major.
+	'fourrow-menu': {
+		bpm: 104,
+		gain: 0.7,
+		parts: [
+			{ voice: 'pluck', level: 0.065, notes: 'Bb4 D5 F5 . D5 . Bb4 . C5 Eb5 G5 . Eb5 . C5 . D5 F5 Bb5 . F5 . D5 . C5 - - - . . . . ' },
+			{ voice: 'sine', level: 0.08, notes: 'Bb2 . . Bb2 F2 . . . Eb2 . . Eb2 Bb2 . . . Bb2 . . Bb2 F2 . . . F2 . . F2 C3 . F2 . ' }
+		],
+		drums: 'k..hs.h.k..hs.hh'
+	},
 	// ── Gameplay soundtracks (quieter than the menus) ──
+	// Block Drop while playing: the same groove, faster and quieter under the action.
+	'blockdrop-play': {
+		bpm: 140,
+		gain: 0.4,
+		parts: [
+			{
+				voice: 'square',
+				level: 0.03,
+				notes:
+					'A4 . C5 . E5 . A5 . G5 . E5 . C5 . D5 . ' +
+					'F4 . A4 . C5 . F5 . E5 . C5 . A4 . B4 . ' +
+					'G4 . B4 . D5 . G5 . F#5 . D5 . B4 . A4 . ' +
+					'E5 - - - D5 - C5 - B4 - - - . . . . '
+			},
+			{ voice: 'triangle', level: 0.09, notes: 'A2 A3 A2 A3 F2 F3 F2 F3 G2 G3 G2 G3 E2 E3 E2 E3 ' }
+		],
+		drums: 'k.hhs.hhk.k.s.hh'
+	},
 	// Top Gun missions: an original, driving 80s synth-rock track, kept quiet under the action.
 	'topgun-play': {
 		bpm: 144,
@@ -596,6 +652,38 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 			a._arp([60, 67, 72, 79, 84], 0.1, 'square', 0.05, 0.2);
 		},
 		wave: (a) => a._arp([64, 67, 71, 76], 0.08, 'square', 0.05, 0.12)
+	},
+	blockdrop: {
+		move: (a) => a._tone('square', 420, 420, 0.03, 0.025),
+		rotate: (a) => a._tone('triangle', 620, 820, 0.05, 0.05),
+		lock: (a) => a._tone('triangle', 160, 90, 0.08, 0.1),
+		clear: (a) => a._arp([72, 76, 79], 0.05, 'square', 0.05, 0.12),
+		four: (a) => {
+			a._arp([72, 76, 79, 84, 88], 0.06, 'square', 0.06, 0.18);
+			a._fx(0.5, 0.08, 'highpass', 3000, 8000);
+		},
+		levelUp: (a) => a._arp([67, 72, 76, 79, 84], 0.07, 'triangle', 0.08, 0.2)
+	},
+	chess: {
+		move: (a) => {
+			a._tone('triangle', 220, 160, 0.07, 0.14);
+			a._fx(0.05, 0.08, 'bandpass', 1400, 900);
+		},
+		capture: (a) => {
+			a._tone('triangle', 260, 120, 0.1, 0.16);
+			a._fx(0.12, 0.14, 'bandpass', 2000, 600);
+		},
+		check: (a) => a._arp([76, 83], 0.08, 'square', 0.05, 0.14),
+		start: (a) => a._arp([62, 66, 69, 74], 0.09, 'triangle', 0.08, 0.2),
+		draw: (a) => a._arp([69, 69, 67], 0.15, 'triangle', 0.08, 0.25)
+	},
+	fourrow: {
+		drop: (a) => {
+			a._tone('sine', 700, 240, 0.14, 0.12);
+			a._fx(0.08, 0.1, 'bandpass', 2600, 1200, 0.1);
+		},
+		start: (a) => a._arp([70, 74, 77, 82], 0.08, 'square', 0.05, 0.16),
+		draw: (a) => a._arp([70, 70, 68], 0.15, 'triangle', 0.08, 0.25)
 	},
 	frogger: {
 		hop: (a) => a._tone('square', 420, 760, 0.07, 0.045),

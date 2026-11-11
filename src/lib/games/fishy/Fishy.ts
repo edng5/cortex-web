@@ -7,6 +7,7 @@
 //    phones); in multiplayer, player 1 has WASD and player 2 the arrow keys, as before.
 //  - A moment of safety after losing a life, so you can't be eaten again where you respawn.
 import { COMIC, Gfx, Mask, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, pips, pixelsTouch, text, writeSave, type ArcadeGame, type Board, type Sprite, type UiButton, type UiTheme } from '../common';
+import { Room, myRating, type Rating, type RoomEvent } from '../net';
 
 export const GAME_W = 900;
 export const GAME_H = 662;
@@ -56,7 +57,17 @@ const UI: UiTheme = {
 const DIFFICULTIES = ['', 'Easy', 'Medium', 'Hard'];
 const CHARACTERS = ['', 'Fishy', 'Shark', 'Mooney Fish'];
 /** The menu screens (title, high scores tabs, options, how to play). */
-const MENU_SCREENS = [0, 3, 4, 5, 12, 13];
+const MENU_SCREENS = [0, 3, 4, 5, 12, 13, 16, 17, 18];
+/** Online: the host's fish positions for the guest (`p` the players, `e` the CPU fish). */
+interface Snapshot {
+	k: 2;
+	p: number[];
+	e: number[];
+}
+/** WASD or the arrows, as directions (online: either set moves your fish). */
+const DIRS: Record<string, 'L' | 'R' | 'U' | 'D'> = { KeyA: 'L', ArrowLeft: 'L', KeyD: 'R', ArrowRight: 'R', KeyW: 'U', ArrowUp: 'U', KeyS: 'D', ArrowDown: 'D' };
+/** A move from the other player: only -1, 0 or 1. */
+const clampMove = (v: unknown) => (v === 1 ? 1 : v === -1 ? -1 : 0);
 /** `game` while a game is paused. */
 const PAUSED = 14;
 
@@ -112,7 +123,7 @@ export class Fishy implements ArcadeGame {
 	sfx: (name: string) => void = () => {};
 	/** Soundtrack: menus, one per difficulty in single player, and one for 2P local. */
 	musicTrack() {
-		if ([0, 3, 4, 5, 6, 9, 12, 13].includes(this.game)) return 'fishy-menu';
+		if ([0, 3, 4, 5, 6, 9, 12, 13, 16, 17, 18].includes(this.game)) return 'fishy-menu';
 		const mode = this.game == PAUSED ? this.pausedFrom : this.game;
 		if (mode == 1) return 'fishy-' + this.difficulty;
 		if (mode == 2) return 'fishy-2p';
@@ -151,6 +162,9 @@ export class Fishy implements ArcadeGame {
 	}
 
 	leave() {
+		// Online: leaving the game leaves the room (a game in progress counts as lost).
+		this.net?.room.leave();
+		this.net = null;
 		// Single player mid-game (or paused): the high score is already kept live; send it to the board too.
 		const mode = this.game == PAUSED ? this.pausedFrom : this.game;
 		if (mode == 1 && this.score > 0) this.onScore(this.difficulty, this.score);
@@ -175,7 +189,249 @@ export class Fishy implements ArcadeGame {
 	}
 	/** Touch screens: Pause only during a game. */
 	hiddenButtons() {
-		return this.game == 1 || this.game == 2 || this.game == PAUSED ? [] : ['Enter'];
+		return (this.game == 1 || this.game == 2 || this.game == PAUSED) && !this.net ? [] : ['Enter'];
+	}
+
+	// ── Online multiplayer (room codes) ──
+	// The host (who made the room) runs the game in their browser as Player 1 and sends the fish
+	// positions to the guest ~25 times a second; the guest is Player 2 and sends their key presses
+	// to the host. The room (on the site's server, over HTTPS, for the two signed-in players only)
+	// passes the messages on and records who won, for both players' ratings.
+	// Screens: 16 the Multiplayer menu, 17 typing a room code, 18 waiting in a room.
+	private net: {
+		room: Room;
+		code: string;
+		role: 0 | 1;
+		opponent: string;
+		opponentOnline: boolean;
+		end: { winner: number | null; delta: number; mmr: number } | null;
+		theyWantRematch: boolean;
+		iWantRematch: boolean;
+	} | null = null;
+	private netNote = '';
+	private codeDraft = '';
+	private rating: Rating | null = null;
+	private snapTimer = 0;
+	/** Guest: where the host says the fish are (the guest eases towards it). */
+	private target: Snapshot | null = null;
+
+	private openMultiplayer() {
+		this.game = 16;
+		this.netNote = '';
+		if (this.loggedIn) myRating('fishy').then((r) => (this.rating = r));
+	}
+	private async createRoom() {
+		this.netNote = 'Making a room…';
+		const r = await Room.create('fishy');
+		if ('error' in r) return void (this.netNote = r.error);
+		this.enterRoom(r.code, 0);
+	}
+	private async joinRoom() {
+		this.netNote = 'Joining…';
+		const r = await Room.join(this.codeDraft, 'fishy');
+		if ('error' in r) return void (this.netNote = r.error);
+		this.enterRoom(this.codeDraft, r.seat as 0 | 1);
+	}
+	private enterRoom(code: string, role: 0 | 1) {
+		const room = new Room(code, (e) => this.onRoomEvent(e));
+		this.net = { room, code, role, opponent: '', opponentOnline: true, end: null, theyWantRematch: false, iWantRematch: false };
+		this.netNote = '';
+		this.game = 18;
+		room.listen();
+	}
+	private leaveRoom(note = '') {
+		this.net?.room.leave();
+		this.net = null;
+		this.target = null;
+		this.resetFish();
+		this.netNote = note;
+		this.game = 16;
+		if (this.loggedIn) myRating('fishy').then((r) => (this.rating = r));
+	}
+
+	private onRoomEvent(e: RoomEvent) {
+		const net = this.net;
+		if (!net) return;
+		if (e.t == 'room') {
+			const players = e.players as ({ name: string; online: boolean } | null)[];
+			const them = players[1 - net.role];
+			net.opponent = them?.name ?? '';
+			net.opponentOnline = them?.online ?? false;
+			// A new round (the second player joined, or both asked for a rematch): start it.
+			if (e.phase == 'playing' && (this.game == 18 || ((this.game == 10 || this.game == 11) && e.round != this.round))) {
+				this.round = e.round as number;
+				this.resetFish();
+				net.end = null;
+				net.iWantRematch = net.theyWantRematch = false;
+				this.target = null;
+				this.game = 2;
+				this.sfx('confirm');
+			}
+		} else if (e.t == 'relay') {
+			const msg = e.msg as Record<string, number>;
+			if (net.role == 0 && msg.k == 1 && this.game == 2) {
+				// The guest's keys move Player 2.
+				this.dx = clampMove(msg.dx);
+				this.dy = clampMove(msg.dy);
+				if (msg.d == 1 || msg.d == 2) this.direction2 = msg.d;
+			} else if (net.role == 1 && msg.k == 2) this.applySnapshot(msg as unknown as Snapshot);
+		} else if (e.t == 'end') {
+			const ratings = e.ratings as { mmr: number; delta: number }[];
+			const winner = e.winner as number | null;
+			net.end = { winner, delta: ratings[net.role].delta, mmr: ratings[net.role].mmr };
+			// Player 1 is the host.
+			this.game = winner == 1 ? 11 : 10;
+			this.whoWon = 0; // (online wins count in the rating, not the same-keyboard tally)
+			this.sfx(winner == net.role ? 'win' : 'lose');
+		} else if (e.t == 'rematch') {
+			if (e.seat != net.role) net.theyWantRematch = true;
+		} else if (e.t == 'presence') {
+			if (e.seat != net.role) net.opponentOnline = !!e.online;
+		} else if (e.t == 'left') {
+			this.leaveRoom('Your opponent left the room.');
+		} else if (e.t == 'closed') {
+			if (this.net) this.leaveRoom(this.game == 18 ? 'The room was closed.' : 'The room closed.');
+		}
+	}
+	private round = 0;
+
+	/** Host: the fish (both players and the CPU fish) for the guest. */
+	private sendSnapshot() {
+		const r = Math.round;
+		const s: Snapshot = {
+			k: 2,
+			p: [r(this.x2), r(this.y2), this.fishw2, this.fishh2, this.direction, r(this.x3), r(this.y3), this.fishw3, this.fishh3, this.direction2],
+			e: [...this.enemiesxR, ...this.enemiesy1, ...this.enemiesw, ...this.enemiesh, ...this.enemiesxL, ...this.enemiesy2, ...this.enemiesw2, ...this.enemiesh2].map(r)
+		};
+		void this.net!.room.send({ type: 'relay', msg: s });
+	}
+	/** Guest: take the host's fish positions (sizes and facing at once; positions eased in tick). */
+	private applySnapshot(s: Snapshot) {
+		if (!Array.isArray(s.p) || s.p.length != 10 || !Array.isArray(s.e) || s.e.length != 32) return;
+		const [, , w2, , d1, , , w3, , d2] = s.p;
+		if (this.target) {
+			if (w2 > this.fishw2 || w3 > this.fishw3) this.sfx('eat');
+			else if (w2 < this.fishw2 || w3 < this.fishw3) this.sfx('eaten');
+		}
+		[, , this.fishw2, this.fishh2] = s.p;
+		[, , , , , , , this.fishw3, this.fishh3] = s.p;
+		this.direction = d1;
+		this.direction2 = d2;
+		[this.enemiesw, this.enemiesh, this.enemiesw2, this.enemiesh2] = [s.e.slice(8, 12), s.e.slice(12, 16), s.e.slice(24, 28), s.e.slice(28, 32)];
+		if (!this.target) this.placeAt(s, 1);
+		this.target = s;
+	}
+	/** Guest: move the fish `f` of the way to the host's positions (1 = all the way). */
+	private placeAt(s: Snapshot, f: number) {
+		const ease = (a: number, b: number) => (Math.abs(b - a) > 120 ? b : a + (b - a) * f);
+		this.x2 = ease(this.x2, s.p[0]);
+		this.y2 = ease(this.y2, s.p[1]);
+		this.x3 = ease(this.x3, s.p[5]);
+		this.y3 = ease(this.y3, s.p[6]);
+		for (let a = 0; a < 4; a++) {
+			this.enemiesxR[a] = ease(this.enemiesxR[a], s.e[a]);
+			this.enemiesy1[a] = ease(this.enemiesy1[a], s.e[4 + a]);
+			this.enemiesxL[a] = ease(this.enemiesxL[a], s.e[16 + a]);
+			this.enemiesy2[a] = ease(this.enemiesy2[a], s.e[20 + a]);
+		}
+	}
+	/** Guest: tell the host which way Player 2 is swimming. */
+	private sendInput() {
+		const h = this.guestKeys;
+		const dx = (h.has('R') ? 1 : 0) - (h.has('L') ? 1 : 0);
+		const dy = (h.has('D') ? 1 : 0) - (h.has('U') ? 1 : 0);
+		if (dx) this.direction2 = dx < 0 ? 2 : 1;
+		void this.net!.room.send({ type: 'relay', msg: { k: 1, dx, dy, d: this.direction2 } });
+	}
+	private guestKeys = new Set<'L' | 'R' | 'U' | 'D'>();
+
+	/** Typing a room code on screen 17 (keyboard digits work too). */
+	private typeCode(ch: string) {
+		this.netNote = '';
+		if (ch == '⌫') this.codeDraft = this.codeDraft.slice(0, -1);
+		else if (/\d/.test(ch) && this.codeDraft.length < 6) this.codeDraft += ch;
+		this.sfx('select');
+	}
+
+	private onlineButtons(): UiButton[] {
+		const back: UiButton = { id: 'back', x: 20, y: 18, w: 128, h: 46, label: '‹ Back', size: 22, onClick: () => (this.game = 0) };
+		if (this.game == 16) {
+			const needLogin = !this.loggedIn;
+			return [
+				back,
+				{ id: 'local', x: 300, y: 170, w: 300, h: 64, label: 'Same keyboard', detail: '2 players on this device', onClick: () => (this.game = 2) },
+				{ id: 'create', x: 300, y: 250, w: 300, h: 64, label: 'Create online room', detail: needLogin ? 'Log in to play online' : 'Get a code for a friend', kind: 'primary', disabled: needLogin, onClick: () => this.createRoom() },
+				{ id: 'join', x: 300, y: 330, w: 300, h: 64, label: 'Join with a code', detail: needLogin ? 'Log in to play online' : "Type your friend's code", disabled: needLogin, onClick: () => { this.codeDraft = ''; this.netNote = ''; this.game = 17; } }
+			];
+		}
+		if (this.game == 17) {
+			const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'Join'];
+			return [
+				{ ...back, onClick: () => (this.game = 16) },
+				...keys.map((k, i): UiButton => ({
+					id: 'key' + k, label: k, x: 330 + (i % 3) * 84, y: 250 + Math.floor(i / 3) * 70, w: 72, h: 58, size: k == 'Join' ? 20 : 26,
+					kind: k == 'Join' ? 'primary' : undefined,
+					disabled: k == 'Join' && this.codeDraft.length != 6,
+					onClick: () => (k == 'Join' ? this.joinRoom() : this.typeCode(k))
+				}))
+			];
+		}
+		if (this.game == 18) return [{ id: 'cancel', x: 375, y: 470, w: 150, h: 50, label: 'Cancel', onClick: () => this.leaveRoom() }];
+		if ((this.game == 10 || this.game == 11) && this.net?.end) {
+			const n = this.net;
+			return [
+				{ id: 'rematch', x: 300, y: 560, w: 145, h: 50, label: n.iWantRematch ? 'Waiting…' : n.theyWantRematch ? 'Accept' : 'Rematch', kind: 'primary', disabled: n.iWantRematch, onClick: () => { n.iWantRematch = true; void n.room.send({ type: 'rematch' }); } },
+				{ id: 'leave', x: 455, y: 560, w: 145, h: 50, label: 'Leave', onClick: () => this.leaveRoom() }
+			];
+		}
+		return [];
+	}
+
+	/** The online screens and overlays, drawn over the sea / the game. */
+	private paintOnline(ctx: CanvasRenderingContext2D) {
+		const g = this.g;
+		if (this.game == 16 || this.game == 17 || this.game == 18) {
+			g.img(this.img.Sea, 0, 0, 900, 700);
+			const title = (s: string) => text(ctx, s, 450, 46, { size: 40, family: COMIC, color: INK, align: 'center' });
+			if (this.game == 16) {
+				title('Multiplayer');
+				if (this.loggedIn && this.rating) {
+					panel(ctx, 300, 420, 300, 70, { fill: CARD, border: 'rgba(255,255,255,0.95)', radius: 18 });
+					text(ctx, `Online: ${this.rating.wins} W · ${this.rating.losses} L`, 450, 442, { size: 18, family: COMIC, color: INK, align: 'center' });
+					text(ctx, `Rating ${this.rating.mmr} (only you can see it)`, 450, 470, { size: 15, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+				}
+			}
+			if (this.game == 17) {
+				title('Join a room');
+				for (let i = 0; i < 6; i++) {
+					panel(ctx, 300 + i * 52, 150, 44, 60, { fill: 'rgba(255,255,255,0.85)', border: CORAL, radius: 10 });
+					text(ctx, this.codeDraft[i] ?? '', 322 + i * 52, 181, { size: 30, family: COMIC, color: INK, align: 'center' });
+				}
+			}
+			if (this.game == 18 && this.net) {
+				title('Room code');
+				panel(ctx, 300, 140, 300, 110, { fill: 'rgba(255,255,255,0.88)', border: CORAL, radius: 20 });
+				text(ctx, this.net.code.split('').join(' '), 450, 196, { size: 52, family: COMIC, color: CORAL, align: 'center' });
+				text(ctx, this.net.role == 0 ? 'Send this code to a friend. The game starts when they join.' : 'Joining the game…', 450, 290, { size: 20, family: COMIC, color: INK, align: 'center', bold: false });
+				text(ctx, 'You are Player ' + (this.net.role + 1), 450, 330, { size: 18, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+			}
+			if (this.netNote) text(ctx, this.netNote, 450, this.game == 17 ? 560 : 520, { size: 18, family: COMIC, color: 'rgb(190,60,30)', align: 'center' });
+		}
+		const n = this.net;
+		if (n && this.game == 2) {
+			// Who's who, and the opponent's connection.
+			text(ctx, `Room ${n.code} · vs ${n.opponent}${n.opponentOnline ? '' : ' (reconnecting…)'}`, 450, 22, { size: 15, family: COMIC, color: '#fff', align: 'center' });
+			const [x, y, w] = n.role == 0 ? [this.x2, this.y2, this.fishw2] : [this.x3, this.y3, this.fishw3];
+			text(ctx, 'YOU', x + w / 2, y - 40, { size: 14, family: COMIC, color: '#fff', align: 'center' });
+		}
+		if (n?.end && (this.game == 10 || this.game == 11)) {
+			const won = n.end.winner == n.role;
+			panel(ctx, 280, 470, 340, 80, { fill: 'rgba(255,255,255,0.9)', border: CORAL, radius: 18 });
+			text(ctx, won ? 'You win!' : 'You lose', 450, 494, { size: 26, family: COMIC, color: INK, align: 'center' });
+			text(ctx, `Rating ${n.end.mmr} (${n.end.delta >= 0 ? '+' : ''}${n.end.delta})`, 450, 528, { size: 17, family: COMIC, color: INK_SOFT, align: 'center', bold: false });
+			if (n.theyWantRematch && !n.iWantRematch) text(ctx, 'Your opponent wants a rematch', 450, 630, { size: 16, family: COMIC, color: '#fff', align: 'center' });
+		}
+		drawButtons(ctx, this.onlineButtons(), UI, this.hover);
 	}
 
 	// ── Menus: drawn buttons and cards, clicked or tapped ──
@@ -184,7 +440,7 @@ export class Fishy implements ArcadeGame {
 	private hover: string | null = null;
 
 	pointerDown(px: number, py: number) {
-		if (this.game == 7 || this.game == 8 || this.game == 10 || this.game == 11) {
+		if ((this.game == 7 || this.game == 8 || this.game == 10 || this.game == 11) && !this.net) {
 			this.keyPressed('Enter'); // "Press Enter to Play Again": a click works too
 			return;
 		}
@@ -196,19 +452,20 @@ export class Fishy implements ArcadeGame {
 		this.save();
 	}
 	pointerMove(px: number, py: number) {
-		if (!MENU_SCREENS.includes(this.game) && this.game != 1 && this.game != 2 && this.game != PAUSED) return false;
+		if (!MENU_SCREENS.includes(this.game) && this.game != 1 && this.game != 2 && this.game != PAUSED && !(this.net && (this.game == 10 || this.game == 11))) return false;
 		const b = buttonAt(this.ui(), px, py);
 		this.hover = b?.id ?? null;
 		return !!b;
 	}
 
 	private ui(): UiButton[] {
+		if (this.game >= 16 || (this.net && (this.game == 10 || this.game == 11))) return this.onlineButtons();
 		const back: UiButton = { id: 'back', x: 20, y: 18, w: 128, h: 46, label: '‹ Back', size: 22, onClick: () => (this.game = 0) };
 		switch (this.game) {
 			case 0: {
 				const rows: [string, string | undefined, () => void][] = [
 					['Single Player', `${DIFFICULTIES[this.difficulty]} · playing as ${CHARACTERS[this.character]}`, () => (this.game = 1)],
-					['Multiplayer', '2 players · one keyboard', () => (this.game = 2)],
+					['Multiplayer', 'Same keyboard or online', () => this.openMultiplayer()],
 					['High Scores', 'Records and 2P wins', () => (this.game = 3)],
 					['Options', 'Difficulty and character', () => (this.game = 4)],
 					['Exit Game', undefined, () => { this.save(); this.onQuit(); }]
@@ -252,6 +509,7 @@ export class Fishy implements ArcadeGame {
 			case 5:
 				return [back];
 			case 1: case 2:
+				if (this.net) return []; // no pausing an online game
 				return [{ id: 'pause', x: 838, y: 12, w: 48, h: 48, label: 'II', size: 18, onClick: () => this.pause() }];
 			case PAUSED:
 				return [
@@ -388,8 +646,33 @@ export class Fishy implements ArcadeGame {
 	keyPressed(code: string): boolean {
 		const sp = this.speed;
 		const enter = code == 'Enter' || code == 'NumpadEnter';
+		// Typing a room code.
+		if (this.game == 17) {
+			const digit = /^(Digit|Numpad)(\d)$/.exec(code);
+			if (digit) this.typeCode(digit[2]);
+			else if (code == 'Backspace') this.typeCode('⌫');
+			else if (enter && this.codeDraft.length == 6) void this.joinRoom();
+			else return false;
+			return true;
+		}
 		const known = enter || code == 'KeyP' || /^Key[WASD]$/.test(code) || /^Arrow(Up|Down|Left|Right)$/.test(code);
 		if (!known) return false;
+		// Online: your fish only (WASD or the arrows); no pausing.
+		if (this.net) {
+			const dir = DIRS[code];
+			if (this.game == 2 && dir) {
+				if (this.net.role == 1) {
+					this.guestKeys.add(dir);
+					this.sendInput();
+				} else {
+					if (dir == 'L') { this.direction = 2; this.mdx = -1; }
+					if (dir == 'R') { this.direction = 1; this.mdx = 1; }
+					if (dir == 'U') this.mdy = -1;
+					if (dir == 'D') this.mdy = 1;
+				}
+			}
+			return true;
+		}
 		if ((enter || code == 'KeyP') && (this.game == 1 || this.game == 2)) {
 			this.pause();
 			this.sfx('confirm');
@@ -422,6 +705,19 @@ export class Fishy implements ArcadeGame {
 		return true;
 	}
 	keyReleased(code: string): boolean {
+		if (this.net) {
+			const dir = DIRS[code];
+			if (this.game == 2 && dir) {
+				if (this.net.role == 1) {
+					this.guestKeys.delete(dir);
+					this.sendInput();
+				} else {
+					if (dir == 'L' || dir == 'R') this.mdx = 0;
+					if (dir == 'U' || dir == 'D') this.mdy = 0;
+				}
+			}
+			return !!dir;
+		}
 		if (this.game == 1) {
 			if (code == 'KeyW' || code == 'KeyS' || code == 'ArrowUp' || code == 'ArrowDown') this.dy = 0;
 			if (code == 'KeyA' || code == 'KeyD' || code == 'ArrowLeft' || code == 'ArrowRight') this.dx = 0;
@@ -437,6 +733,16 @@ export class Fishy implements ArcadeGame {
 
 	/** Enter on the game over / win screens: reset everything and back to the title screen. */
 	private playAgain() {
+		this.resetFish();
+		if (this.whoWon == 1) this.p1s++;
+		else if (this.whoWon == 2) this.p2s++;
+		this.whoWon = 0;
+		this.gp++;
+		this.game = 0;
+		this.save();
+	}
+	/** Puts every fish back where a game starts. */
+	private resetFish() {
 		this.dx = 0; this.dy = 0; this.dx2 = 1; this.score = 0; this.goY = -100; this.hooked = 0; this.direction = 1;
 		this.mdx = 0; this.mdy = 0; this.safe = 0;
 		this.lives = this.character;
@@ -448,17 +754,17 @@ export class Fishy implements ArcadeGame {
 		}
 		this.fishAte = 0;
 		this.sharkAte = 0;
-		if (this.whoWon == 1) this.p1s++;
-		else if (this.whoWon == 2) this.p2s++;
-		this.whoWon = 0;
-		this.gp++;
-		this.game = 0;
-		this.save();
+		this.guestKeys.clear();
 	}
 
 	// ── Game loop: run() moves things, then the rules Java kept in paintComponent ──
 	tick() {
 		if (this.game == PAUSED) return;
+		// Online guest: the host runs the game; ease the fish towards where the host says they are.
+		if (this.net?.role == 1) {
+			if (this.game == 2 && this.target) this.placeAt(this.target, 0.35);
+			return;
+		}
 		const before = this.game;
 		const was = { lives: this.lives, w: this.fishw, w2: this.fishw2, w3: this.fishw3, hooked: this.hooked };
 		this.run();
@@ -477,6 +783,15 @@ export class Fishy implements ArcadeGame {
 		if (before == 1 && (this.game == 7 || this.game == 8)) {
 			this.onScore(this.difficulty, this.score);
 			this.save();
+		}
+		if (this.net) {
+			// Online host: send the fish to the guest, and the result when a fish is eaten.
+			if (this.game == 2 && ++this.snapTimer % 4 == 0) this.sendSnapshot();
+			if (before == 2 && (this.game == 10 || this.game == 11)) {
+				this.sendSnapshot();
+				void this.net.room.send({ type: 'result', winner: this.game == 10 ? 0 : 1 });
+			}
+			return;
 		}
 		if (this.game == 10) this.whoWon = 1;
 		if (this.game == 11) this.whoWon = 2;
@@ -751,8 +1066,10 @@ export class Fishy implements ArcadeGame {
 			drawButtons(ctx, this.ui(), UI, this.hover);
 			return;
 		}
+		if (this.game >= 16) return this.paintOnline(ctx);
 		this.paintFrame(ctx, now);
-		if (this.game == 1 || this.game == 2) drawButtons(ctx, this.ui(), UI, this.hover);
+		if ((this.game == 1 || this.game == 2) && !this.net) drawButtons(ctx, this.ui(), UI, this.hover);
+		if (this.net) this.paintOnline(ctx);
 	}
 
 	private paintFrame(ctx: CanvasRenderingContext2D, now: number) {

@@ -1,7 +1,7 @@
 <!--
-  E.Ngine Games main menu: a stack of game buttons with a preview of the one you point at, the
-  monthly leaderboard beside it, and where players log in for the global leaderboards and choose
-  the name shown on them. Used on the left of the E.Ngine Games node (desktop) and in the games pop-up.
+  E.Ngine Games main menu: a stack of game buttons with a preview of the one you point at, a row
+  under both for FishMart and the online games, the monthly leaderboard beside it, and (under the
+  logo) where players log in for the leaderboards and online play, and choose the name shown. Used on the left of the E.Ngine Games node (desktop) and in the games pop-up.
 -->
 <script lang="ts">
 	import { GAMES, type GameId } from '$lib/games/registry';
@@ -45,45 +45,9 @@
 <div class="engine">
 <header class="head">
 	<img class="logo" src="/games/engine-logo.svg" alt="E.Ngine Games" width="520" height="170" />
-	<p class="tag">Edward's high-school games, rebuilt to play in your browser.</p>
-</header>
-<div class="cols">
-<div class="menu">
-
-	<div class="picker">
-		<ul class="stack">
-			{#each GAMES as g (g.id)}
-				<li>
-					<button
-						class="game"
-						class:on={shown === g.id}
-						style="--accent: {g.accent}"
-						onpointerenter={() => (shown = g.id)}
-						onfocus={() => (shown = g.id)}
-						onclick={() => onpick(g.id)}
-					>
-						<img src={g.icon} alt="" width="44" height="44" />
-						<span class="text">
-							<span class="title">{g.title}</span>
-							<span class="line">{g.tagline}</span>
-						</span>
-						<span class="go" aria-hidden="true">▶</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
-		<div class="preview" style="--accent: {preview.accent}">
-			{#key preview.id}
-				<img src={preview.preview} alt="{preview.title} gameplay" width="480" height="360" />
-			{/key}
-			<p class="blurb"><strong>{preview.title}.</strong> {preview.blurb}</p>
-			<button class="play" onclick={() => onpick(preview.id)}>Play {preview.title}</button>
-		</div>
-	</div>
-
 	<div class="board">
 		{#if !session.user}
-			<p><strong>Global leaderboards:</strong> log in to save your high scores and compete with other players.</p>
+			<p><strong>Log in</strong> to save your high scores on the global leaderboards and to play Chess, Four in a Row and Fishy online.</p>
 			<button class="login" onclick={onlogin}>Log in</button>
 		{:else if askName}
 			<form onsubmit={save}>
@@ -111,6 +75,61 @@
 			<p class="hint">Loading your leaderboard name…</p>
 		{/if}
 	</div>
+</header>
+<div class="cols">
+<div class="menu">
+
+	<div class="picker">
+		<ul class="stack">
+			{#each GAMES.filter((g) => !g.row) as g (g.id)}
+				<li>
+					<button
+						class="game"
+						class:on={shown === g.id}
+						style="--accent: {g.accent}"
+						onpointerenter={() => (shown = g.id)}
+						onfocus={() => (shown = g.id)}
+						onclick={() => onpick(g.id)}
+					>
+						<img src={g.icon} alt="" width="44" height="44" />
+						<span class="text">
+							<span class="title">{g.title}</span>
+							<span class="line">{g.tagline}</span>
+						</span>
+						<span class="go" aria-hidden="true">▶</span>
+					</button>
+				</li>
+			{/each}
+		</ul>
+		<div class="preview" style="--accent: {preview.accent}">
+			{#key preview.id}
+				<img src={preview.preview} alt="{preview.title} gameplay" width="480" height="360" />
+			{/key}
+			<p class="blurb"><strong>{preview.title}.</strong> {preview.blurb}</p>
+			<button class="play" onclick={() => onpick(preview.id)}>Play {preview.title}</button>
+		</div>
+		<ul class="row-games">
+			{#each GAMES.filter((g) => g.row) as g (g.id)}
+				<li>
+					<button
+						class="game"
+						class:on={shown === g.id}
+						style="--accent: {g.accent}"
+						onpointerenter={() => (shown = g.id)}
+						onfocus={() => (shown = g.id)}
+						onclick={() => onpick(g.id)}
+					>
+						<img src={g.icon} alt="" width="44" height="44" />
+						<span class="text">
+							<span class="title">{g.title}</span>
+							<span class="line">{g.tagline}</span>
+						</span>
+					</button>
+				</li>
+			{/each}
+		</ul>
+	</div>
+
 </div>
 <MonthlyBoard />
 </div></div>
@@ -151,12 +170,6 @@
 		width: min(100%, 380px);
 		height: auto;
 		display: block;
-	}
-	.tag {
-		margin: -4px 0 4px;
-		color: var(--muted, #94a3b8);
-		font-size: 0.9rem;
-		text-align: center;
 	}
 	.picker {
 		width: 100%;
@@ -243,6 +256,23 @@
 		opacity: 1;
 		transform: none;
 	}
+	/* FishMart and the online games: a row under the list and the preview. */
+	.row-games {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+		gap: 8px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.row-games .game.on,
+	.row-games .game:focus-visible {
+		transform: translateY(-2px);
+		box-shadow:
+			0 10px 28px -14px color-mix(in srgb, var(--accent) 80%, transparent),
+			inset 0 -3px 0 var(--accent);
+	}
 	.preview {
 		display: none;
 		flex-direction: column;
@@ -297,7 +327,7 @@
 		}
 	}
 	.board {
-		width: 100%;
+		width: min(100%, 720px);
 		padding: 12px 14px;
 		border-radius: 12px;
 		border: 1px solid rgba(129, 140, 248, 0.35);

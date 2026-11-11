@@ -3,7 +3,7 @@
 import type { Component } from 'svelte';
 import type { ArcadeGame } from './common';
 
-export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ifish';
+export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow';
 
 /** What a component game (spec.ui) is given. */
 export interface GameUiProps {
@@ -41,6 +41,8 @@ export interface GameSpec {
 	/** Short line under the title on the menu button. */
 	tagline: string;
 	accent: string;
+	/** Shown in the row under the list and preview in the games menu (instead of the list). */
+	row?: boolean;
 	/** Where the game keeps its progress in localStorage (synced to the player's account). */
 	saveKey: string;
 	/** Canvas size (the Java window's drawing area). */
@@ -193,6 +195,33 @@ export const GAMES: GameSpec[] = [
 		}
 	},
 	{
+		id: 'blockdrop',
+		saveKey: 'blockdrop-save',
+		title: 'Block Drop',
+		blurb: 'Falling-block puzzles: turn and slide the shapes to fill rows. Every 10 rows the level goes up and they fall faster.',
+		icon: '/games/icons/blockdrop.png',
+		preview: '/games/previews/blockdrop.jpg',
+		tagline: 'Clear rows · climb levels',
+		accent: '#c46bff',
+		w: 480,
+		h: 600,
+		tickMs: 16,
+		help: [
+			{ keys: ['A', 'D'], label: 'move' },
+			{ keys: ['S'], label: 'soft drop' },
+			{ keys: ['W'], label: 'rotate' },
+			{ keys: ['Space'], label: 'drop' },
+			{ keys: ['Enter'], label: 'pause' },
+			MOUSE
+		],
+		touch: {
+			stick: '4',
+			buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Rotate', code: 'KeyW' }, { label: 'Drop', code: 'Space', big: true }]
+		},
+		boards: { 1: 'Score' },
+		load: async () => (await import('./blockdrop/BlockDrop')).create()
+	},
+	{
 		id: 'ifish',
 		saveKey: 'ifish-save',
 		title: 'FishMart',
@@ -201,6 +230,7 @@ export const GAMES: GameSpec[] = [
 		preview: '/games/previews/ifish.jpg',
 		tagline: 'Fish store sim · global showcase',
 		accent: '#2ab0e8',
+		row: true,
 		w: 1040,
 		h: 700,
 		tickMs: 1000,
@@ -209,6 +239,44 @@ export const GAMES: GameSpec[] = [
 		boards: {},
 		// FishMart picks its own soundtrack (by tab, and the store's tunes take turns).
 		ui: async () => (await import('./fishstore/IFish.svelte')).default
+	},
+	{
+		id: 'chess',
+		saveKey: 'chess-save',
+		title: 'Chess',
+		blurb: 'Play chess online against a friend: make a room, share its code. Your rating rises and falls with every game.',
+		icon: '/games/icons/chess.png',
+		preview: '/games/previews/chess.jpg',
+		tagline: 'Online · room codes',
+		accent: '#e0b46b',
+		row: true,
+		w: 640,
+		h: 760,
+		tickMs: 1000,
+		help: [],
+		touch: { buttons: [] },
+		boards: {},
+		music: 'chess-menu',
+		ui: async () => (await import('./chess/Chess.svelte')).default
+	},
+	{
+		id: 'fourrow',
+		saveKey: 'fourrow-save',
+		title: 'Four in a Row',
+		blurb: 'Drop discs, line up four before your friend does. Online with room codes, with a rating for every player.',
+		icon: '/games/icons/fourrow.png',
+		preview: '/games/previews/fourrow.jpg',
+		tagline: 'Online · room codes',
+		accent: '#facc15',
+		row: true,
+		w: 640,
+		h: 700,
+		tickMs: 1000,
+		help: [],
+		touch: { buttons: [] },
+		boards: {},
+		music: 'fourrow-menu',
+		ui: async () => (await import('./fourrow/FourRow.svelte')).default
 	}
 ];
 

@@ -143,6 +143,32 @@ export function getDb(): Database.Database {
 			banned_until  INTEGER NOT NULL,     -- ms epoch; 0 = not banned
 			last_at       INTEGER NOT NULL
 		);
+		-- Online games (Chess, Four in a Row, Fishy): each player's rating (MMR) and record per game.
+		-- Private to the player (not on the public leaderboards).
+		CREATE TABLE IF NOT EXISTS match_ratings (
+			user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			game        TEXT NOT NULL,
+			mmr         INTEGER NOT NULL,
+			wins        INTEGER NOT NULL,
+			losses      INTEGER NOT NULL,
+			draws       INTEGER NOT NULL,
+			updated_at  INTEGER NOT NULL,
+			PRIMARY KEY (user_id, game)
+		);
+		-- Finished online matches (who played, who won, how the ratings moved).
+		CREATE TABLE IF NOT EXISTS matches (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			game        TEXT NOT NULL,
+			p1          TEXT NOT NULL,
+			p2          TEXT NOT NULL,
+			winner      TEXT,                   -- a player's user id, or NULL for a draw
+			p1_delta    INTEGER NOT NULL,
+			p2_delta    INTEGER NOT NULL,
+			reason      TEXT NOT NULL,          -- checkmate, four, resign, abandoned, eaten…
+			ts          INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS matches_p1 ON matches(p1, ts);
+		CREATE INDEX IF NOT EXISTS matches_p2 ON matches(p2, ts);
 		CREATE INDEX IF NOT EXISTS game_scores_board ON game_scores(game, mission, best DESC);
 		CREATE INDEX IF NOT EXISTS audit_ts ON audit_log(ts);
 		CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);

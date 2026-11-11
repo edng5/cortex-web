@@ -1,5 +1,6 @@
 <!-- Log in: Google, or a 4-digit code sent by email. No passwords. -->
 <script lang="ts">
+	import { portal } from '$lib/actions/portal';
 	import Modal from './Modal.svelte';
 	import { session } from '$lib/session.svelte';
 	import { page } from '$app/state';
@@ -50,7 +51,10 @@
 	}
 </script>
 
-<Modal title="Log in" width="420px" onclose={() => (session.loginOpen = false)}>
+<!-- Moved to the end of the page and above the games pop-up (80), so the online games can ask you
+     to log in from inside a game. -->
+<div use:portal>
+<Modal title="Log in" width="420px" z={96} onclose={() => (session.loginOpen = false)}>
 	{#if page.url.pathname.startsWith('/speakeaseai')}
 		<p class="lead">Log in to play <strong>Phrase Quest, Scenarios and the Dictionary</strong>, with your progress saved across your devices.</p>
 	{:else}
@@ -121,6 +125,7 @@
 		<p class="fine">No password needed. You'll stay signed in on this device for 30 days.</p>
 	{/if}
 </Modal>
+</div>
 
 <style>
 	.lead {
