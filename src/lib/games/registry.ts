@@ -133,10 +133,10 @@ export const GAMES: GameSpec[] = [
 		help: [
 			{ keys: ['A', 'D'], label: 'move' },
 			{ keys: ['Space'], label: 'shoot' },
-			{ keys: ['Shift'], label: 'pause' },
+			{ keys: ['Enter'], label: 'pause' },
 			MOUSE
 		],
-		touch: { stick: 'h', buttons: [{ label: 'Pause', code: 'ShiftLeft' }, { label: 'Fire', code: 'Space', big: true }] },
+		touch: { stick: 'h', buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Fire', code: 'Space', big: true }] },
 		boards: { 1: 'Normal', 2: 'Hard', 3: 'No shields' },
 		load: async () => {
 			const m = await import('./spaceinvaders/SpaceInvaders');

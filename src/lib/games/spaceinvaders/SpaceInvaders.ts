@@ -517,7 +517,7 @@ export class SpaceInvaders implements ArcadeGame {
 			// The other keys, for reference.
 			const w1 = keyRow(ctx, ['Space'], 120, 594, KEY);
 			text(ctx, 'shoot', 128 + w1, 609, { size: 14, family: ARIAL, color: '#ddd', bold: false });
-			const w2 = keyRow(ctx, ['Shift'], 290, 594, KEY);
+			const w2 = keyRow(ctx, ['Enter'], 290, 594, KEY);
 			text(ctx, 'pause', 298 + w2, 609, { size: 14, family: ARIAL, color: '#ddd', bold: false });
 		}
 
@@ -526,7 +526,7 @@ export class SpaceInvaders implements ArcadeGame {
 			ctx.fillRect(0, 0, GAME_W, GAME_H);
 			panel(ctx, 120, 200, 310, 240, { fill: 'rgba(10,10,20,0.95)', border: Yellow, width: 2, radius: 8 });
 			text(ctx, 'PAUSED', 275, 248, { size: 34, family: ARIAL_BLACK, color: Yellow, align: 'center' });
-			if (!touchScreen()) text(ctx, 'Shift or Enter to resume', 275, 466, { size: 14, family: ARIAL, color: 'rgba(255,255,255,0.7)', align: 'center', bold: false });
+			if (!touchScreen()) text(ctx, 'Enter to resume', 275, 466, { size: 14, family: ARIAL, color: 'rgba(255,255,255,0.7)', align: 'center', bold: false });
 		}
 
 		drawButtons(ctx, buttons, UI, this.hover);
@@ -536,7 +536,7 @@ export class SpaceInvaders implements ArcadeGame {
 	keyPressed(code: string): boolean {
 		const k = keyOf(code);
 		if (!k) return false;
-		// Menus are clicked or tapped. Paused, Shift (the pause key) or Enter resumes.
+		// Menus are clicked or tapped. Paused, Enter (or Shift, the original pause key) resumes.
 		if (this.game == 0 || this.game == 3 || this.game == 4 || this.game == 5 || this.game == 6 || this.game == 7) return true;
 		if (this.game == 8) {
 			if (k == 'ENTER' || k == 'SHIFT') this.press(0);
@@ -574,6 +574,7 @@ export class SpaceInvaders implements ArcadeGame {
 	}
 
 	private keyPressedJava(k: Key) {
+		const was = this.game; // (Enter that starts a game mustn't also pause it)
 		// Main Menu
 		if (this.game == 0) {
 			this.menuMove(k, 3);
@@ -652,7 +653,8 @@ export class SpaceInvaders implements ArcadeGame {
 				this.missile.y_speed = -8;
 				this.launch = 1;
 			}
-			if (k == 'SHIFT') {
+			// Pause: Enter (as in the other games) or Shift (the original's key).
+			if (k == 'SHIFT' || (k == 'ENTER' && was == 1)) {
 				this.game = 8;
 				this.delay2 = 0;
 				this.startDelay = 1;
