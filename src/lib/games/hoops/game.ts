@@ -186,6 +186,7 @@ export function leanMove(p: { x: number; z: number }, m: MotionState, speed: num
 	const rz = fx;
 	if (m.lean > 0) {
 		if (d < 1.4) return { ...p }; // at the rim
+		// Toward the hand with the ball (the game keeps track of it; see `ballHand`).
 		const side = m.hand == 'right' ? 1 : m.hand == 'left' ? -1 : 0;
 		const a = side * 0.42; // about 24° toward the dribbling hand
 		const step = speed * (0.5 + m.lean * 0.55);
@@ -195,8 +196,7 @@ export function leanMove(p: { x: number; z: number }, m: MotionState, speed: num
 		const step = speed * 0.75 * -m.lean;
 		return { x: p.x - fx * step, z: p.z - fz * step };
 	}
-	// Standing tall: drift back out, slowly, until about the top of the key.
-	if (d < 10.5) return { x: p.x - fx * speed * 0.18, z: p.z - fz * speed * 0.18 };
+	// Standing tall: stay where you are.
 	return { ...p };
 }
 /** A step-back: this far straight away from the basket, over a moment. */
@@ -235,6 +235,8 @@ export class SoloGame {
 	private lastJump = -9999;
 	private youAnim: AnimName | null = null;
 	private burst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
+	/** The hand with the ball: a crossover swaps it (crossing toward the hand that already has it loses the ball). */
+	ballHand: 'left' | 'right' = 'right';
 	private cs: Stats;
 	/** The defender being knocked back by an ankle breaker: from, to, when. */
 	private knock: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
@@ -256,6 +258,11 @@ export class SoloGame {
 	/** The most you were down by this game (for the Comeback achievement). */
 	private maxDown = 0;
 
+	/** Time left on the shot clock (ms). */
+	shotClock(now: number) {
+		return this.phase == 'live' ? Math.max(0, SHOT_CLOCK - (now - this.shotClockAt)) : SHOT_CLOCK;
+	}
+
 	start(now: number, m: MotionState) {
 		this.score = { you: 0, cpu: 0 };
 		this.maxDown = 0;
@@ -265,6 +272,8 @@ export class SoloGame {
 
 	/** Check-up: both players reset at the top of the key; the ball is checked, then it's live. */
 	private check(now: number, m: MotionState) {
+		this.ballHand = 'right';
+		this.court.setYouHand('right');
 		this.phase = 'check';
 		this.phaseAt = now;
 		this.bar = null;
@@ -309,7 +318,7 @@ export class SoloGame {
 		// sideways with your feet (steps from where you stood at the check).
 		const off = this.ball == 'you';
 		if (this.phase == 'live') {
-			let next = off ? leanMove(this.you, m, (6 + this.stats.speed * 0.05) / 60, -1) : { ...this.you };
+			let next = off ? leanMove(this.you, { ...m, hand: this.ballHand }, (6 + this.stats.speed * 0.05) / 60, -1) : { ...this.you };
 			// A step-back: a quick burst straight away from the basket (and your defender).
 			if (off && this.burst && now - this.burst.at < 300) {
 				const k = 1 - (1 - (now - this.burst.at) / 300) ** 2;
@@ -318,9 +327,21 @@ export class SoloGame {
 			if (!off && now > this.beatenUntil - 700) {
 				// Defense: side steps slide you across; lean forward to step up on him, back to sag off.
 				const targetX = CHECK.x - (m.x - this.anchor.x) * 2.6;
-				const v = (6.5 + this.stats.speed * 0.045) / 60;
+				const v = (7.5 + this.stats.speed * 0.05) / 60;
 				next.x += clamp(targetX - next.x, -v, v);
 				next.z += m.lean * v;
+				// Staying in front: when you're close, your feet slide you onto his line to the basket
+				// (better defenders more so).
+				const near = dist(this.you, this.cpu);
+				if (near < 3 && now > this.beatenUntil) {
+					const hx = HOOP.x - this.cpu.x;
+					const hz = HOOP.z - this.cpu.z;
+					const hd = Math.hypot(hx, hz) || 1;
+					const spot = { x: this.cpu.x + (hx / hd) * Math.min(near, 1.8), z: this.cpu.z + (hz / hd) * Math.min(near, 1.8) };
+					const pull = 0.05 + this.stats.defense * 0.0008;
+					next.x += (spot.x - next.x) * pull;
+					next.z += (spot.z - next.z) * pull * 0.5;
+				}
 			}
 			this.you.x = clamp(next.x, -11.5, 11.5);
 			this.you.z = clamp(next.z, -13, 9.5);
@@ -358,13 +379,13 @@ export class SoloGame {
 				const hx = HOOP.x - this.you.x;
 				const hz = HOOP.z - this.you.z;
 				const hd = Math.hypot(hx, hz) || 1;
-				this.cpuTarget = { x: this.you.x + (hx / hd) * 1.7, z: this.you.z + (hz / hd) * 1.7 };
-				this.cpuThink = now + 260 - this.level.defense * 1.6;
+				this.cpuTarget = { x: this.you.x + (hx / hd) * 2.0, z: this.you.z + (hz / hd) * 2.0 };
+				this.cpuThink = now + 340 - this.level.defense * 1.5;
 			}
 			const tx = this.cpuTarget.x - this.cpu.x;
 			const tz = this.cpuTarget.z - this.cpu.z;
 			const td = Math.hypot(tx, tz);
-			const v = (5 + this.cs.speed * 0.05) / 60;
+			const v = (3.8 + this.cs.speed * 0.035) / 60;
 			if (td > 0.05) {
 				const step = Math.min(td, v);
 				this.cpu.x += (tx / td) * step;
@@ -372,7 +393,8 @@ export class SoloGame {
 			}
 			this.setCpuAnim(td > 0.4 ? 'slide' : 'stance', now);
 			// You can't walk through a defender who's set: you bump off.
-			if (Math.abs(this.you.x - this.cpu.x) < 1.15 && this.you.z < this.cpu.z + 1.1 && this.you.z > this.cpu.z - 0.6) this.you.z = this.cpu.z + 1.1;
+			// (Only head-on: get a shoulder past him and you're by.)
+			if (Math.abs(this.you.x - this.cpu.x) < 0.85 && this.you.z < this.cpu.z + 1.0 && this.you.z > this.cpu.z - 0.4 && td < 0.3) this.you.z = this.cpu.z + 1.0;
 		}
 		this.court.ball(m.setting ? 'hold' : 'dribble', 'you');
 		const tpl = this.templates.jumpshot;
@@ -398,6 +420,17 @@ export class SoloGame {
 			} else if (e.type == 'move') {
 				const name = { crossover: 'Crossover', inout: 'In-and-out', spin: 'Spin move' }[e.move];
 				if (e.move == 'spin') this.court.spin('you');
+				if (e.move == 'crossover') {
+					// The ball has to cross from the hand it's in to the other one.
+					const from = this.ballHand;
+					if (e.to == from) {
+						this.say(now, 'Lost the handle!', `The ball was in your ${from} hand`, '#f87171', { kind: 'bad' });
+						this.sfx('steal');
+						return this.change(now, m);
+					}
+					this.ballHand = from == 'right' ? 'left' : 'right';
+					this.court.setYouHand(this.ballHand);
+				}
 				if (near > 2.8 || now < this.cpuStumble) {
 					this.say(now, name, undefined, '#cbd5e1');
 					continue;
@@ -440,14 +473,14 @@ export class SoloGame {
 	private yourShot(now: number, kind: ShotKind, e: Extract<MotionEvent, { type: 'shot' }>) {
 		const d = toHoop(this.you);
 		// Finishing 70+: a layup at the rim while you jump is a dunk.
-		const dunk = kind == 'layup' && this.stats.finishing >= UNLOCK_AT && d < 2.8 && ((this.lastMotion?.air ?? 0) > 0.2 || now - this.lastJump < 700);
+		const dunk = kind == 'layup' && this.stats.finishing >= UNLOCK_AT && d < 2.8;
 		const r = judge(e.take, this.templates[kind] ?? null, shotRating(this.stats, kind, d), d);
 		if (r.grade == 'perfect' && this.templates[kind]) this.track('perfects');
 		const near = dist(this.you, this.cpu);
 		const open = now < this.cpuStumble || now < this.cpuAir;
 		const contest = open ? 0 : clamp(1 - (near - 1) / 2.2, 0, 1);
 		const blocked = Math.random() < contest * (0.04 + this.cs.blocking * 0.0035) * (dunk ? 0.5 : kind == 'layup' ? 1.2 : 1);
-		const finalChance = dunk ? Math.min(0.97, r.chance + 0.3) * (1 - 0.2 * contest) : r.chance * (1 - 0.5 * contest);
+		const finalChance = r.grade == 'perfect' && kind == 'jumpshot' ? 1 : dunk ? Math.min(0.97, r.chance + 0.3) * (1 - 0.2 * contest) : r.chance * (1 - (kind == 'layup' ? 0.6 : 0.5) * contest);
 		const made = !blocked && Math.random() < finalChance;
 		if (contest > 0.3) this.setCpuAnim('block', now, true);
 		const pts = pointsFrom(this.you);
@@ -469,7 +502,7 @@ export class SoloGame {
 	private defense(now: number, events: MotionEvent[]) {
 		const near = dist(this.you, this.cpu);
 		const beaten = now < this.beatenUntil;
-		const inFront = !beaten && Math.abs(this.you.x - this.cpu.x) < 1.3 && this.you.z < this.cpu.z && this.cpu.z - this.you.z < 2.4;
+		const inFront = !beaten && Math.abs(this.you.x - this.cpu.x) < 1.6 && this.you.z < this.cpu.z + 0.3 && this.cpu.z - this.you.z < 2.6;
 		this.court.ball(this.cpuShot ? 'hold' : 'dribble', 'cpu');
 		if (this.cpuShot) return;
 		const p = this.plan;
@@ -508,7 +541,7 @@ export class SoloGame {
 			const tz = target.z - this.cpu.z;
 			const td = Math.hypot(tx, tz);
 			// Cut off: you're right in front of him.
-			const cutOff = inFront && this.cpu.z - this.you.z < 1.3;
+			const cutOff = inFront && this.cpu.z - this.you.z < 1.7;
 			if (cutOff) {
 				this.setCpuAnim('dribble', now);
 				// A dribble move to get past you, or a pull-up over you.
@@ -540,7 +573,7 @@ export class SoloGame {
 				return;
 			}
 			if (td < 0.6 || toHoop(this.cpu) < 2.4) return this.startCpuShot(now, 'layup');
-			const v = (4.4 + this.cs.speed * 0.035) / 60;
+			const v = (3.9 + this.cs.speed * 0.03) / 60;
 			this.cpu.x += (tx / td) * Math.min(td, v);
 			this.cpu.z += (tz / td) * Math.min(td, v);
 			this.setCpuAnim('dribble', now);

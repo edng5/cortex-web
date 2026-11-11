@@ -67,6 +67,8 @@ export class Multi {
 	private pending: { seat: Seat; chance: number; at: number; kind: ShotKind; dunk: boolean } | null = null;
 	private ended = false;
 	private hostFlashAt = 0;
+	/** The hand with the ball, per player (crossovers swap it). */
+	hands: ['left' | 'right', 'left' | 'right'] = ['right', 'right'];
 	private burst: { seat: Seat; from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
 	constructor(
@@ -107,6 +109,7 @@ export class Multi {
 			const p = msg.p as number[][];
 			this.pos = [{ x: p[0][0], z: p[0][1] }, { x: p[1][0], z: p[1][1] }];
 			this.otherJ = unpackJ(msg.j as number[] | null);
+			if (Array.isArray(msg.hands)) this.hands = msg.hands as Multi['hands'];
 			this.inputs[0].setting = !!msg.set0;
 			this.inputs[1].setting = !!msg.set1;
 			const v = msg.v as MultiView;
@@ -159,7 +162,7 @@ export class Multi {
 			if (now - this.lastSend > 80) {
 				this.lastSend = now;
 				const v = { ...this.view, flash: this.view.flash ? { ...this.view.flash } : null };
-				this.send({ k: 'st', p: this.pos.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100]), j: packJ(j), set0: m.setting, set1: this.inputs[1].setting, v });
+				this.send({ k: 'st', p: this.pos.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100]), j: packJ(j), set0: m.setting, set1: this.inputs[1].setting, hands: this.hands, v });
 			}
 		} else {
 			if (now - this.lastSend > 66) {
@@ -187,6 +190,8 @@ export class Multi {
 		// The ball handler faces the hoop; the defender keeps turning to face the ball handler.
 		const rim = { x: HOOP.x, z: HOOP.z };
 		this.court.setYou(j, me.x, me.z, myBall ? rim : { ...them });
+		this.court.setYouHand(this.hands[this.seat]);
+		this.court.setOtherHand(this.hands[1 - this.seat]);
 		if (this.otherJ) this.court.setOther(this.otherJ, them.x, them.z, myBall ? { ...me } : rim);
 		else this.court.setCpu(them.x, them.z, myBall ? { ...me } : rim, 'stance', 0);
 		if (this.view.phase == 'live' || this.view.phase == 'check') {
@@ -207,6 +212,7 @@ export class Multi {
 		this.pending = null;
 		this.stumble = [0, 0];
 		this.bit = [0, 0];
+		this.hands = ['right', 'right'];
 		this.pos[off] = { x: CHECK.x, z: CHECK.z };
 		this.pos[1 - off] = { x: CHECK.x, z: CHECK.z - 2.2 };
 		this.say(now, off == 0 ? `${this.me.name}'s ball` : `${this.other?.name ?? 'Guest'}'s ball`, 'Check-up!', '#fbbf24');
@@ -251,7 +257,7 @@ export class Multi {
 		// The ball handler leans to attack (toward the dribbling hand); the defender leans and slides.
 		const so = this.statsOf(off);
 		const sd = this.statsOf(def);
-		let o = leanMove(this.pos[off], this.inputs[off] as unknown as MotionState, (6 + so.speed * 0.05) / 60, -1);
+		let o = leanMove(this.pos[off], { ...(this.inputs[off] as unknown as MotionState), hand: this.hands[off] }, (6 + so.speed * 0.05) / 60, -1);
 		const b = this.burst;
 		if (b && b.seat == off && now - b.at < 300) {
 			const k = 1 - (1 - (now - b.at) / 300) ** 2;
@@ -262,11 +268,20 @@ export class Multi {
 			const vD = (6.5 + sd.speed * 0.045) / 60;
 			const d = this.pos[def];
 			const tx = CHECK.x - (this.inputs[def].x - this.anchor[def]) * 2.6;
-			d.x = clamp(d.x + clamp(tx - d.x, -vD, vD), -11.5, 11.5);
+			d.x = clamp(d.x + clamp(tx - d.x, -vD * 1.15, vD * 1.15), -11.5, 11.5);
 			d.z = clamp(d.z + this.inputs[def].lean * vD, -13, 9.5);
-			// No walking through a set defender.
 			const a = this.pos[off];
-			if (Math.abs(a.x - d.x) < 1.15 && a.z < d.z + 1.1 && a.z > d.z - 0.6) a.z = d.z + 1.1;
+			const near = Math.hypot(a.x - d.x, a.z - d.z);
+			if (near < 3) {
+				const hx = HOOP.x - a.x;
+				const hz = HOOP.z - a.z;
+				const hd = Math.hypot(hx, hz) || 1;
+				const pull = 0.05 + sd.defense * 0.0008;
+				d.x += (a.x + (hx / hd) * Math.min(near, 1.8) - d.x) * pull;
+				d.z += (a.z + (hz / hd) * Math.min(near, 1.8) - d.z) * pull * 0.5;
+			}
+			// No walking through a defender who's square in front.
+			if (Math.abs(a.x - d.x) < 0.85 && a.z < d.z + 1.0 && a.z > d.z - 0.4) a.z = d.z + 1.0;
 		}
 		if (v.clock <= 0) {
 			this.say(now, 'Shot clock!', 'Turnover', '#f87171');
@@ -300,6 +315,17 @@ export class Multi {
 			this.cue('squeak');
 		}
 		else if (e.type == 'move' && seat == off) {
+			if (e.move == 'crossover') {
+				// The ball has to cross from the hand it's in to the other one, or it's lost.
+				if (e.to == this.hands[off]) {
+					this.say(now, 'Lost the handle!', `${this.nameOf(off)} crossed the wrong way`, '#f87171', { kind: 'bad' });
+					this.cue('steal');
+					this.view.ball = def;
+					this.check(now);
+					return;
+				}
+				this.hands[off] = this.hands[off] == 'right' ? 'left' : 'right';
+			}
 			if (e.move == 'spin') {
 				this.court.spin(off == this.seat ? 'you' : 'cpu');
 				this.send({ k: 'spin', seat: off });
@@ -389,7 +415,8 @@ export class Multi {
 
 	/** Finishing 70+: a layup at the rim while jumping is a dunk. */
 	private canDunk(kind: ShotKind, at: { x: number; z: number }, m: MotionState) {
-		return kind == 'layup' && this.me.stats.finishing >= UNLOCK_AT && toHoop(at) < 2.8 && m.air > 0.2;
+		void m;
+		return kind == 'layup' && this.me.stats.finishing >= UNLOCK_AT && toHoop(at) < 2.8;
 	}
 	private fly(seat: Seat, made: boolean, blocked: boolean, dunk = false) {
 		this.court.ball('hold', seat == this.seat ? 'you' : 'cpu');

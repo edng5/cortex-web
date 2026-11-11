@@ -170,6 +170,8 @@ export function formMatch(a: number[][], tpl: number[][]): number {
 export const shotWindow = (tpl: ShotTemplate, shooting: number) => Math.round(25 + shooting * 0.9 + Math.min(40, tpl.spread / 2));
 
 export type Grade = 'perfect' | 'good' | 'early' | 'late';
+/** The centre of the green (± ms): a perfect release. */
+export const perfectWindow = (window: number) => Math.max(18, window * 0.22);
 export interface ShotResult {
 	/** Released this many ms early (negative) or late (positive) against your template. */
 	error: number;
@@ -197,6 +199,8 @@ export function judge(take: ShotTake, tpl: ShotTemplate | null, shooting: number
 	const zone = zoneOf(dist);
 	// Deep threes are a heave until your Three-point rating unlocks the range.
 	const base = (BASE[take.kind][zone] + shooting * 0.003) * (zone == 'deep' && shooting < UNLOCK_AT ? 0.3 : 1);
+	// Layups have no timing: just your Finishing (the contest is weighed by the game).
+	if (take.kind == 'layup') return { error: 0, window: 0, grade: 'good', form: 1, chance: Math.min(0.95, base + 0.12) };
 	if (!tpl) return { error: 0, window: 0, grade: 'good', form: 0.6, chance: base * 0.8 };
 	const window = shotWindow(tpl, shooting);
 	const error = take.release - tpl.release;
@@ -204,9 +208,10 @@ export function judge(take: ShotTake, tpl: ShotTemplate | null, shooting: number
 	const form = formMatch(take.frames, tpl.frames);
 	let chance: number;
 	let grade: Grade;
-	if (e <= window / 3) {
+	if (e <= perfectWindow(window)) {
+		// Right in the centre of the green: always goes in (unless it's blocked).
 		grade = 'perfect';
-		chance = Math.min(0.97, base + 0.4);
+		chance = 1;
 	} else if (e <= window) {
 		grade = 'good';
 		chance = base + 0.12;
@@ -214,6 +219,6 @@ export function judge(take: ShotTake, tpl: ShotTemplate | null, shooting: number
 		grade = error < 0 ? 'early' : 'late';
 		chance = base * Math.max(0.12, 1 - (e - window) / 350);
 	}
-	chance *= 0.55 + 0.45 * form;
+	if (grade != 'perfect') chance *= 0.55 + 0.45 * form;
 	return { error: Math.round(error), window, grade, form, chance };
 }

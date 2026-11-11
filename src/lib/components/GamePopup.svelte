@@ -159,6 +159,18 @@
 </div>
 
 <style>
+	/* Games and their menus: no highlighting text by accident (dragging, double taps); text boxes
+	   still select and edit. */
+	.backdrop {
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+	}
+	.backdrop :global(input),
+	.backdrop :global(textarea) {
+		user-select: text;
+		-webkit-user-select: text;
+	}
 	.backdrop {
 		position: fixed;
 		inset: 0;

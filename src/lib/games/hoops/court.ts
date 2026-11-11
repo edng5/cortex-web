@@ -30,6 +30,7 @@ export interface Look {
 	mouth?: (typeof MOUTHS)[number];
 	facial?: (typeof FACIAL)[number];
 	build?: (typeof BUILDS)[number];
+	shape?: (typeof SHAPES)[number];
 	earrings?: (typeof EARRINGS)[number];
 	/** Gear (items.ts): shoes 'main|sole', and colours for the rest (null / absent: none). */
 	shoes?: string;
@@ -52,7 +53,9 @@ export const HAIRS = [
 ] as const;
 export const EYES = ['dots', 'wide', 'lashes', 'sleepy', 'focused'] as const;
 /** Body build: standard, or slim (narrower shoulders and hips). */
-export const BUILDS = ['standard', 'slim'] as const;
+/** Body build (slim, standard or big) and shape (curvy adds a fuller chest and wider hips). */
+export const BUILDS = ['slim', 'standard', 'big'] as const;
+export const SHAPES = ['straight', 'curvy'] as const;
 export const EARRINGS = ['none', 'studs', 'hoops'] as const;
 export const BROWS = ['none', 'thin', 'thick', 'angry'] as const;
 export const MOUTHS = ['none', 'smile', 'grin', 'flat', 'lips'] as const;
@@ -101,6 +104,10 @@ export interface Court {
 	camera(mode: CamMode, move?: 'cut' | 'glide'): void;
 	/** Which hand you're dribbling with (the ball follows it). */
 	setYouHand(hand: 'left' | 'right' | null): void;
+	/** Phones: frame My player in the middle (above the half-screen menu), not to the left. */
+	setCompact(on: boolean): void;
+	/** The other (online) player's ball hand. */
+	setOtherHand(hand: 'left' | 'right'): void;
 	/** A spin move: the player turns all the way round. */
 	spin(who: 'you' | 'cpu'): void;
 	onBounce: () => void;
@@ -471,11 +478,19 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			parent.add(m);
 			return m;
 		};
-		const slim = look.build == 'slim';
-		const tw = slim ? 1.42 : 1.7;
-		box(tw, 2.1, slim ? 0.8 : 0.9, look.jersey, hips, 0, 1.05);
+		// Build: slim, standard or big (torso, shoulders, arms and legs); shape: curvy adds a fuller
+		// chest and a little more hip.
+		const B = { slim: { tw: 1.42, td: 0.8, arm: 0.38, sx: 0.9, leg: 0.58, lx: 0.4 }, standard: { tw: 1.7, td: 0.9, arm: 0.42, sx: 1.05, leg: 0.62, lx: 0.45 }, big: { tw: 2.05, td: 1.08, arm: 0.52, sx: 1.25, leg: 0.72, lx: 0.52 } }[look.build ?? 'standard'];
+		const curvy = look.shape == 'curvy';
+		box(B.tw, 2.1, B.td, look.jersey, hips, 0, 1.05);
 		// Trim at the neck.
-		box(tw + 0.02, 0.12, slim ? 0.82 : 0.92, look.shorts, hips, 0, 2.05);
+		box(B.tw + 0.02, 0.12, B.td + 0.02, look.shorts, hips, 0, 2.05);
+		if (curvy) {
+			// A fuller chest, under the jersey (the front is -z).
+			for (const x of [-0.27, 0.27]) box(B.tw * 0.36, 0.42, 0.22, look.jersey, hips, x * (B.tw / 1.7), 1.5, -B.td / 2 - 0.08);
+			// Wider hips, in the shorts.
+			box(B.tw + 0.16, 0.42, B.td + 0.04, look.shorts, hips, 0, 0.14);
+		}
 		box(0.9, 0.9, 0.9, look.skin, hips, 0, 2.65);
 		face(look, box, hips);
 		hair(look, hips);
@@ -489,7 +504,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			return pivot;
 		};
 		const arm = (side: number) => {
-			const upper = part(slim ? 0.38 : 0.42, 1.1, look.skin, hips, side * (slim ? 0.9 : 1.05), 2.0);
+			const upper = part(B.arm, 1.1, look.skin, hips, side * B.sx, 2.0);
 			// Sleeve-less jersey edge.
 			box(0.46, 0.25, 0.46, look.jersey, upper, 0, -0.1);
 			const lower = part(0.38, 1.0, look.skin, upper, 0, -1.1);
@@ -499,7 +514,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			return { upper, lower, hand };
 		};
 		const leg = (side: number) => {
-			const upper = part(slim ? 0.58 : 0.62, 1.4, look.shorts, hips, side * (slim ? 0.4 : 0.45), 0);
+			const upper = part(B.leg, 1.4, look.shorts, hips, side * (B.lx + (curvy ? 0.04 : 0)), 0);
 			const lower = part(0.55, 1.4, look.skin, upper, 0, -1.4);
 			box(0.58, 0.4, 0.58, '#f8fafc', lower, 0, -1.0); // socks
 			// Shoes (toes forward): upper and sole.
@@ -745,6 +760,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	let cpuAnim: { name: AnimName; since: number } = { name: 'idle', since: 0 };
 	let otherJ: Joints | null = null;
 	let youHand: 'left' | 'right' = 'right';
+	let otherHand: 'left' | 'right' = 'right';
 	// Loops follow the clock (so the hands and the ball stay in step); one-offs play from their start.
 	const cpuMs = (now: number) => (LOOPS.includes(cpuAnim.name) ? now : now - cpuAnim.since);
 
@@ -785,7 +801,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			ball.position.z += Math.cos(b.root.rotation.y) * -0.35;
 		} else if (mode.kind == 'dribble') {
 			const b = holderOf(mode.who);
-			const ds = mode.who == 'cpu' && !otherJ ? dribbleState(cpuAnim.name, cpuMs(now)) : { hand: youHand, cross: null };
+			const ds = mode.who == 'cpu' ? (otherJ ? { hand: otherHand, cross: null } : dribbleState(cpuAnim.name, cpuMs(now))) : { hand: youHand, cross: null };
 			const fromHand = ds.hand == 'left' ? b.L.arm.hand : b.R.arm.hand;
 			const toHand = ds.hand == 'left' ? b.R.arm.hand : b.L.arm.hand;
 			fromHand.getWorldPosition(v1);
@@ -845,6 +861,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	// ── Camera ──
 	let camMode: CamMode = 'menu';
 	let camCut = false;
+	let compact = false;
 	let camGlide = false;
 	const camPos = new T.Vector3(0, 12, 20);
 	const camLook = new T.Vector3(0, 4, -6);
@@ -872,8 +889,10 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		} else if (camMode == 'locker') {
 			// In front of your player, who stands left of the customising panel.
 			// (Seen from the front, the screen's right is -x: aim right of them so they stand on the left.)
-			pos = new T.Vector3(y.x - 2.2, 4.4, y.z - 10.5);
-			look = new T.Vector3(y.x - 3.6, 3.1, y.z);
+			// On a phone the menu takes the bottom half: centre them, in the top half.
+			// (In front of the hoop's pole, a little to the side, and high enough to see all of them.)
+			pos = compact ? new T.Vector3(y.x + 2.4, 6.2, y.z - 10.8) : new T.Vector3(y.x - 2.2, 4.4, y.z - 10.5);
+			look = compact ? new T.Vector3(y.x, -2.2, y.z) : new T.Vector3(y.x - 3.6, 3.1, y.z);
 		} else if (camMode == 'defense') {
 			// High behind the hoop (see-through), looking down at the ball handler over your shoulder.
 			pos = new T.Vector3(y.x * 0.5, 13, -16.5);
@@ -907,6 +926,12 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		if (w && h && (canvas.width != Math.round(w * pr) || canvas.height != Math.round(h * pr))) {
 			renderer.setSize(w, h, false);
 			camera.aspect = w / h;
+			camera.updateProjectionMatrix();
+		}
+		// Tall, narrow screens (phones held upright) see more with a wider view.
+		const fov = camera.aspect < 0.8 ? 78 : 52;
+		if (camera.fov != fov) {
+			camera.fov = fov;
 			camera.updateProjectionMatrix();
 		}
 	};
@@ -1031,6 +1056,12 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		},
 		spin(who) {
 			(who == 'you' ? you : cpu).root.userData.spinAt = performance.now();
+		},
+		setCompact(on) {
+			compact = on;
+		},
+		setOtherHand(h) {
+			otherHand = h;
 		},
 		setYouHand(h) {
 			if (h) youHand = h;

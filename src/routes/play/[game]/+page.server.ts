@@ -1,13 +1,5 @@
-// The signed-in player (if any), so games on their own page know who's playing (saves, boards).
-import { googleConfigured } from '$lib/server/google';
-import { keysConfigured } from '$lib/server/crypto';
-import { getPlayerName } from '$lib/server/player-name';
+// Old address for a single game: games now live at /games/<id>.
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ locals }) => {
-	const user = locals.user;
-	return {
-		user: user ? { email: user.email, name: user.name, isMember: user.isMember, nickname: getPlayerName(user.id) } : null,
-		auth: { ready: keysConfigured(), google: googleConfigured() }
-	};
-};
+export const load: PageServerLoad = ({ params }) => redirect(308, `/games/${params.game}`);

@@ -13,10 +13,10 @@
 	import { P, startTracking, type Pose, type Tracker } from './pose';
 	import { Motion, type MotionEvent } from './motion';
 	import { fromPose, type Joints } from './anim';
-	import { createCourt, BROWS, BUILDS, CHECK, EARRINGS, DEFAULT_LOOK, EYES, FACIAL, HAIRS, HAIR_COLORS, HOOP, JERSEYS, MOUTHS, SKINS, type Court, type Look } from './court';
+	import { createCourt, BROWS, BUILDS, CHECK, EARRINGS, SHAPES, DEFAULT_LOOK, EYES, FACIAL, HAIRS, HAIR_COLORS, HOOP, JERSEYS, MOUTHS, SKINS, type Court, type Look } from './court';
 	import { judge, makeTemplate, shotWindow, type ShotKind, type ShotTake, type ShotTemplate } from './shot';
 	import { LADDER, leanMove, stepBackTo, SoloGame, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
-	import { UNLOCK_AT, shotRating } from './shot';
+	import { UNLOCK_AT, perfectWindow, shotRating } from './shot';
 	import { COMMON, INTERLUDES, LINES, PROLOGUE, type SceneLine } from './lore';
 	import { Speaker } from '$lib/voice/speech';
 	import ItemIcon from './ItemIcon.svelte';
@@ -111,6 +111,8 @@
 		court?.showCpu(s == 'game' || s == 'calibrate' || s == 'online');
 		if (s == 'menu' || s == 'ladder' || s == 'how' || s == 'player' || s == 'achievements') {
 			game = null;
+			// The camera is only on while practising or playing.
+			stopCamera();
 			court?.ball(s == 'player' ? 'dribble' : 'hidden');
 			court?.setYou(null, 0, CHECK.z - 2, -1);
 		}
@@ -146,7 +148,8 @@
 		queue.push(...ev);
 		tracked = motion.state.tracked;
 		const j = fromPose(p);
-		j.y = motion.state.air * 2.2 - motion.state.crouch * 1.1;
+		const offense = screen == 'practice' || (screen == 'game' && game?.ball == 'you') || (screen == 'online' && !!multi && mview.ball == roomView?.you);
+		j.y = (offense ? 0 : motion.state.air * 2.2) - motion.state.crouch * 1.1;
 		youJ = motion.state.tracked ? j : null;
 		drawSkeleton(p);
 	}
@@ -242,7 +245,7 @@
 	// ── The Street Ladder ──
 	let rung = $state(0);
 	let game = $state<SoloGame | null>(null);
-	let hud = $state({ you: 0, cpu: 0, flash: null as SoloGame['flash'], bar: null as SoloGame['bar'], phase: '' as string, ball: 'you', clock: 0 });
+	let hud = $state({ you: 0, cpu: 0, flash: null as SoloGame['flash'], bar: null as SoloGame['bar'], phase: '' as string, ball: 'you', clock: 15000, hand: 'right' as 'left' | 'right' });
 	let result = $state<{ won: boolean; you: number; cpu: number; earned: number; unlockedNext: boolean; item: (typeof ITEMS)[number] | null } | null>(null);
 	let calibStart = 0;
 
@@ -329,14 +332,14 @@
 	type Drill = 'jumpshot' | 'layup' | 'pumpfake' | 'triple' | 'crossover' | 'inout' | 'spin' | 'stepback' | 'jump';
 	const DRILLS: { id: Drill; name: string; how: string }[] = [
 		{ id: 'jumpshot', name: 'Jump shot', how: 'Bring both hands up together above your shoulders (your set point), then shoot: hands up over your head, arms extended. Record 3 to set your timing, then drill it: release in the green.' },
-		{ id: 'layup', name: 'Layup', how: 'Step in and reach one hand high above your head while the other stays low. Either hand works. Record 3, then drill.' },
+		{ id: 'layup', name: 'Layup', how: "Step in and reach one hand high above your head while the other stays low. No timing: it's your Finishing and how well you're guarded." },
 		{ id: 'pumpfake', name: 'Pump fake', how: 'From your set point, bring the ball up part way and back down without shooting. Defenders who bite jump out of position.' },
 		{ id: 'triple', name: 'Triple threat', how: 'Knees bent, both hands together at your waist, hold it a moment. Your next move is quicker.' },
 		{ id: 'crossover', name: 'Crossover', how: 'Hands low (dribbling height): swing them quickly from one side of your body to the other.' },
 		{ id: 'inout', name: 'In-and-out', how: 'Hands low on one side: push them in toward the middle and straight back out.' },
 		{ id: 'spin', name: 'Spin move', how: 'Turn all the way round, quickly, and face the camera again.' },
 		{ id: 'stepback', name: 'Step-back', how: 'Lean back sharply, or hop back away from the camera: a quick burst away from your defender to make room for a jumper.' },
-		{ id: 'jump', name: 'Block jump', how: "Jump straight up with your arms high. On defense, time it with your opponent's release." }
+
 	];
 	let drill = $state<Drill>('jumpshot');
 	let counts = $state<Record<Drill, number>>({ jumpshot: 0, layup: 0, pumpfake: 0, triple: 0, crossover: 0, inout: 0, spin: 0, stepback: 0, jump: 0 });
@@ -372,13 +375,23 @@
 				track('triples');
 			}
 			else if (e.type == 'move') {
+				if (e.move == 'crossover') {
+					// The ball crosses from the hand it's in; crossing toward that same hand loses it.
+					if (e.to == pHand) {
+						note('Lost the ball!', '#f87171', { sub: `It was in your ${pHand} hand: cross the other way`, kind: 'bad' });
+						sfx('steal');
+						continue;
+					}
+					pHand = pHand == 'right' ? 'left' : 'right';
+					court?.setYouHand(pHand);
+				}
 				bump(e.move, { crossover: 'Crossover', inout: 'In-and-out', spin: 'Spin move' }[e.move]);
 				if (e.move == 'spin') court?.spin('you');
 			} else if (e.type == 'stepback') {
 				bump('stepback', 'Step-back');
 				practiceBurst = { from: { ...practicePos }, to: stepBackTo(practicePos), at: now };
 			}
-			else if (e.type == 'jump') bump('jump', 'Jump');
+
 			else if (e.type == 'shot') practiceShot(e.take, now);
 		}
 	}
@@ -450,6 +463,8 @@
 	}
 	// In practice you move around the court too (from where you started).
 	let practicePos = { x: 0, z: -2 };
+	/** The hand with the ball in practice. */
+	let pHand = $state<'left' | 'right'>('right');
 	let practiceBurst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
 	// ── Player: look, gear and stats ──
@@ -514,6 +529,8 @@
 		sfx('recorded');
 		persist();
 	}
+	/** Phones: how much of the screen a menu sheet takes. */
+	let sheet = $state<'half' | 'max' | 'min'>('half');
 	// My player's tabs; the Court tab shows the whole court so you can see it change.
 	let playerTab = $state<'look' | 'gear' | 'court' | 'stats'>('look');
 	function pickTab(t: typeof playerTab) {
@@ -643,14 +660,14 @@
 		} else if (screen == 'game' && game) {
 			for (const e of events) if (e.type == 'triple') track('triples');
 			game.update(t, motion.state, events, youJ);
-			hud = { you: game.score.you, cpu: game.score.cpu, flash: game.flash, bar: game.bar, phase: game.phase, ball: game.ball, clock: 0 };
+			hud = { you: game.score.you, cpu: game.score.cpu, flash: game.flash, bar: game.bar, phase: game.phase, ball: game.ball, clock: game.shotClock(t), hand: game.ballHand };
 		} else if (screen == 'online' && multi) {
 			multi.frame(t, motion.state, events, youJ);
 			mview = { ...multi.view };
 		} else if (screen == 'practice') {
 			const m = motion.state;
 			// Lean to move, toward your dribbling hand's side, like in a game.
-			let p = leanMove(practicePos, m, (6 + save.stats.speed * 0.05) / 60, -1);
+			let p = leanMove(practicePos, { ...m, hand: pHand }, (6 + save.stats.speed * 0.05) / 60, -1);
 			if (practiceBurst && t - practiceBurst.at < 300) {
 				const k = 1 - (1 - (t - practiceBurst.at) / 300) ** 2;
 				p = { x: practiceBurst.from.x + (practiceBurst.to.x - practiceBurst.from.x) * k, z: practiceBurst.from.z + (practiceBurst.to.z - practiceBurst.from.z) * k };
@@ -669,6 +686,9 @@
 		try {
 			court = await createCourt(canvas);
 			court.onBounce = () => sfx('bounce');
+			const narrow = matchMedia('(max-width: 720px)');
+			court.setCompact(narrow.matches);
+			narrow.addEventListener('change', (e) => court?.setCompact(e.matches));
 			court.setLook(effLook());
 			court.setStyle(courtLook());
 			court.setCrowd(Math.min(save.unlocked, 7));
@@ -705,6 +725,32 @@
 	}
 </script>
 
+{#snippet scoreboard(you: number, them: number, name: string, mine: boolean, clock: number, hand: 'left' | 'right')}
+	<div class="board">
+		<div class="side you" class:has={mine}><span class="nm">YOU</span><span class="pts">{you}</span></div>
+		<div class="center">
+			<span class="to">FIRST TO {TO}</span>
+			<span class="clock" class:low={clock < 5000}>{Math.ceil(clock / 1000)}</span>
+		</div>
+		<div class="side them" class:has={!mine}><span class="pts">{them}</span><span class="nm">{name}</span></div>
+	</div>
+	{#if mine}<div class="handtag">🏀 {hand} hand</div>{/if}
+{/snippet}
+{#snippet sheetBtns()}
+	<span class="sheet-btns">
+		<button class="ghost small" aria-label={sheet == 'min' ? 'Show the menu' : 'Minimise the menu'} onclick={() => (sheet = sheet == 'min' ? 'half' : 'min')}>{sheet == 'min' ? '▲' : '▼'}</button>
+		<button class="ghost small" aria-label={sheet == 'max' ? 'Half screen' : 'Full screen'} onclick={() => (sheet = sheet == 'max' ? 'half' : 'max')}>{sheet == 'max' ? '⤓' : '⤒'}</button>
+	</span>
+{/snippet}
+{#snippet ticker(f: Flash)}
+	<!-- What just happened, in one line under the scoreboard. -->
+	<div class="ticker" style="--c:{f.color}">
+		<b>{f.text}</b>
+		{#if f.grade}<span class="grade g-{f.grade}">{f.grade}</span>{/if}
+		{#if f.pct != null}<em>{f.pct}%</em>{/if}
+		{#if f.sub}<span class="tsub">{f.sub}</span>{/if}
+	</div>
+{/snippet}
 {#snippet pop(f: Flash)}
 	<div class="pop k-{f.kind ?? 'info'}" style="--c:{f.color}">
 		<span class="ico" aria-hidden="true">{({ shot: '🏀', make: '🔥', miss: '💨', move: '⚡', bad: '😬', block: '🖐️', info: '💬' } as Record<string, string>)[f.kind ?? 'info']}</span>
@@ -749,7 +795,10 @@
 
 	{#if screen == 'menu'}
 		<div class="menu">
-			<h1 class="logo"><span>CHECK</span><span class="dash">-</span><span>UP</span></h1>
+			<div class="logo-wrap">
+				<img class="crest" src="/games/checkup-crest.png" alt="" width="200" height="200" />
+				<h1 class="logo"><span>CHECK</span><span class="dash">-</span><span>UP</span></h1>
+			</div>
 			<p class="sub">1-on-1 street ball. Your body is the controller.</p>
 			<div class="buttons">
 				<button class="big" onclick={() => go('ladder')}>Street Ladder<small>Solo · {save.unlocked + 1}/{LADDER.length} unlocked</small></button>
@@ -763,8 +812,8 @@
 			<p class="privacy">Uses your camera. Everything stays on this device: no video is saved or sent.</p>
 		</div>
 	{:else if screen == 'ladder'}
-		<div class="panel ladder">
-			<header><h2>Street Ladder</h2><button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
+		<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel ladder">
+			<header><h2>Street Ladder</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<p class="hint">Beat each player to unlock the next. The crowd grows as you climb. First to {TO}, ones and twos.</p>
 			<ol>
 				{#each LADDER as l, i (l.name)}
@@ -795,21 +844,16 @@
 			<button class="ghost small" onclick={quitGame}>Cancel</button>
 		</div>
 	{:else if screen == 'game'}
-		<div class="scoreboard">
-			<div class="team you"><b>YOU</b><span>{hud.you}</span></div>
-			<div class="mid"><small>to {TO}</small><em>{hud.ball == 'you' ? 'Your ball' : `${opp.name}'s ball`}</em></div>
-			<div class="team cpu"><span>{hud.cpu}</span><b>{opp.name.toUpperCase()}</b></div>
-		</div>
-		<button class="pause ghost small" onclick={quitGame}>Leave game</button>
+		{@render scoreboard(hud.you, hud.cpu, opp.name, hud.ball == 'you', hud.clock, hud.hand)}
+		<button class="leave" onclick={quitGame}>Leave</button>
 		{#if flashOn && hud.flash}
-			{#key hud.flash.at}
-				{@render pop(hud.flash)}
-			{/key}
+			{#key hud.flash.at}{@render ticker(hud.flash)}{/key}
 		{/if}
 		{#if hud.bar}
 			<div class="bar">
 				<div class="fill" style="width:{fillOf(hud.bar, hud.bar.release * 2) * 100}%"></div>
 				<div class="zone" style="left:{((hud.bar.release - hud.bar.zone) / (hud.bar.release * 2)) * 100}%; width:{((2 * hud.bar.zone) / (hud.bar.release * 2)) * 100}%"></div>
+				<div class="perfect" style="left:{((hud.bar.release - perfectWindow(hud.bar.zone)) / (hud.bar.release * 2)) * 100}%; width:{((2 * perfectWindow(hud.bar.zone)) / (hud.bar.release * 2)) * 100}%"></div>
 				<div class="mark"></div>
 			</div>
 		{/if}
@@ -829,21 +873,23 @@
 			</div>
 		{/if}
 	{:else if screen == 'practice'}
-		<div class="panel practice">
-			<header><h2>Practice</h2><button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
+		<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel practice">
+			<header><h2>Practice</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			{#if camStatus}<p class="err">{camStatus}</p>{/if}
 			<div class="drills">
 				{#each DRILLS as d (d.id)}
 					<button class:on={drill == d.id} onclick={() => ((drill = d.id), (recording = false), (takes = []))}>
 						{d.name}
-						<small>{(d.id == 'jumpshot' || d.id == 'layup') && !save.templates[d.id] ? 'not recorded' : `${counts[d.id]} done`}</small>
+						<small>{d.id == 'jumpshot' && !save.templates.jumpshot ? 'not recorded' : `${counts[d.id]} done`}</small>
 					</button>
 				{/each}
 			</div>
 			{#each DRILLS.filter((d) => d.id == drill) as d (d.id)}
 				<p class="how">{d.how}</p>
-				{#if d.id == 'jumpshot' || d.id == 'layup'}
-					{@const t = save.templates[d.id]}
+				{#if d.id == 'layup'}
+					{#if lastShot}<p class="last">{lastShot}</p>{/if}
+				{:else if d.id == 'jumpshot'}
+					{@const t = save.templates.jumpshot}
 					{#if t}
 						<p class="tpl">Your {d.name.toLowerCase()}: release {t.release} ms (± {t.spread}) · saved in {JSON.stringify(t).length} bytes</p>
 					{/if}
@@ -857,21 +903,23 @@
 			{/each}
 			<p class="foot">Skill points from practice today: {save.drill.day == new Date().toISOString().slice(0, 10) ? save.drill.points : 0}/2 (every 25 reps)</p>
 		</div>
+		<div class="handtag solo">🏀 {pHand} hand</div>
 		{#if pNote && now - pNote.at < 1600}
-			{#key pNote.at}{@render pop(pNote)}{/key}
+			{#key pNote.at}{@render ticker(pNote)}{/key}
 		{/if}
 		{#if pBar}
 			<div class="bar">
 				<div class="fill" style="width:{fillOf(pBar, span) * 100}%"></div>
 				{#if pBar.zone}
 					<div class="zone" style="left:{((pBar.release - pBar.zone) / span) * 100}%; width:{((2 * pBar.zone) / span) * 100}%"></div>
+					<div class="perfect" style="left:{((pBar.release - perfectWindow(pBar.zone)) / span) * 100}%; width:{((2 * perfectWindow(pBar.zone)) / span) * 100}%"></div>
 					<div class="mark"></div>
 				{/if}
 			</div>
 		{/if}
 	{:else if screen == 'player'}
-		<div class="panel player">
-			<header><h2>My player</h2><button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
+		<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel player">
+			<header><h2>My player</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<div class="tabs" role="tablist">
 				{#each [['look', 'Appearance'], ['gear', 'Gear'], ['court', 'Court'], ['stats', 'Attributes']] as const as [id, label] (id)}
 					<button role="tab" aria-selected={playerTab == id} class:on={playerTab == id} onclick={() => pickTab(id)}>
@@ -908,6 +956,12 @@
 					<span>Build</span>
 					<div class="chips">
 						{#each BUILDS as b (b)}<button class:on={(save.look.build ?? 'standard') == b} onclick={() => setLook({ build: b })}>{b}</button>{/each}
+					</div>
+				</div>
+				<div class="gear">
+					<span>Shape</span>
+					<div class="chips">
+						{#each SHAPES as b (b)}<button class:on={(save.look.shape ?? 'straight') == b} onclick={() => setLook({ shape: b })}>{b}</button>{/each}
 					</div>
 				</div>
 				<h3>Skin</h3>
@@ -962,8 +1016,8 @@
 			{/if}
 		</div>
 	{:else if screen == 'achievements'}
-		<div class="panel">
-			<header><h2>Achievements</h2><button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
+		<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel">
+			<header><h2>Achievements</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<p class="hint">Each one is worth a skill point and unlocks gear. Beating a ladder opponent gives you their signature item too.</p>
 			<ul class="achs">
 				{#each ACHIEVEMENTS as a (a.id)}
@@ -991,8 +1045,8 @@
 		</div>
 	{:else if screen == 'online'}
 		{#if !roomView}
-			<div class="panel">
-				<header><h2>Online 1-on-1</h2><button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
+			<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel">
+				<header><h2>Online 1-on-1</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 				{#if !loggedIn}
 					<p class="hint">Log in to play online and keep a rating.</p>
 					<button onclick={() => (session.loginOpen = true)}>Log in</button>
@@ -1020,16 +1074,10 @@
 			</div>
 		{:else}
 			{@const me = roomView.you}
-			<div class="scoreboard">
-				<div class="team you"><b>YOU</b><span>{mview.score[me]}</span></div>
-				<div class="mid"><small>to {TO}</small><em class:low={mview.clock < 6000}>⏱ {Math.ceil(mview.clock / 1000)}</em></div>
-				<div class="team cpu"><span>{mview.score[1 - me]}</span><b>{otherName.toUpperCase()}</b></div>
-			</div>
-			<button class="pause ghost small" onclick={() => leaveRoom()}>Leave game</button>
+			{@render scoreboard(mview.score[me], mview.score[1 - me], otherName, mview.ball == me, mview.clock, multi?.hands[me] ?? 'right')}
+			<button class="leave" onclick={() => leaveRoom()}>Leave</button>
 			{#if mFlashOn && mview.flash}
-				{#key mview.flash.at}
-					{@render pop(mview.flash)}
-				{/key}
+				{#key mview.flash.at}{@render ticker(mview.flash)}{/key}
 			{/if}
 			{#if mEnd}
 				<div class="center-card result">
@@ -1045,8 +1093,8 @@
 			{/if}
 		{/if}
 	{:else if screen == 'how'}
-		<div class="panel how-to">
-			<header><h2>How to play</h2><button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
+		<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel how-to">
+			<header><h2>How to play</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<ul>
 				<li><b>Set up:</b> stand 2–3 m from the camera so it sees you head to knees, in good light, with room to step around.</li>
 				<li><b>Move:</b> lean toward the camera to drive at the hoop, lean back to retreat. You go toward the side of the hand you're dribbling with (dribble right to go right). On defense, lean toward or away from your man and slide your feet sideways.</li>
@@ -1084,6 +1132,242 @@
 </div>
 
 <style>
+	/* The scoreboard. */
+	.board {
+		position: absolute;
+		top: 12px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		align-items: stretch;
+		border-radius: 14px;
+		overflow: hidden;
+		background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.92));
+		box-shadow:
+			0 0 0 2px rgba(255, 255, 255, 0.18),
+			0 14px 30px -14px rgba(0, 0, 0, 0.9);
+	}
+	.side {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 6px 14px;
+		position: relative;
+	}
+	.side.you {
+		background: linear-gradient(90deg, #ea580c, #f97316);
+		color: #1c0a00;
+	}
+	.side.them {
+		background: linear-gradient(90deg, #1e293b, #334155);
+	}
+	.side.has::after {
+		/* The ball: who has possession. */
+		content: '';
+		position: absolute;
+		bottom: 4px;
+		left: 50%;
+		width: 26px;
+		height: 3px;
+		margin-left: -13px;
+		border-radius: 2px;
+		background: #facc15;
+		box-shadow: 0 0 8px #facc15;
+	}
+	.nm {
+		font: 900 0.78rem Impact, 'Arial Black', sans-serif;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		max-width: 150px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.pts {
+		font: 900 2.1rem/1 Impact, sans-serif;
+		min-width: 1.4ch;
+		text-align: center;
+	}
+	.center {
+		display: grid;
+		place-items: center;
+		padding: 2px 12px;
+		gap: 0;
+	}
+	.to {
+		font: 800 0.58rem system-ui, sans-serif;
+		letter-spacing: 0.12em;
+		color: #94a3b8;
+	}
+	.clock {
+		font: 800 1.1rem ui-monospace, monospace;
+		color: #facc15;
+	}
+	.clock.low {
+		color: #f87171;
+	}
+	.handtag {
+		position: absolute;
+		top: 74px;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 2px 10px;
+		border-radius: 999px;
+		background: rgba(15, 23, 42, 0.8);
+		font-size: 0.72rem;
+		font-weight: 800;
+		color: #fde68a;
+		text-transform: capitalize;
+	}
+	.handtag.solo {
+		top: 14px;
+		left: 16px;
+		transform: none;
+	}
+	/* What just happened: one slim line under the scoreboard. */
+	.ticker {
+		position: absolute;
+		top: 100px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		max-width: min(560px, 92%);
+		padding: 4px 14px;
+		border-radius: 999px;
+		background: rgba(15, 23, 42, 0.85);
+		border: 1px solid var(--c);
+		font-size: 0.85rem;
+		white-space: nowrap;
+		pointer-events: none;
+		animation: popin2 0.25s ease-out;
+	}
+	.ticker b {
+		color: var(--c);
+		font: 900 0.95rem Impact, 'Arial Black', sans-serif;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+	.ticker em {
+		font-style: normal;
+		font-weight: 900;
+		color: #fde68a;
+	}
+	.tsub {
+		color: #cbd5e1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.leave {
+		position: absolute;
+		top: 14px;
+		right: 14px;
+		padding: 6px 14px;
+		background: #dc2626;
+		color: #fff;
+		box-shadow: 0 3px 0 #7f1d1d;
+		font-size: 0.85rem;
+	}
+	/* The shot bar's perfect band: right in the middle of the green. */
+	.perfect {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		background: #15803d;
+		box-shadow: 0 0 6px #22c55e;
+	}
+	/* The crowned ball behind the menu logo. */
+	.logo-wrap {
+		position: relative;
+	}
+	.crest {
+		position: absolute;
+		left: 62%;
+		top: -70px;
+		width: 130px;
+		height: auto;
+		opacity: 0.9;
+		filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.5));
+		z-index: 0;
+		transform: rotate(10deg);
+	}
+	.logo,
+	.sub {
+		position: relative;
+		z-index: 1;
+	}
+	.sheet-btns {
+		display: none;
+		gap: 4px;
+	}
+	@media (max-width: 720px) {
+		.board {
+			top: 8px;
+		}
+		.side {
+			padding: 4px 8px;
+			gap: 6px;
+		}
+		.pts {
+			font-size: 1.5rem;
+		}
+		.nm {
+			max-width: 70px;
+			font-size: 0.65rem;
+		}
+		.handtag {
+			top: 56px;
+		}
+		.ticker {
+			top: 78px;
+			font-size: 0.7rem;
+			padding: 2px 10px;
+		}
+		.ticker b {
+			font-size: 0.78rem;
+		}
+		.tsub {
+			display: none;
+		}
+		/* Leave sits below the scoreboard on phones, out of its way. */
+		.leave {
+			top: auto;
+			bottom: 12px;
+			right: 12px;
+		}
+		/* Menus: a bottom sheet over half the screen, which can be minimised or maximised. */
+		.panel {
+			top: auto !important;
+			left: 0 !important;
+			right: 0 !important;
+			bottom: 0 !important;
+			width: auto !important;
+			height: 50%;
+			border-radius: 18px 18px 0 0;
+			transition: height 0.25s ease;
+		}
+		.panel.sheetmax {
+			height: 90%;
+		}
+		.panel.sheetmin {
+			height: 58px;
+			overflow: hidden;
+		}
+		.sheet-btns {
+			display: inline-flex;
+		}
+		.panel header {
+			gap: 6px;
+		}
+		.panel header h2 {
+			flex: 1;
+		}
+		.crest {
+			width: 110px;
+			top: -30px;
+		}
+	}
 	/* Pop-up cards: what just happened, with the shot's grade and make chance. */
 	.pop {
 		position: absolute;
@@ -1493,9 +1777,6 @@
 		font: 900 2.6rem ui-monospace, monospace;
 		letter-spacing: 0.2em;
 		color: #fb923c;
-	}
-	.mid em.low {
-		color: #f87171;
 	}
 	.checkup {
 		position: relative;

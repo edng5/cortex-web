@@ -25,7 +25,8 @@
 	import { NODE_TYPES, type NodeType } from '$lib/types';
 	import { rankBySize } from '$lib/graph-rank';
 	import { onMount } from 'svelte';
-	import { afterNavigate, replaceState } from '$app/navigation';
+	import { afterNavigate, pushState, replaceState } from '$app/navigation';
+	import { gameById } from '$lib/games/registry';
 
 	let { data } = $props();
 
@@ -54,6 +55,47 @@
 		if (graph.nodes.some((n) => n.id === id)) cortex.select(id);
 		setTimeout(() => replaceState(location.pathname, {}));
 	});
+	// E.Ngine Games has its own addresses: /games is the games menu, /games/<id> a game (e.g.
+	// /games/checkup). Landing on one opens the pop-up there; opening, playing and closing games
+	// keeps the address in step (and Back / Forward move between them).
+	const gamesPath = () => (!session.gameOpen ? null : session.gameId ? `/games/${session.gameId}` : '/games');
+	function openFromPath(path: string) {
+		const m = path.match(/^\/games(?:\/([\w-]+))?\/?$/);
+		if (m) {
+			const id = m[1] && gameById(m[1]) ? m[1] : null;
+			if (!session.gameOpen || session.gameId != id) {
+				session.gameId = id;
+				// Leaving a game from a games address goes back to the menu.
+				session.gamesFromHeader = true;
+				session.gameOpen = true;
+			}
+		} else if (session.gameOpen) session.gameOpen = false;
+	}
+	let routerReady = false;
+	afterNavigate(() => {
+		routerReady = true;
+		openFromPath(location.pathname);
+	});
+	onMount(() => {
+		const onPop = () => setTimeout(() => openFromPath(location.pathname));
+		addEventListener('popstate', onPop);
+		return () => removeEventListener('popstate', onPop);
+	});
+	// Only push an address when the games pop-up itself changes (not when Back / Forward moved the
+	// address: then openFromPath brings the pop-up in line instead).
+	let lastWant: string | null | undefined;
+	$effect(() => {
+		const want = gamesPath();
+		if (!routerReady || want === lastWant) {
+			lastWant = want;
+			return;
+		}
+		lastWant = want;
+		const here = location.pathname;
+		if (want && want != here) pushState(want, {});
+		else if (!want && here.startsWith('/games')) pushState('/', {});
+	});
+
 	// Background music dips while Cortex talks, and while it listens (so the mic hears the question, not the music).
 	$effect(() => {
 		ambient.duck('cortex', cortex.mode === 'speaking' || cortex.mode === 'listening');

@@ -15,7 +15,8 @@ export type MotionEvent =
 	| { type: 'cancel' }
 	| { type: 'shot'; take: ShotTake }
 	| { type: 'pumpfake' }
-	| { type: 'move'; move: MoveName }
+	/** A dribble move; a crossover says which way the ball went (toward your left or right hand). */
+	| { type: 'move'; move: MoveName; to?: 'left' | 'right' }
 	| { type: 'jump' }
 	| { type: 'triple' }
 	| { type: 'stepback' };
@@ -106,7 +107,9 @@ export class Motion {
 		// Lean (smoothed; the depth estimate is noisy), with a dead zone so standing tall is still.
 		this.leanEma += (b.lean - base.lean - this.leanEma) * 0.18;
 		const lean = this.leanEma;
-		s.lean = Math.abs(lean) < 0.12 ? 0 : Math.max(-1, Math.min(1, (lean - Math.sign(lean) * 0.12) / 0.45));
+		if (Math.abs(lean) < 0.4) base.lean += (b.lean - base.lean) * 0.004;
+		const DEAD = 0.22;
+		s.lean = Math.abs(lean) < DEAD ? 0 : Math.max(-1, Math.min(1, (lean - Math.sign(lean) * DEAD) / 0.45));
 		// Step-back: a sudden lean back, or a quick hop away from the camera (you look smaller fast).
 		this.recent.push({ t, lean: s.lean, sw: b.sw });
 		while (this.recent.length && this.recent[0].t < t - 320) this.recent.shift();
@@ -184,7 +187,8 @@ export class Motion {
 		if (minX < -0.45 && maxX > 0.45) {
 			const iMin = recent.findIndex((h) => h.x == minX);
 			const iMax = recent.findIndex((h) => h.x == maxX);
-			if (Math.abs(iMin - iMax) >= 2) return this.fire('crossover', t);
+			// Which way it went: from the left side to the right (to your right hand), or the reverse.
+			if (Math.abs(iMin - iMax) >= 2) return this.fire('crossover', t, iMin < iMax ? 'right' : 'left');
 		}
 		// In-and-out: out to one side, in toward the middle, back out — all on the same side.
 		for (const side of [1, -1]) {
@@ -197,8 +201,8 @@ export class Motion {
 			if (out2 > 0) return this.fire('inout', t);
 		}
 	}
-	private fire(move: MoveName, t: number) {
-		this.events.push({ type: 'move', move });
+	private fire(move: MoveName, t: number, to?: 'left' | 'right') {
+		this.events.push({ type: 'move', move, ...(to ? { to } : {}) });
 		this.moveCool = t + 650;
 		this.hands = [];
 	}
