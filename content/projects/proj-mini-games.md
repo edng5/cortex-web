@@ -68,9 +68,8 @@ your account: changes are pushed every few seconds and when you leave, and pulle
 regains focus or comes back online. Conflicts are handled with **optimistic concurrency**: every
 save carries the version of the account copy it was based on, and the server refuses a write from
 a stale copy and sends back the newer one, so an old tab can't overwrite progress you made on your
-phone. Saves are size-capped, a copy is put aside once a day before it's replaced (the two newest
-are kept, with a rollback script), and a save made while signed out never overwrites an account's
-progress just for being newer.
+phone. Saves are validated and size-capped on the server, backed up, and a save made while signed
+out never overwrites an account's progress just for being newer.
 
 ### Multiplayer
 Online games use rooms with 6-digit codes or a ranked matchmaking queue. Each player keeps a
@@ -79,24 +78,21 @@ over ordinary HTTPS with no extra ports. Turn-based games (Chess, Four in a Row)
 **server-authoritative**: the server validates every move with the same rules module the browser
 uses and keeps the clocks. Real-time games (Fishy, Check-up) are **host-authoritative**: the host's
 browser runs the simulation and streams state snapshots, the guest sends inputs, and the server
-only relays between the room's two players. Ratings use Elo (K = 32), and a player who drops out
-has 45 seconds to reconnect.
+only relays between the room's two players. Ratings use Elo, and a player who drops out has a
+short grace period to reconnect.
 
 ### Security
-- **Sign-in** is passwordless: Google OAuth 2.0 with PKCE, or a one-time email code (stored as an
-  HMAC, single use, 10-minute expiry, with attempt limits so it can't be brute-forced).
-- **Sessions** are 32 random bytes in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie; the database
-  stores only a SHA-256 hash of the token, so a leaked database can't be replayed as live logins.
-- **Personal data** like emails is encrypted at rest with AES-256-GCM and looked up through an HMAC
-  blind index; public leaderboards show a nickname or a masked email.
-- **The server never trusts the client**: every room action is checked against the player's
-  session, only a room's two players can read or post to it, chess and Four in a Row moves are
-  rule-checked, scores past an impossible ceiling are rejected, and room creation, joining and
-  the FishMart market are rate-limited per account.
-- **Nicknames** are filtered for slurs and profanity, including spellings with numbers and symbols.
-- **Headers**: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and a strict referrer
-  policy on every response. Check-up's camera never leaves your device: only a few numbers
-  describing your pose are sent in online games.
+- **Passwordless sign-in** (Google OAuth or a one-time email code), so there are no passwords to
+  leak. Sessions live in an `HttpOnly`, `Secure` cookie, and only a hash of each session token is
+  stored, so even a copy of the database couldn't be used to log in as anyone.
+- **Personal data** like emails is encrypted at rest; public leaderboards show a nickname or a
+  masked email.
+- **The server never trusts the client**: every request is checked against the player's session,
+  only a room's two players can see or act in it, turn-based moves are rule-checked on the server,
+  impossible scores are rejected, and sensitive actions are rate-limited.
+- **Nicknames** are filtered for slurs and profanity, including disguised spellings.
+- **Privacy**: Check-up's camera never leaves your device; online games send only a few numbers
+  describing your pose.
 
 <!-- /details -->
 
@@ -117,12 +113,25 @@ mission has its own leaderboard.
 - On phones: a joystick to fly, with Fire, Missile, Roll and Pause buttons.
 
 ### How it was made
-Edward's high-school Java (Swing) game, ported line for line to TypeScript and a canvas, quirks
-and all. Instead of a 3D engine, the sense of flying toward the enemy comes from depth and
-perspective, an art concept Edward learned in Grade 6. Enemy jets start as tiny specks near the centre of the
-screen, where the horizon is, then grow larger as they slide out toward the edges, so they seem to
-rush at you, the way things look closer the bigger they are and the further they are from the
-vanishing point.
+Edward's high-school Java (Swing) game, ported line for line to TypeScript on an HTML5 `<canvas>`,
+quirks and all. The port keeps the original's architecture: the same entity classes (jets,
+ships, bullets, missiles, the base), the same fixed-tick `run()` loop with the same update order,
+and Java's integer arithmetic (an `idiv` helper truncates like Java's `/`), so even hit boxes that
+update a tick late behave exactly as they did. Swing's `paint()` calls map onto Canvas 2D draw
+calls, and the menus were redrawn as clickable / tappable buttons that each call the Java menu
+action they replace.
+
+There's no 3D engine. The sense of flying at the enemy is depth and perspective, an art concept
+Edward learned in Grade 6: enemy jets spawn as tiny specks at the vanishing point near the centre
+of the screen (the horizon) and scale up as they slide out toward the edges, so they seem to rush
+at you, the way things look closer the bigger they are and the further they are from the vanishing
+point.
+
+Around the original: the render loop pauses itself when the game is off screen (an
+`IntersectionObserver` plus `visibilitychange`, capped at 60 fps on high-refresh displays), the
+soundtrack and effects are synthesized live with the Web Audio API (oscillators and filtered
+noise driven by a small step sequencer, so there are no audio files), progress is a JSON save in
+`localStorage` that syncs to your account, and scores post to per-mission global leaderboards.
 
 <!-- /details -->
 
@@ -143,10 +152,20 @@ multiplayer, eat the other player to win. Each difficulty has a leaderboard.
 - On phones: a joystick (two in multiplayer).
 
 ### How it was made
-A port of Edward's Java game, with a few fixes: collisions are pixel-perfect (two fish only touch
-where both sprites have solid pixels), a bigger fish only eats you with its mouth, and there's a
-moment of safety after losing a life. Online games run in the host's browser, which sends the
-other player where everyone is several times a second.
+A port of Edward's Java game to TypeScript and Canvas 2D, with a few fixes. Collisions are
+pixel-perfect: each sprite gets a precomputed alpha mask, and two fish only touch where both masks
+have solid pixels in the overlap of their bounding boxes (the Java version compared box corners).
+A bigger fish only eats you with its mouth (a hit region at the front of its sprite), and there's
+a moment of invulnerability after you respawn.
+
+Online play uses a **host-authoritative** model over the site's room service. The player who
+creates the room is the host and runs the whole simulation in their browser; the guest only sends
+their input (direction vectors), and the host broadcasts a compact state snapshot (every fish's
+position, size and facing) about 25 times a second. The guest's screen interpolates toward each
+snapshot, so movement stays smooth between packets. The transport is plain HTTPS: each player holds
+a **Server-Sent Events** stream open to receive messages and sends theirs as `POST`s, which the
+server relays only between the room's two authenticated players (it never simulates Fishy itself).
+When the game ends, the server records the result and updates both players' Elo ratings.
 
 <!-- /details -->
 
@@ -164,8 +183,13 @@ Clear each wave before it reaches you. Normal is the classic; Hard adds bosses (
 - On phones: arrow buttons and Fire.
 
 ### How it was made
-A port of Edward's Java game and its classes, logic kept as written. The menus were redrawn, and
-the original's "Shields Down" switch became a difficulty of its own, so it gets a leaderboard.
+A port of Edward's Java game and its classes (the ship, the invaders, bunkers, the mothership, the
+bosses and bullets), logic kept as written. Each entity is an object with a position, a size and a
+per-tick velocity (`x_speed`, `y_speed`), updated in a fixed-step loop on Canvas 2D, and hits are
+axis-aligned bounding-box (AABB) overlap tests, exactly as the Java did them. The menus were
+redrawn, and the original's "Shields Down" switch became a difficulty of its own, so it gets its own
+leaderboard. Scores are checked against a ceiling on the server (anything impossible is rejected)
+before they reach the global boards.
 
 <!-- /details -->
 
@@ -185,9 +209,21 @@ through roads, railways and rivers.
 - On phones: tap to hop forward, swipe to turn.
 
 ### How it was made
-Rebuilt in TypeScript from the pygame original. Endless mode generates rows as you go and speeds
-up the further you get. The "voxel" look is drawn by hand on a canvas: every car, log, train and
-character is built from little blocks, each drawn with a lit top and a shaded front.
+Rebuilt in TypeScript from the pygame original (FroggerV15). Classic mode keeps the original
+lanes, timer and lily pads. Endless mode is **procedurally generated**: rows (grass, roads,
+railways, rivers of logs or lily pads) are produced from weighted rules a screen ahead of you and
+recycled behind you, with spawn rates and speeds that scale with distance, and the camera creeps
+forward so idling gets you caught.
+
+The 3D "voxel" look doesn't use WebGL: it's a small software renderer on Canvas 2D (shared with
+FishMart). Every car, log, train, tree and character is a model made of boxes in tile units, each
+painted with a lit top face and a darker front face. Models are depth-sorted (painter's algorithm:
+farther and lower boxes first), and the world draws the ground back to front, then everything
+standing on it back to front, so nearer things correctly cover farther ones. Movement is
+tile-based: each hop tweens the character from one tile to the next, while cars, trains and
+logs move continuously in pixels per second, and anything riding a log is carried with it. The
+gumball machine always rolls a character you don't have yet, with fixed odds for a rare hidden
+one; coins, characters and best runs sync to your account.
 
 <!-- /details -->
 
@@ -205,8 +241,11 @@ the bricks, catching power-ups as they fall. Each game has a leaderboard.
 - On phones: arrow buttons in the middle, with Serve beside them.
 
 ### How it was made
-A port of Edward's Java game, quirks included. Even the menu buttons keep their original hit
-boxes, shifted by the Java window's title bar and border.
+A port of Edward's Java game, quirks included. Even the menu buttons keep their original hit boxes,
+shifted by the Java window's title bar and border (the original measured clicks in window
+coordinates). Pong's ball reflects off the paddle at an angle based on where it hits, and speeds up
+with the rally; Brick Breaker resolves ball-brick collisions per axis so the ball bounces off the
+correct face. Both run in a single Canvas 2D loop that stops drawing when the game isn't visible.
 
 <!-- /details -->
 
@@ -228,8 +267,18 @@ other players.
 Click or tap; everything is menus and panels.
 
 ### How it was made
-Made for the site, as Svelte components rather than a canvas game. Timed tasks keep running
-while you're away, and progress syncs to your account.
+Made for the site as a set of Svelte 5 components (runes for reactive state) rather than a canvas
+game: the store floor, tanks, fishing and market are UI, with the fish themselves drawn
+procedurally from body plans (fin, tail and pattern parameters per species) so hundreds of
+species need no image files.
+
+The simulation is **timestamp-based**: every timed thing (a staff task, a breeding pair, dirty
+water, a hungry centrepiece) stores when it started, and an `advance()` step replays everything
+that would have happened while the game was closed, so the shop keeps running while you're away.
+Breeding rolls albinos, hybrids and mythics from odds tables. Saves sync to your account with
+conflict handling, so an old tab can't overwrite newer progress from another device. The Market
+is server-side: a listed fish is held by the server, and a sale transfers it to the buyer at once
+while the payment waits for the seller to collect it.
 
 <!-- /details -->
 
@@ -250,8 +299,17 @@ stump the computer.
 
 ### How it was made
 Edward's original I Spy was Python and OpenCV: the computer guessed an object from its colour.
-This version turns it round into an arcade game. The six scenes (bedroom, garden, ocean, space,
-kitchen, jungle) are drawn in code, with things placed where they belong, differently every game.
+This version turns it round into an arcade game.
+
+The six scenes (bedroom, garden, ocean, space, kitchen, jungle) are drawn entirely in code on
+Canvas 2D: no image assets. Each scene defines **spots**: regions where things belong (books on
+shelves, fruit on the counter, frogs in the pond), resting on a ground line or floating (sky,
+water, space), with a depth factor so objects further back are drawn smaller and placement reads as
+a real scene. Every game procedurally re-rolls which objects appear, where, and the clues (colour,
+category, "something green you can eat"), with lookalikes added at higher levels. Clicks are
+hit-tested against the placed objects, and the combo and timer run in the game loop.
+"Stump the Computer" flips the roles: you pick a colour, and the computer makes up to three guesses
+from the objects in the scene that match it.
 
 <!-- /details -->
 
@@ -270,8 +328,13 @@ pieces fall faster. Clearing more rows at once scores more. On the global leader
 - On phones: arrow buttons, Rotate and Drop.
 
 ### How it was made
-An original game for the site. Pieces come from a shuffled bag of all seven, so you never wait
-long for the one you need.
+An original game for the site, on Canvas 2D. Pieces come from a **7-bag randomizer**: all seven
+shapes are shuffled (Fisher–Yates) into a bag and dealt in order, so you never wait long for the
+one you need. The well is a 10 × 20 grid of cells; a move or rotation is accepted only if the
+piece's cells land inside the grid on empty squares, and rotations try small offsets ("kicks")
+off walls and the floor. Gravity speeds up every 10 lines and scoring rewards clearing more rows at
+once. Scores past a ceiling no real game could reach are rejected by the server before they reach
+the leaderboard.
 
 <!-- /details -->
 
@@ -290,9 +353,19 @@ room code.
 Click or tap a piece, then where it goes (or the column to drop in).
 
 ### How it was made
-Both games' rules run on the server, which checks every move and keeps the clocks, so ratings
-can't be cheated. The chess rules were checked against known move counts for test positions.
-Players get live updates over the site's connection, and ratings move like chess Elo.
+Both games are **server-authoritative**. The rules live in a dependency-free TypeScript module
+shared by the browser (to highlight legal moves) and the server (which checks every online move),
+so a modified client can't make an illegal move or cheat its way up the ratings. Chess generates
+pseudo-legal moves per piece on a 64-square board, then filters out any that leave your own king in
+check; castling, en passant, promotion, threefold repetition, the fifty-move rule and insufficient
+material are all handled. The move generator was verified with **perft** counts (the number of
+legal positions a few moves deep from known test positions).
+
+Rooms live in the Node server's memory. Each player opens a **Server-Sent Events** stream for
+updates and sends moves as authenticated `POST`s; the server validates each one, runs the chess
+clock itself (so lag can't steal time), and pushes the new position to both players. Ranked games
+pair players from a matchmaking queue and update an Elo rating; a player who disconnects
+mid-game has a short grace period to come back before it counts as a loss.
 
 <!-- /details -->
 
@@ -319,10 +392,46 @@ No buttons, just your body:
 - On defense, lean to step up or sag off, slide sideways, and jump with his release to block.
 
 ### How it was made
-The camera runs MediaPipe's pose model in the browser; no video is saved or sent. Each frame
-becomes a few numbers (arm and knee bends, how high the hands are, the lean), and shots are judged
-against your own recorded template, a few hundred bytes of timing and motion. The voxel park is
-three.js, the opponents' trash talk is read in the Cortex voice, and online games send only those
-few numbers, never video.
+**Pose tracking.** The webcam feed goes through Google's MediaPipe Pose Landmarker (the "lite"
+model, running on WebAssembly with GPU delegation) entirely in the browser; no video is stored or
+sent. Each frame yields 33 body landmarks, which are reduced to a small, scale-invariant feature
+vector measured in shoulder widths: each wrist's height relative to its shoulder, elbow and knee
+angles, hip height, hand spread, and a forward lean from the landmarks' depth estimates.
+
+**Gesture recognition.** A motion layer turns that stream into game input with hand-written
+detectors on short rolling windows: lean (smoothed with an exponential moving average, a dead
+zone, and a slowly re-centring baseline), side steps against a calibrated stance, jumps (hips
+rising fast against a slow-moving average), crossovers (the hands crossing the body inside 450 ms,
+direction from the order of the extremes), spins (the shoulders narrowing as you turn side-on),
+step-backs, running in place (counting alternating knee or arm swaps per second), pounding the
+dribble (the low hand oscillating), and steal swipes (a wrist sweeping across the body fast).
+Shots are matched against your own recorded template using **dynamic time warping** (DTW) for form,
+and the release time against your recorded timing: a few hundred bytes saved locally.
+
+**Rendering.** The park is three.js (WebGL): a voxel world drawn with instanced cube meshes
+batched by colour (one draw call per colour instead of one per block), with shadow maps,
+lighting that switches to night games under floodlights, a crowd that grows as you climb the
+ladder (and raises arms, holds up "3" cards, groans, and throws confetti made from a particle
+system), and players rigged as simple joint hierarchies. Your player copies your pose, with
+clamped joint limits so tracking noise can't twist a limb; the computer plays keyframed
+animations eased with smoothstep. The camera eases between gameplay views and cut-scene shots.
+
+**Game logic and AI.** The game runs in a fixed update with each opponent defined by a few ratings
+and a play style (pull-up shooter, slasher, dunker, deep range). The CPU defender predicts your
+path to the rim and reacts with a delay that shrinks with its defense rating; the CPU ball handler
+runs a small state machine (size up, drive, step back, shoot, dribble move) that reads your
+position. Outcomes are probabilistic, weighting your attributes, the contest, and timing.
+
+**Multiplayer.** Online games reuse the room service (SSE down, `POST` up, relayed by the server
+between two authenticated players) with a **host-authoritative** design: the host's browser runs
+the simulation, the guest streams compact inputs (lean, side step, ball hand, running and dribble
+state, and quantized joint angles for the avatar) about 15 times a second, and the host broadcasts
+positions, score and events about 12 times a second. Discrete events like shots, moves and steals
+are sent once each, and the guest interpolates positions between snapshots. Only those numbers
+cross the network, never video.
+
+**Audio and voice.** The soundtracks and every effect (swishes, the crowd, air horns) are
+synthesized with the Web Audio API, and opponents' trash talk and the cut scenes are read aloud in
+the Cortex voice, choosing from a pool of lines so they don't repeat.
 
 <!-- /details -->
