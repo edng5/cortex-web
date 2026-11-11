@@ -18,6 +18,10 @@ export interface GameUiProps {
 export interface TouchSpec {
 	/** The joystick (W/A/S/D): h = left/right only, 4 = one direction at a time, 8 = any. */
 	stick?: 'h' | '4' | '8';
+	/** Arrow buttons (held like keys) instead of the joystick, left to right. */
+	arrows?: ('left' | 'down' | 'up' | 'right')[];
+	/** A bigger joystick (or two). */
+	bigStick?: boolean;
 	/** Crossy Road style instead of a joystick: tap to go forward (W), swipe to go that way. */
 	gesture?: boolean;
 	/** A second joystick on the right sending the arrow keys (Fishy's player 2). */
@@ -86,6 +90,7 @@ export const GAMES: GameSpec[] = [
 		],
 		touch: {
 			stick: '8',
+			bigStick: true,
 			// Missile and Roll appear once those upgrades are bought.
 			buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Roll', code: 'Roll' }, { label: 'Missile', code: 'ShiftLeft' }, { label: 'Fire', code: 'Space', big: true }]
 		},
@@ -113,7 +118,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'pause / play again' },
 			MOUSE
 		],
-		touch: { stick: '8', stick2: true, landscape: true, buttons: [{ label: 'Pause', code: 'Enter' }] },
+		touch: { stick: '8', stick2: true, bigStick: true, landscape: true, buttons: [{ label: 'Pause', code: 'Enter' }] },
 		boards: { 1: 'Easy', 2: 'Medium', 3: 'Hard' },
 		load: async () => {
 			const m = await import('./fishy/Fishy');
@@ -138,7 +143,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'pause' },
 			MOUSE
 		],
-		touch: { stick: 'h', buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Fire', code: 'Space', big: true }] },
+		touch: { arrows: ['left', 'right'], buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Fire', code: 'Space', big: true }] },
 		boards: { 1: 'Normal', 2: 'Hard', 3: 'No shields' },
 		load: async () => {
 			const m = await import('./spaceinvaders/SpaceInvaders');
@@ -187,7 +192,7 @@ export const GAMES: GameSpec[] = [
 			{ keys: ['Enter'], label: 'menu after game over' },
 			MOUSE
 		],
-		touch: { stick: 'h', center: true, buttons: [{ label: 'Serve', code: 'Space', big: true }] },
+		touch: { arrows: ['left', 'right'], center: true, buttons: [{ label: 'Serve', code: 'Space', big: true }] },
 		boards: { 1: 'Pong', 2: 'Brick Breaker' },
 		load: async () => {
 			const m = await import('./pong/Pong');
@@ -290,7 +295,7 @@ export const GAMES: GameSpec[] = [
 			MOUSE
 		],
 		touch: {
-			stick: '4',
+			arrows: ['left', 'down', 'right'],
 			buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Rotate', code: 'KeyW' }, { label: 'Drop', code: 'Space', big: true }]
 		},
 		boards: { 1: 'Score' },

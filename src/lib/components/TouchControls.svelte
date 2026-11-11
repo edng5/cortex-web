@@ -1,5 +1,6 @@
 <!--
-  On-screen controls for the E.Ngine Games on touch screens: a translucent joystick (W/A/S/D),
+  On-screen controls for the E.Ngine Games on touch screens: a translucent joystick (W/A/S/D) or
+  arrow buttons,
   an optional second one (arrow keys, for Fishy's player 2) and the game's buttons. Or, for
   `gesture` games (Frogger), Crossy Road style: tap anywhere to go forward, swipe to go that way.
   They send the same key presses the keyboard would, so the games don't need to know about touch.
@@ -131,6 +132,8 @@
 		};
 	}
 
+	const ARROW_GLYPH = { left: '◀', right: '▶', up: '▲', down: '▼' } as const;
+
 	/** A button: held while touched. */
 	function button(el: HTMLElement, code: string) {
 		let pointer: number | null = null;
@@ -172,8 +175,14 @@
 	</div>
 {/if}
 <div class="touch" class:center={spec.center} aria-hidden="true">
-	{#if spec.stick}
-		<div class="pad stick" use:stick={{ keys: WASD, mode: spec.stick, repeat: spec.repeat }}>
+	{#if spec.arrows}
+		<div class="arrows">
+			{#each spec.arrows as d (d)}
+				<div class="btn arrow" use:button={WASD[d]} aria-label={d}>{ARROW_GLYPH[d]}</div>
+			{/each}
+		</div>
+	{:else if spec.stick}
+		<div class="pad stick" class:big={spec.bigStick} use:stick={{ keys: WASD, mode: spec.stick, repeat: spec.repeat }}>
 			<div class="knob"></div>
 			{#if spec.stick2}<span class="tag">P1</span>{/if}
 		</div>
@@ -185,7 +194,7 @@
 			<div class="btn" class:big={b.big} class:off={disabled.includes(b.code)} use:button={b.code}>{b.label}</div>
 		{/each}
 		{#if spec.stick2}
-			<div class="pad stick small" use:stick={{ keys: ARROWS, mode: '8' }}>
+			<div class="pad stick small" class:big={spec.bigStick} use:stick={{ keys: ARROWS, mode: '8' }}>
 				<div class="knob"></div>
 				<span class="tag">P2</span>
 			</div>
@@ -213,7 +222,8 @@
 		display: grid;
 		grid-template-columns: 1fr auto 1fr;
 	}
-	.touch.center .stick {
+	.touch.center .stick,
+	.touch.center .arrows {
 		grid-column: 2;
 	}
 	.touch.center .right {
@@ -274,6 +284,27 @@
 		width: 108px;
 		height: 108px;
 	}
+	/* Bigger joysticks (Top Gun, Fishy). */
+	.stick.big {
+		width: 168px;
+		height: 168px;
+	}
+	.stick.big .knob {
+		width: 68px;
+		height: 68px;
+	}
+	/* Arrow buttons instead of a joystick (Space Invaders, Pong, Block Drop). */
+	.arrows {
+		display: flex;
+		gap: 12px;
+		pointer-events: none;
+	}
+	.btn.arrow {
+		width: 74px;
+		height: 74px;
+		border-radius: 18px;
+		font-size: 1.5rem;
+	}
 	.knob {
 		width: 52px;
 		height: 52px;
@@ -327,6 +358,14 @@
 		.stick {
 			width: 108px;
 			height: 108px;
+		}
+		.stick.big {
+			width: 144px;
+			height: 144px;
+		}
+		.btn.arrow {
+			width: 64px;
+			height: 64px;
 		}
 		.btn {
 			width: 56px;
