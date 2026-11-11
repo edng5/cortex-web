@@ -1,7 +1,7 @@
 ---
 title: "E.Ngine Games"
-subtitle: "Top Gun · Fishy · Space Invaders · Frogger · Pong × Brick Breaker · FishMart · I Spy"
-summary: "E.Ngine Games: six games playable on the site. Five are Edward's high-school games (Top Gun, Fishy, Space Invaders, Frogger and Pong × Brick Breaker), ported to TypeScript with global leaderboards, plus FishMart, a new fish-store sim."
+subtitle: "Top Gun · Fishy · Space Invaders · Frogger · Pong × Brick Breaker · iSpy · FishMart · Chess · Four in a Row · Block Drop"
+summary: "E.Ngine Games: ten games playable on the site. Six are Edward's high-school games (Top Gun, Fishy, Space Invaders, Frogger, Pong × Brick Breaker and iSpy), ported to TypeScript, plus FishMart, Block Drop, and online Chess and Four in a Row."
 tags: [game-development, java, typescript, python, pygame, games, high-school, simulation, how-to-play]
 weight: 2
 icon: /games/engine-icon.png
@@ -28,13 +28,16 @@ related: [int-video-games, edu-john-cabot]
 <!-- play: engine -->
 
 ## E.Ngine Games
-Six games playable right here (the PLAY button in the header, or this node's Play button). Five
-are Edward's high-school Java and Python games, ported to TypeScript with their original art and
-gameplay; FishMart is new. Each has its own soundtrack.
+Ten games playable right here (the PLAY button in the header, or this node's Play button). Six
+are Edward's high-school and university Java and Python games, ported to TypeScript; FishMart,
+Block Drop, Chess and Four in a Row are new. Each has its own soundtrack.
 
 - **Controls:** W, A, S and D on a computer; an on-screen joystick and buttons on phones.
 - **Leaderboards:** signed-in players get global all-time and monthly boards for each game.
 - **Saves:** progress is synced to your account, so it's the same on phone and computer.
+- **Online:** Chess, Four in a Row and Fishy's multiplayer are played against a friend with a
+  6-digit room code (logged-in players only). Each player has a private rating (MMR) that rises
+  and falls with wins and losses.
 
 ## ![](/images/mini-games/top-gun.jpg) Top Gun
 A flight-combat game across three missions (fighter jets, ships, then an army base), earning money
@@ -84,6 +87,20 @@ rarities, from Common to Mythic. The store keeps running while you're away.
 - **Fishing:** keep the bar on the fish until the catch meter fills.
 - **Market:** trade fish with other players and visit their stores in the global showcase.
 
-## ![](/images/mini-games/i-spy.jpg) I Spy
-The classic I Spy: you pick an object of a colour and the computer guesses it. Not playable on
-the site; the code is on GitHub.
+## ![](/images/mini-games/i-spy.jpg) iSpy
+Edward's I Spy (Python and OpenCV: the computer guessed an object from its colour), made into an
+arcade game.
+
+- **Seek & Find:** "I spy with my little eye, something red…": click a match in a busy scene
+  before time runs out. Quick finds build a combo; later levels add lookalikes and clues like
+  "something green you can eat".
+- **Stump the Computer:** think of something in the scene, say its colour, and the computer gets
+  three guesses.
+
+## ![](/games/icons/blockdrop.png) Block Drop
+An original falling-block puzzle game: fill rows to clear them; every 10 rows the level goes up
+and the pieces fall faster. On the global leaderboards.
+
+## ![](/games/icons/chess.png) Chess and Four in a Row
+Played online against a friend with a room code. The server checks every move, so ratings can't
+be cheated. Pick a board theme; resign, offer a draw (chess) or ask for a rematch.

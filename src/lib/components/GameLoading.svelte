@@ -1,7 +1,9 @@
 <!--
   The loading screen for one E.Ngine game, themed on the game: Top Gun's jet streaks across the
   sky, Fishy's fish swims through rising bubbles, a Space Invader marches over the stars, Frogger's
-  frog hops across the lanes, Pong's ball rallies between the paddles, and FishMart opens up shop.
+  frog hops across the lanes, Pong's ball rallies between the paddles, FishMart opens up shop,
+  Block Drop's pieces fall into the well, a knight hops across the chess board, Four in a Row's
+  discs drop in, and iSpy's magnifying glass searches a scene.
 -->
 <script lang="ts">
 	import type { GameSpec } from '$lib/games/registry';
@@ -14,7 +16,11 @@
 		spaceinvaders: 'Incoming wave',
 		frogger: 'Looking both ways',
 		pong: 'Serving',
-		ifish: 'Opening the store'
+		ifish: 'Opening the store',
+		blockdrop: 'Stacking the blocks',
+		chess: 'Setting up the board',
+		fourrow: 'Polishing the discs',
+		ispy: 'Hiding things'
 	};
 </script>
 
@@ -43,6 +49,24 @@
 			<span class="shop"><img src={spec.icon} alt="" /></span>
 			<span class="open">OPEN</span>
 			<span class="swimmer"></span>
+		{:else if spec.id === 'blockdrop'}
+			<span class="well"></span>
+			{#each [['#3ee0ff', 0], ['#c46bff', 0.6], ['#ffd23e', 1.2], ['#5cf28a', 1.8]] as [c, d], i (i)}
+				<span class="piece p{i}" style="--c: {c}; animation-delay: {d}s"></span>
+			{/each}
+		{:else if spec.id === 'chess'}
+			<span class="squares"></span>
+			<span class="knight">♞&#xFE0E;</span>
+		{:else if spec.id === 'fourrow'}
+			<span class="grid4"></span>
+			{#each [0, 1, 2, 3] as i (i)}
+				<span class="disc4 d{i}" style="animation-delay: {i * 0.45}s"></span>
+			{/each}
+		{:else if spec.id === 'ispy'}
+			{#each [['#f87171', 18, 30], ['#60a5fa', 46, 62], ['#4ade80', 72, 24], ['#facc15', 30, 70], ['#c084fc', 84, 66]] as [c, x, y], i (i)}
+				<span class="thing" style="--c: {c}; left: {x}%; top: {y}%"></span>
+			{/each}
+			<span class="lens"></span>
 		{:else}
 			<span class="paddle left"></span>
 			<span class="paddle right"></span>
@@ -425,5 +449,147 @@
 		to {
 			top: 104px;
 		}
+	}
+
+	/* Block Drop: pieces fall into the well and settle. */
+	.blockdrop {
+		background: radial-gradient(ellipse at 50% 40%, #2a1462, #07030f 75%);
+	}
+	.blockdrop .scene {
+		background: #0b0720;
+	}
+	.well {
+		position: absolute;
+		left: 50%;
+		top: 6px;
+		bottom: 6px;
+		width: 120px;
+		margin-left: -60px;
+		border: 2px solid #c46bff;
+		border-top: none;
+		border-radius: 0 0 8px 8px;
+	}
+	.piece {
+		position: absolute;
+		top: -30px;
+		width: 36px;
+		height: 18px;
+		border-radius: 4px;
+		background: var(--c);
+		box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.3);
+		animation: drop 2.4s cubic-bezier(0.5, 0, 1, 1) infinite;
+	}
+	.p0 { left: calc(50% - 56px); --to: 100px; }
+	.p1 { left: calc(50% - 18px); --to: 100px; }
+	.p2 { left: calc(50% + 20px); --to: 100px; }
+	.p3 { left: calc(50% - 37px); --to: 82px; }
+	@keyframes drop {
+		0% { transform: translateY(0); opacity: 1; }
+		40%, 85% { transform: translateY(var(--to)); opacity: 1; }
+		100% { transform: translateY(var(--to)); opacity: 0; }
+	}
+
+	/* Chess: a knight hops across the board. */
+	.chess {
+		background: radial-gradient(ellipse at 50% 40%, #4a3520, #0e0905 75%);
+	}
+	.squares {
+		position: absolute;
+		inset: 0;
+		background: conic-gradient(#b58863 25%, #f0d9b5 0 50%, #b58863 0 75%, #f0d9b5 0) 0 0 / 52px 52px;
+	}
+	.knight {
+		position: absolute;
+		bottom: 18px;
+		font: 64px/1 'Segoe UI Symbol', 'DejaVu Sans', serif;
+		color: #fbfbfb;
+		text-shadow: 0 0 2px #000, 0 3px 4px rgba(0, 0, 0, 0.5);
+		animation: hop 2.4s ease-in-out infinite;
+	}
+	@keyframes hop {
+		0% { left: 6%; transform: translateY(0); }
+		16% { transform: translateY(-34px); }
+		33% { left: 38%; transform: translateY(0); }
+		50% { transform: translateY(-34px); }
+		66% { left: 70%; transform: translateY(0); }
+		100% { left: 70%; }
+	}
+
+	/* Four in a Row: discs drop into the grid. */
+	.fourrow {
+		background: radial-gradient(ellipse at 50% 40%, #1e3a8a, #050816 75%);
+	}
+	.fourrow .scene {
+		background: #1d4ed8;
+	}
+	.grid4 {
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(circle, #0b1226 13px, transparent 14px) 0 0 / 34px 34px;
+	}
+	.disc4 {
+		position: absolute;
+		top: -30px;
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		background: #ef4444;
+		animation: fall4 1.8s cubic-bezier(0.5, 0, 1, 1) infinite;
+	}
+	.d1, .d3 {
+		background: #facc15;
+	}
+	.d0 { left: calc(50% - 64px); }
+	.d1 { left: calc(50% - 30px); }
+	.d2 { left: calc(50% + 4px); }
+	.d3 { left: calc(50% + 38px); }
+	@keyframes fall4 {
+		0% { transform: translateY(0); }
+		45%, 90% { transform: translateY(130px); }
+		100% { transform: translateY(130px); opacity: 0; }
+	}
+
+	/* iSpy: a magnifying glass searching a room of coloured things. */
+	.ispy {
+		background: radial-gradient(ellipse at 50% 40%, #134e4a, #03110f 75%);
+	}
+	.ispy .scene {
+		background: linear-gradient(#fef3c7, #fde68a);
+	}
+	.thing {
+		position: absolute;
+		width: 22px;
+		height: 22px;
+		margin: -11px 0 0 -11px;
+		border-radius: 6px;
+		background: var(--c);
+		box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.2);
+	}
+	.lens {
+		position: absolute;
+		width: 46px;
+		height: 46px;
+		border-radius: 50%;
+		border: 6px solid #1e293b;
+		background: rgba(255, 255, 255, 0.35);
+		animation: search 3.2s ease-in-out infinite;
+	}
+	.lens::after {
+		content: '';
+		position: absolute;
+		right: -18px;
+		bottom: -12px;
+		width: 22px;
+		height: 7px;
+		border-radius: 4px;
+		background: #1e293b;
+		transform: rotate(40deg);
+	}
+	@keyframes search {
+		0% { left: 8%; top: 12%; }
+		25% { left: 62%; top: 40%; }
+		50% { left: 34%; top: 50%; }
+		75% { left: 76%; top: 8%; }
+		100% { left: 8%; top: 12%; }
 	}
 </style>

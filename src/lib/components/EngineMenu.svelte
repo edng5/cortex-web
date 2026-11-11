@@ -47,7 +47,7 @@
 	<img class="logo" src="/games/engine-logo.svg" alt="E.Ngine Games" width="520" height="170" />
 	<div class="board">
 		{#if !session.user}
-			<p><strong>Log in</strong> to save your high scores on the global leaderboards and to play Chess, Four in a Row and Fishy online.</p>
+			<p><strong>Log in</strong> to save your high scores on the global leaderboards and to play multiplayer games.</p>
 			<button class="login" onclick={onlogin}>Log in</button>
 		{:else if askName}
 			<form onsubmit={save}>
@@ -108,26 +108,42 @@
 			<p class="blurb"><strong>{preview.title}.</strong> {preview.blurb}</p>
 			<button class="play" onclick={() => onpick(preview.id)}>Play {preview.title}</button>
 		</div>
-		<ul class="row-games">
-			{#each GAMES.filter((g) => g.row) as g (g.id)}
-				<li>
-					<button
-						class="game"
-						class:on={shown === g.id}
-						style="--accent: {g.accent}"
-						onpointerenter={() => (shown = g.id)}
-						onfocus={() => (shown = g.id)}
-						onclick={() => onpick(g.id)}
-					>
-						<img src={g.icon} alt="" width="44" height="44" />
-						<span class="text">
-							<span class="title">{g.title}</span>
-							<span class="line">{g.tagline}</span>
-						</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
+		{#each [1, 2] as r (r)}
+			<ul class="row-games">
+				{#each GAMES.filter((g) => g.row == r) as g (g.id)}
+					<li>
+						<button
+							class="game"
+							class:on={shown === g.id}
+							style="--accent: {g.accent}"
+							onpointerenter={() => (shown = g.id)}
+							onfocus={() => (shown = g.id)}
+							onclick={() => onpick(g.id)}
+						>
+							<img src={g.icon} alt="" width="44" height="44" />
+							<span class="text">
+								<span class="title">{g.title}</span>
+								<span class="line">{g.tagline}</span>
+							</span>
+						</button>
+					</li>
+				{/each}
+				{#if r == 2}
+					<!-- Placeholders for the next games. -->
+					{#each [1, 2] as n (n)}
+						<li>
+							<div class="game soon" aria-label="Coming soon">
+								<span class="mystery" aria-hidden="true">?</span>
+								<span class="text">
+									<span class="title">Coming soon</span>
+									<span class="line">A new game is on the way</span>
+								</span>
+							</div>
+						</li>
+					{/each}
+				{/if}
+			</ul>
+		{/each}
 	</div>
 
 </div>
@@ -265,6 +281,23 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+	.game.soon {
+		--accent: #64748b;
+		cursor: default;
+		border-style: dashed;
+		opacity: 0.75;
+	}
+	.mystery {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 9px;
+		border: 1px dashed rgba(148, 163, 184, 0.6);
+		color: #94a3b8;
+		font: 800 1.3rem/1 system-ui, sans-serif;
 	}
 	.row-games .game.on,
 	.row-games .game:focus-visible {

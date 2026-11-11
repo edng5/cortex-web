@@ -123,6 +123,40 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k.h.s.h.k.k.s.h.'
 	},
+	// iSpy: a curious, tiptoeing detective tune in A minor (menu).
+	'ispy-menu': {
+		bpm: 100,
+		parts: [
+			{
+				voice: 'pluck',
+				level: 0.07,
+				notes:
+					'A4 . C5 . E5 . . D5 C5 . B4 . A4 . . . ' +
+					'F4 . A4 . C5 . . B4 A4 . G#4 . A4 . . . ' +
+					'E4 . G4 . B4 . . A4 G4 . F4 . E4 . . . ' +
+					'D4 . F4 . A4 . C5 . B4 - - - . . . . '
+			},
+			{ voice: 'sine', level: 0.08, notes: 'A2 . . . E2 . . . F2 . . . C3 . . . E2 . . . B1 . . . D2 . . . E2 . E2 . ' },
+			{ voice: 'bell', level: 0.02, notes: '. . . . . . . . . . . . . . E6 . . . . . . . . . . . . . . . B5 . ' }
+		],
+		drums: 'k...h.h.k...h.hh'
+	},
+	// iSpy while searching: the same tune, quicker, with a ticking hat.
+	'ispy-play': {
+		bpm: 132,
+		gain: 0.45,
+		parts: [
+			{
+				voice: 'pluck',
+				level: 0.06,
+				notes:
+					'A4 . C5 . E5 . . D5 C5 . B4 . A4 . . . ' +
+					'F4 . A4 . C5 . . B4 A4 . G#4 . A4 . . . '
+			},
+			{ voice: 'triangle', level: 0.08, notes: 'A2 A2 E3 A2 A2 A2 E3 A2 F2 F2 C3 F2 E2 E2 B2 E2 ' }
+		],
+		drums: 'k.hhs.hhk.hhs.hh'
+	},
 	// Chess: calm and thoughtful, a slow arpeggio in D minor.
 	'chess-menu': {
 		bpm: 72,
@@ -663,6 +697,15 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 			a._fx(0.5, 0.08, 'highpass', 3000, 8000);
 		},
 		levelUp: (a) => a._arp([67, 72, 76, 79, 84], 0.07, 'triangle', 0.08, 0.2)
+	},
+	ispy: {
+		found: (a) => a._arp([79, 84], 0.06, 'triangle', 0.09, 0.16),
+		combo: (a) => a._arp([79, 84, 88, 91], 0.05, 'square', 0.05, 0.14),
+		wrong: (a) => a._tone('square', 220, 120, 0.22, 0.07),
+		hint: (a) => a._arp([72, 76, 72, 76], 0.07, 'sine', 0.08, 0.12),
+		tick: (a) => a._tone('square', 1200, 1200, 0.03, 0.03),
+		levelUp: (a) => a._arp([67, 72, 76, 79, 84, 88], 0.08, 'triangle', 0.09, 0.22),
+		guess: (a) => a._arp([72, 74, 76], 0.08, 'sine', 0.08, 0.14)
 	},
 	chess: {
 		move: (a) => {

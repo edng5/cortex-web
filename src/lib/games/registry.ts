@@ -3,7 +3,7 @@
 import type { Component } from 'svelte';
 import type { ArcadeGame } from './common';
 
-export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow';
+export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ispy' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow';
 
 /** What a component game (spec.ui) is given. */
 export interface GameUiProps {
@@ -41,8 +41,8 @@ export interface GameSpec {
 	/** Short line under the title on the menu button. */
 	tagline: string;
 	accent: string;
-	/** Shown in the row under the list and preview in the games menu (instead of the list). */
-	row?: boolean;
+	/** Shown in a row under the list and preview in the games menu (instead of the list): 1 or 2. */
+	row?: 1 | 2;
 	/** Where the game keeps its progress in localStorage (synced to the player's account). */
 	saveKey: string;
 	/** Canvas size (the Java window's drawing area). */
@@ -195,31 +195,21 @@ export const GAMES: GameSpec[] = [
 		}
 	},
 	{
-		id: 'blockdrop',
-		saveKey: 'blockdrop-save',
-		title: 'Block Drop',
-		blurb: 'Falling-block puzzles: turn and slide the shapes to fill rows. Every 10 rows the level goes up and they fall faster.',
-		icon: '/games/icons/blockdrop.png',
-		preview: '/games/previews/blockdrop.jpg',
-		tagline: 'Clear rows · climb levels',
-		accent: '#c46bff',
-		w: 480,
-		h: 600,
+		id: 'ispy',
+		saveKey: 'ispy-save',
+		title: 'iSpy',
+		blurb: 'I spy with my little eye… something red! Find what I spy in busy scenes before time runs out, or stump the computer.',
+		icon: '/games/icons/ispy.png',
+		preview: '/games/previews/ispy.jpg',
+		tagline: 'Seek & find · stump the computer',
+		accent: '#14b8a6',
+		w: 900,
+		h: 640,
 		tickMs: 16,
-		help: [
-			{ keys: ['A', 'D'], label: 'move' },
-			{ keys: ['S'], label: 'soft drop' },
-			{ keys: ['W'], label: 'rotate' },
-			{ keys: ['Space'], label: 'drop' },
-			{ keys: ['Enter'], label: 'pause' },
-			MOUSE
-		],
-		touch: {
-			stick: '4',
-			buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Rotate', code: 'KeyW' }, { label: 'Drop', code: 'Space', big: true }]
-		},
-		boards: { 1: 'Score' },
-		load: async () => (await import('./blockdrop/BlockDrop')).create()
+		help: [MOUSE, { keys: ['H'], label: 'hint' }, { keys: ['Enter'], label: 'pause' }],
+		touch: { buttons: [{ label: 'Hint', code: 'KeyH' }, { label: 'Pause', code: 'Enter' }] },
+		boards: {},
+		load: async () => (await import('./ispy/ISpy')).create()
 	},
 	{
 		id: 'ifish',
@@ -230,7 +220,7 @@ export const GAMES: GameSpec[] = [
 		preview: '/games/previews/ifish.jpg',
 		tagline: 'Fish store sim · global showcase',
 		accent: '#2ab0e8',
-		row: true,
+		row: 1,
 		w: 1040,
 		h: 700,
 		tickMs: 1000,
@@ -249,7 +239,7 @@ export const GAMES: GameSpec[] = [
 		preview: '/games/previews/chess.jpg',
 		tagline: 'Online · room codes',
 		accent: '#e0b46b',
-		row: true,
+		row: 1,
 		w: 640,
 		h: 760,
 		tickMs: 1000,
@@ -268,7 +258,7 @@ export const GAMES: GameSpec[] = [
 		preview: '/games/previews/fourrow.jpg',
 		tagline: 'Online · room codes',
 		accent: '#facc15',
-		row: true,
+		row: 1,
 		w: 640,
 		h: 700,
 		tickMs: 1000,
@@ -277,6 +267,34 @@ export const GAMES: GameSpec[] = [
 		boards: {},
 		music: 'fourrow-menu',
 		ui: async () => (await import('./fourrow/FourRow.svelte')).default
+	},
+	{
+		id: 'blockdrop',
+		saveKey: 'blockdrop-save',
+		title: 'Block Drop',
+		blurb: 'Falling-block puzzles: turn and slide the shapes to fill rows. Every 10 rows the level goes up and they fall faster.',
+		icon: '/games/icons/blockdrop.png',
+		preview: '/games/previews/blockdrop.jpg',
+		tagline: 'Clear rows · climb levels',
+		accent: '#c46bff',
+		row: 2,
+		w: 480,
+		h: 600,
+		tickMs: 16,
+		help: [
+			{ keys: ['A', 'D'], label: 'move' },
+			{ keys: ['S'], label: 'soft drop' },
+			{ keys: ['W'], label: 'rotate' },
+			{ keys: ['Space'], label: 'drop' },
+			{ keys: ['Enter'], label: 'pause' },
+			MOUSE
+		],
+		touch: {
+			stick: '4',
+			buttons: [{ label: 'Pause', code: 'Enter' }, { label: 'Rotate', code: 'KeyW' }, { label: 'Drop', code: 'Space', big: true }]
+		},
+		boards: { 1: 'Score' },
+		load: async () => (await import('./blockdrop/BlockDrop')).create()
 	}
 ];
 
