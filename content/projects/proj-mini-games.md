@@ -32,6 +32,74 @@ Eleven games playable right here: six are Edward's high-school and university Ja
 games, ported to TypeScript, and five are new. Each has its own soundtrack, saves sync to your
 account, and signed-in players get global leaderboards and online play.
 
+<!-- details: Under the hood -->
+
+### The engine
+E.Ngine is the small framework all eleven games share, built into this SvelteKit site (Svelte 5,
+TypeScript, a Node server and SQLite). Each game is code-split and lazy-loaded (a dynamic
+`import()`) from a registry when you open it. The arcade games implement one interface: a
+fixed-rate `tick()` (the body of the original Java `run()` loop), `paint()` onto a canvas, key and
+pointer handlers, and `save()`. The host runs a **fixed-timestep** loop: elapsed time goes into an
+accumulator that's drained in whole ticks, so the simulation runs at the same speed on a 60 Hz
+laptop or a 144 Hz phone, rendering happens once per screen refresh (and only when something
+changed), and a long stall is dropped instead of fast-forwarded. The loop only runs while the game
+is actually on screen (an `IntersectionObserver` plus the page's visibility). Keyboard, mouse and
+touch go through one input layer, which also draws the on-screen joysticks and buttons on phones.
+
+### Graphics and movement
+Most games draw on an HTML5 Canvas 2D context at a fixed logical resolution, scaled to fit the
+window. Movement is per tick: positions plus per-tick velocities, and in the ports Java-style
+integer maths, so they play exactly as they did; smooth motion between grid cells (a frog's hop) is
+tweened. Collision is mostly axis-aligned bounding boxes, with pixel masks where
+shape matters (Fishy). Frogger and FishMart share
+a tiny software voxel renderer (box models with lit tops and shaded fronts, depth-sorted with the
+painter's algorithm), and Check-up is real 3D in three.js / WebGL with instanced meshes and shadow
+maps.
+
+### Sound
+There are no audio files. Every soundtrack and sound effect is synthesized live with the Web Audio
+API: a step sequencer schedules oscillator voices (square, triangle, sine, sawtooth, plucks and
+bells) and filtered-noise drums slightly ahead of time on the audio clock, so timing stays tight
+even when the page is busy.
+
+### Saving
+Progress is saved in `localStorage` as each game's own JSON. Signed in, a sync layer mirrors it to
+your account: changes are pushed every few seconds and when you leave, and pulled again when the tab
+regains focus or comes back online. Conflicts are handled with **optimistic concurrency**: every
+save carries the version of the account copy it was based on, and the server refuses a write from
+a stale copy and sends back the newer one, so an old tab can't overwrite progress you made on your
+phone. Saves are size-capped, a copy is put aside once a day before it's replaced (the two newest
+are kept, with a rollback script), and a save made while signed out never overwrites an account's
+progress just for being newer.
+
+### Multiplayer
+Online games use rooms with 6-digit codes or a ranked matchmaking queue. Each player keeps a
+**Server-Sent Events** stream open for updates and sends actions as `POST` requests, so it all runs
+over ordinary HTTPS with no extra ports. Turn-based games (Chess, Four in a Row) are
+**server-authoritative**: the server validates every move with the same rules module the browser
+uses and keeps the clocks. Real-time games (Fishy, Check-up) are **host-authoritative**: the host's
+browser runs the simulation and streams state snapshots, the guest sends inputs, and the server
+only relays between the room's two players. Ratings use Elo (K = 32), and a player who drops out
+has 45 seconds to reconnect.
+
+### Security
+- **Sign-in** is passwordless: Google OAuth 2.0 with PKCE, or a one-time email code (stored as an
+  HMAC, single use, 10-minute expiry, with attempt limits so it can't be brute-forced).
+- **Sessions** are 32 random bytes in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie; the database
+  stores only a SHA-256 hash of the token, so a leaked database can't be replayed as live logins.
+- **Personal data** like emails is encrypted at rest with AES-256-GCM and looked up through an HMAC
+  blind index; public leaderboards show a nickname or a masked email.
+- **The server never trusts the client**: every room action is checked against the player's
+  session, only a room's two players can read or post to it, chess and Four in a Row moves are
+  rule-checked, scores past an impossible ceiling are rejected, and room creation, joining and
+  the FishMart market are rate-limited per account.
+- **Nicknames** are filtered for slurs and profanity, including spellings with numbers and symbols.
+- **Headers**: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and a strict referrer
+  policy on every response. Check-up's camera never leaves your device: only a few numbers
+  describing your pose are sent in online games.
+
+<!-- /details -->
+
 ## ![](/images/mini-games/top-gun.jpg) Top Gun
 A flight-combat game across three missions (fighter jets, cargo ships, then an army base), with
 money for upgrades between them.

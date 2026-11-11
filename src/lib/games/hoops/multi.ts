@@ -25,6 +25,9 @@ interface Input {
 	x: number;
 	setting: boolean;
 	j: number[] | null;
+	/** Running in place (0..1) and pounding the dribble. */
+	run?: number;
+	drib?: boolean;
 }
 type Seat = 0 | 1;
 
@@ -70,6 +73,10 @@ export class Multi {
 	/** The hand with the ball, per player (crossovers swap it). */
 	hands: ['left' | 'right', 'left' | 'right'] = ['right', 'right'];
 	private burst: { seat: Seat; from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
+	/** Per player: attacking off the dribble, sprinting on defense, reached for the ball and missed. */
+	private drive = [0, 0];
+	private sprint = [0, 0];
+	private reach = [0, 0];
 
 	constructor(
 		private court: Court,
@@ -99,7 +106,7 @@ export class Multi {
 			if (!this.sentHi) this.hello();
 			if (this.host && this.view.phase == 'wait') this.startGame(performance.now());
 		} else if (k == 'in' && this.host) {
-			this.inputs[1] = { lean: +(msg.lean as number) || 0, hand: (msg.hand as Input['hand']) ?? null, x: +(msg.x as number) || 0, setting: !!msg.set, j: (msg.j as number[]) ?? null };
+			this.inputs[1] = { lean: +(msg.lean as number) || 0, hand: (msg.hand as Input['hand']) ?? null, x: +(msg.x as number) || 0, setting: !!msg.set, j: (msg.j as number[]) ?? null, run: clamp(+(msg.run as number) || 0, 0, 1), drib: !!msg.drib };
 			this.otherJ = unpackJ(this.inputs[1].j);
 		} else if (k == 'ev' && this.host) {
 			this.hostEvent(1, msg as unknown as MotionEvent, performance.now());
@@ -121,7 +128,9 @@ export class Multi {
 			if (v.ball != this.view.ball || v.phase == 'check') this.court.camera(v.ball == this.seat ? 'offense' : 'defense');
 			this.view = v;
 		} else if (k == 'fly' && !this.host) {
-			this.fly(msg.seat as Seat, !!msg.made, !!msg.blocked, !!msg.dunk);
+			this.fly(msg.seat as Seat, !!msg.made, !!msg.blocked, !!msg.dunk, !!msg.soft);
+		} else if (k == 'crowd' && !this.host) {
+			this.crowd(msg.seat as Seat, msg.mood as 'three' | 'make' | 'big');
 		} else if (k == 'sfx' && !this.host) this.sfx(String(msg.name));
 		else if (k == 'spin' && !this.host) this.court.spin(msg.seat == this.seat ? 'you' : 'cpu');
 		else if (k == 'trk' && !this.host && ['makes', 'twos', 'shakes', 'blocks', 'bites', 'dunks', 'deeps', 'floors'].includes(msg.key as string)) this.track(msg.key as 'makes');
@@ -147,7 +156,7 @@ export class Multi {
 
 	/** Every frame: your body, your events; the host also runs the game. */
 	frame(now: number, m: MotionState, events: MotionEvent[], j: Joints | null) {
-		const mine: Input = { lean: m.lean, hand: m.hand, x: m.x, setting: m.setting, j: packJ(j) };
+		const mine: Input = { lean: m.lean, hand: m.hand, x: m.x, setting: m.setting, j: packJ(j), run: m.run, drib: m.dribbling };
 		if (this.host) {
 			this.inputs[0] = mine;
 			for (const e of events) {
@@ -167,7 +176,7 @@ export class Multi {
 		} else {
 			if (now - this.lastSend > 66) {
 				this.lastSend = now;
-				this.send({ k: 'in', lean: Math.round(m.lean * 100) / 100, hand: m.hand, x: Math.round(m.x * 100) / 100, set: m.setting, j: mine.j });
+				this.send({ k: 'in', lean: Math.round(m.lean * 100) / 100, hand: m.hand, x: Math.round(m.x * 100) / 100, set: m.setting, j: mine.j, run: Math.round(m.run * 100) / 100, drib: m.dribbling });
 			}
 			for (const e of events) {
 				// (Jumps count while a shot is up too: that's when blocks happen.)
@@ -177,7 +186,7 @@ export class Multi {
 					if (r.grade == 'perfect' && this.templates[e.take.kind]) this.track('perfects');
 					const dunk = this.canDunk(e.take.kind, this.pos[1], m);
 					this.send({ k: 'shot', kind: e.take.kind, chance: Math.round((dunk ? Math.min(0.97, r.chance + 0.3) : r.chance) * 1000) / 1000, dunk });
-				} else if (e.type == 'move' || e.type == 'pumpfake' || e.type == 'jump' || e.type == 'triple' || e.type == 'stepback') this.send({ k: 'ev', ...e });
+				} else if (e.type == 'move' || e.type == 'pumpfake' || e.type == 'jump' || e.type == 'triple' || e.type == 'stepback' || e.type == 'swipe') this.send({ k: 'ev', ...e });
 			}
 		}
 		this.draw(j);
@@ -213,6 +222,9 @@ export class Multi {
 		this.stumble = [0, 0];
 		this.bit = [0, 0];
 		this.hands = ['right', 'right'];
+		this.drive = [0, 0];
+		this.sprint = [0, 0];
+		this.reach = [0, 0];
 		this.pos[off] = { x: CHECK.x, z: CHECK.z };
 		this.pos[1 - off] = { x: CHECK.x, z: CHECK.z - 2.2 };
 		this.say(now, off == 0 ? `${this.me.name}'s ball` : `${this.other?.name ?? 'Guest'}'s ball`, 'Check-up!', '#fbbf24');
@@ -257,14 +269,41 @@ export class Multi {
 		// The ball handler leans to attack (toward the dribbling hand); the defender leans and slides.
 		const so = this.statsOf(off);
 		const sd = this.statsOf(def);
-		let o = leanMove(this.pos[off], { ...(this.inputs[off] as unknown as MotionState), hand: this.hands[off] }, (6 + so.speed * 0.05) / 60, -1);
+		const io = this.inputs[off];
+		const pounding = !!io.drib && io.lean >= 0 && !io.setting;
+		this.drive[off] += ((pounding ? 1 : 0) - this.drive[off]) * (pounding ? 0.05 : 0.1);
+		this.drive[def] = 0;
+		const drv = this.drive[off];
+		const lean = drv > 0.05 ? Math.max(io.lean, 0.35 + drv * 0.65) : io.lean;
+		let o = leanMove(this.pos[off], { ...(io as unknown as MotionState), lean, hand: this.hands[off] }, ((6 + so.speed * 0.05) / 60) * (1 + drv * 0.9), -1);
 		const b = this.burst;
 		if (b && b.seat == off && now - b.at < 300) {
 			const k = 1 - (1 - (now - b.at) / 300) ** 2;
 			o = { x: b.from.x + (b.to.x - b.from.x) * k, z: b.from.z + (b.to.z - b.from.z) * k };
 		}
 		this.pos[off] = { x: clamp(o.x, -11.5, 11.5), z: clamp(o.z, -13, 9.5) };
-		if (now > this.stumble[def]) {
+		this.sprint[def] += (((this.inputs[def].run ?? 0) > 0.3 ? (this.inputs[def].run ?? 0) : 0) - this.sprint[def]) * 0.2;
+		if (this.sprint[def] > 0.25 && now > this.reach[def]) {
+			const a = this.pos[off];
+			const d = this.pos[def];
+			const hx = HOOP.x - a.x;
+			const hz = HOOP.z - a.z;
+			const hd = Math.hypot(hx, hz) || 1;
+			const sx = a.x + (hx / hd) * 1.5 - d.x;
+			const sz = a.z + (hz / hd) * 1.5 - d.z;
+			const s = Math.hypot(sx, sz);
+			const vS = ((11 + sd.speed * 0.08) / 60) * this.sprint[def];
+			if (s > 0.05) {
+				d.x = clamp(d.x + (sx / s) * Math.min(s, vS), -11.5, 11.5);
+				d.z = clamp(d.z + (sz / s) * Math.min(s, vS), -13, 9.5);
+			}
+			if (now < this.stumble[def] && s < 0.8) {
+				this.stumble[def] = now;
+				this.say(now, 'Recovered!', `${this.nameOf(def)} is back in front`, '#34d399', { kind: 'move' });
+			}
+			// Side steps carry on from here.
+			this.anchor[def] = this.inputs[def].x - (CHECK.x - d.x) / 2.6;
+		} else if (now > this.stumble[def] && now > this.reach[def]) {
 			const vD = (6.5 + sd.speed * 0.045) / 60;
 			const d = this.pos[def];
 			const tx = CHECK.x - (this.inputs[def].x - this.anchor[def]) * 2.6;
@@ -309,6 +348,23 @@ export class Multi {
 				this.cue('ooh');
 			}
 		} else if (e.type == 'pumpfake' && seat == off) this.fakeAt[off] = now;
+		else if (e.type == 'swipe' && seat == def) {
+			const near = dist(this.pos[off], this.pos[def]);
+			if (near > 2.4) return;
+			const chance = clamp(0.16 + this.statsOf(def).defense * 0.0045 - this.statsOf(off).dribbling * 0.0028, 0.05, 0.45);
+			if (Math.random() < chance) {
+				this.say(now, 'STOLE IT!', `${this.nameOf(def)} picked ${this.nameOf(off)}'s pocket`, '#34d399', { kind: 'block' });
+				this.cue('steal');
+				this.crowdAll(def, 'big');
+				this.view.ball = def;
+				this.check(now + 400);
+				return;
+			}
+			this.reach[def] = now + 650;
+			this.stumble[def] = Math.max(this.stumble[def], now + 900);
+			this.say(now, 'Reached!', `${this.nameOf(def)} is off balance`, '#f87171', { kind: 'bad' });
+			this.cue('squeak');
+		}
 		else if (e.type == 'stepback' && seat == off) {
 			this.burst = { seat: off, from: { ...this.pos[off] }, to: stepBackTo(this.pos[off]), at: now };
 			this.say(now, 'Step-back', undefined, '#93c5fd', { kind: 'move' });
@@ -363,6 +419,7 @@ export class Multi {
 		this.pending = { seat, chance, at: now + window, kind, dunk };
 		const d = toHoop(this.pos[seat]);
 		this.say(now, kind == 'layup' ? 'Layup' : d > ARC ? 'From deep…' : zoneOf(d) == 'close' ? 'Short jumper' : 'Jumper', undefined, '#e2e8f0');
+		if (d > ARC && kind == 'jumpshot') this.crowdAll(seat, 'three');
 	}
 
 	private resolveShot(now: number) {
@@ -385,15 +442,18 @@ export class Multi {
 			if (p.dunk) this.credit(off, 'dunks');
 			if (zoneOf(toHoop(this.pos[off])) == 'deep') this.credit(off, 'deeps');
 		}
-		this.send({ k: 'fly', seat: off, made, blocked, dunk: p.dunk });
-		this.fly(off, made, blocked, p.dunk).then(() => {
+		const soft = p.kind == 'layup';
+		this.send({ k: 'fly', seat: off, made, blocked, dunk: p.dunk, soft });
+		this.fly(off, made, blocked, p.dunk, soft).then(() => {
 			const v = this.view;
 			if (made) {
 				v.score[off] += pts;
 				this.cue(pts == 2 ? 'swish2' : 'swish');
+				this.crowdAll(off, pts == 2 || p.dunk ? 'big' : 'make');
 				this.say(performance.now(), `${this.nameOf(off)} +${pts}`, `${v.score[0]} – ${v.score[1]}`, off == 0 ? '#22c55e' : '#f87171');
 			} else if (blocked) {
 				this.cue('block');
+				this.crowdAll(def, 'big');
 				this.say(performance.now(), 'BLOCKED!', `by ${this.nameOf(def)}`, '#34d399');
 			} else {
 				this.cue('rim');
@@ -418,8 +478,27 @@ export class Multi {
 		void m;
 		return kind == 'layup' && this.me.stats.finishing >= UNLOCK_AT && toHoop(at) < 2.8;
 	}
-	private fly(seat: Seat, made: boolean, blocked: boolean, dunk = false) {
+	private fly(seat: Seat, made: boolean, blocked: boolean, dunk = false, soft = false) {
 		this.court.ball('hold', seat == this.seat ? 'you' : 'cpu');
-		return this.court.shoot(made, blocked, dunk);
+		return this.court.shoot(made, blocked, dunk, soft);
+	}
+	/** The crowd, on both screens. */
+	private crowdAll(seat: Seat, mood: 'three' | 'make' | 'big') {
+		this.crowd(seat, mood);
+		this.send({ k: 'crowd', seat, mood });
+	}
+	/** The crowd is on your side: it roars for your big plays and groans at theirs. */
+	private crowd(seat: Seat, mood: 'three' | 'make' | 'big') {
+		if (mood == 'three') {
+			this.court.react('three');
+			this.sfx('threeUp');
+		} else if (seat == this.seat) {
+			this.court.react(mood == 'big' ? 'roar' : 'cheer');
+			this.sfx(mood == 'big' ? 'roar' : 'cheer');
+			if (mood == 'big') this.court.shake(0.35);
+		} else {
+			this.court.react('groan');
+			this.sfx('groan');
+		}
 	}
 }

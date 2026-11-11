@@ -68,7 +68,7 @@ export const CPU_LOOK: Look = { skin: '#7a4a26', hair: 'short', band: '#dc2626',
 type BallMode =
 	| { kind: 'hold'; who: 'you' | 'cpu' }
 	| { kind: 'dribble'; who: 'you' | 'cpu' }
-	| { kind: 'flight'; from: Three; t0: number; dur: number; made: boolean; blocked: boolean; dunk?: boolean; done: () => void }
+	| { kind: 'flight'; from: Three; t0: number; dur: number; made: boolean; blocked: boolean; dunk?: boolean; soft?: boolean; done: () => void }
 	| { kind: 'loose'; at: Three; vel: Three; t0: number }
 	| { kind: 'hidden' };
 
@@ -97,9 +97,17 @@ export interface Court {
 	setStyle(style: CourtStyle): void;
 	/** The crowd jumps up. */
 	cheer(): void;
+	/**
+	 * The crowd reacts: 'three' (arms up, "3" signs, as a shot from deep flies), 'cheer', 'roar'
+	 * (on their feet, confetti) or 'groan' (hands on heads).
+	 */
+	react(mood: 'three' | 'cheer' | 'roar' | 'groan'): void;
+	/** Shakes the camera a little (0..1). */
+	shake(amount: number): void;
 	ball(mode: 'hold' | 'dribble' | 'hidden', who?: 'you' | 'cpu'): void;
 	/** The ball flies at the rim from whoever has it; resolves when it's in (or off the rim / swatted). */
-	shoot(made: boolean, blocked?: boolean, dunk?: boolean): Promise<void>;
+	/** `soft`: a layup, kissed up off the hand (short and low) rather than an arcing jumper. */
+	shoot(made: boolean, blocked?: boolean, dunk?: boolean, soft?: boolean): Promise<void>;
 	/** Change the view: 'cut' jumps there at once, 'glide' moves there slowly (cut scenes); default eases. */
 	camera(mode: CamMode, move?: 'cut' | 'glide'): void;
 	/** Which hand you're dribbling with (the ball follows it). */
@@ -377,8 +385,29 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	// ── The crowd: people by the fence, then bleachers, filling up as you climb the ladder ──
 	const crowd = new T.Group();
 	scene.add(crowd);
-	let fans: { g: Three; phase: number; base: number }[] = [];
+	let fans: { g: Three; phase: number; base: number; arms: Three[]; sign: Three | null }[] = [];
 	let excite = 0;
+	let mood: { kind: 'three' | 'cheer' | 'roar' | 'groan'; at: number } | null = null;
+	// The "3" cards the crowd holds up for a shot from deep.
+	const signTex = (() => {
+		const c = document.createElement('canvas');
+		c.width = 64;
+		c.height = 48;
+		const g = c.getContext('2d')!;
+		g.fillStyle = '#f8fafc';
+		g.fillRect(0, 0, 64, 48);
+		g.fillStyle = '#ea580c';
+		g.font = 'bold 40px system-ui, sans-serif';
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		g.fillText('3', 32, 26);
+		const t = new T.CanvasTexture(c);
+		t.magFilter = T.NearestFilter;
+		return t;
+	})();
+	const signMat = new T.MeshBasicMaterial({ map: signTex, side: T.DoubleSide });
+	const signGeo = new T.PlaneGeometry(0.9, 0.68);
+	const ARM_GEO = new T.BoxGeometry(0.2, 0.9, 0.2);
 	const SHIRTS = ['#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#0f172a', '#f8fafc', '#db2777', '#0ea5e9', '#a16207'];
 	function fan(x: number, y: number, z: number, faceX: number, seated: boolean) {
 		const g = new T.Group();
@@ -394,10 +423,32 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		add(0.8, 1.0, 0.5, shirt, seated ? 0.6 : 1.7);
 		add(0.55, 0.55, 0.55, skin, seated ? 1.4 : 2.5);
 		if (rnd() < 0.5) add(0.6, 0.18, 0.6, pick(HAIR_COLORS.concat(SHIRTS)), seated ? 1.75 : 2.85);
+		// Arms, hanging from the shoulders (they go up when the crowd gets loud).
+		const shoulder = seated ? 1.02 : 2.12;
+		const arms: Three[] = [];
+		for (const side of [-1, 1]) {
+			const pivot = new T.Group();
+			pivot.position.set(side * 0.5, shoulder, 0);
+			// (One box per arm, sleeve-coloured: the crowd is big, so it stays light on the GPU.)
+			const arm = new T.Mesh(ARM_GEO, mat(rnd() < 0.5 ? shirt : skin));
+			arm.position.y = -0.45;
+			pivot.add(arm);
+			pivot.userData.side = side;
+			g.add(pivot);
+			arms.push(pivot);
+		}
+		// Some hold up a "3" card for a shot from deep.
+		let sign: Three | null = null;
+		if (rnd() < 0.22) {
+			sign = new T.Mesh(signGeo, signMat);
+			sign.position.set(0, (seated ? 1.75 : 2.85) + 0.75, 0.25);
+			sign.visible = false;
+			g.add(sign);
+		}
 		g.position.set(x, y, z);
 		g.rotation.y = Math.atan2(faceX, 0) || (faceX < 0 ? -Math.PI / 2 : Math.PI / 2);
 		crowd.add(g);
-		fans.push({ g, phase: rnd() * 6, base: y });
+		fans.push({ g, phase: rnd() * 6, base: y, arms, sign });
 	}
 	function bleacher(cx: number, cz: number, alongZ: boolean, rows: number, len: number, outward: number, fill: number) {
 		const v: Vox[] = [];
@@ -457,11 +508,80 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	}
 	function animateCrowd(now: number) {
 		excite *= 0.985;
+		const LAST = { three: 2200, cheer: 1600, roar: 3200, groan: 2400 };
+		if (mood && now - mood.at > LAST[mood.kind]) mood = null;
+		const m = mood?.kind;
 		for (const f of fans) {
-			const hop = Math.max(0, Math.sin(now / 160 + f.phase)) * (0.08 + excite * 0.6);
+			const t = now / 1000 + f.phase;
+			// Groans: nobody jumps, they sag.
+			const hop = m == 'groan' ? -0.06 : Math.max(0, Math.sin(now / 160 + f.phase)) * (0.08 + excite * 0.6);
 			f.g.position.y = f.base + hop;
+			for (const a of f.arms) {
+				const side = a.userData.side as number;
+				// Arm angle: 0 hanging, π straight up (out to the side the shoulder is on).
+				let want = 0.12 + Math.sin(t * 1.3) * 0.04;
+				if (m == 'three') want = 2.75 + Math.sin(t * 6) * 0.08;
+				else if (m == 'roar') want = 2.5 + Math.sin(t * 9 + side) * 0.45;
+				else if (m == 'cheer') want = side > 0 ? 2.3 + Math.sin(t * 10) * 0.5 : 0.4;
+				else if (m == 'groan') want = 2.55; // hands on heads
+				const cur = a.userData.ang ?? 0;
+				const ang = cur + (want - cur) * 0.18;
+				a.userData.ang = ang;
+				a.rotation.z = side * ang;
+				// Hands on heads: elbows in, toward the face.
+				a.rotation.x = m == 'groan' ? 0.5 : 0;
+			}
+			if (f.sign) {
+				f.sign.visible = m == 'three' || m == 'roar';
+				f.sign.position.y = (f.sign.userData.y ??= f.sign.position.y) + Math.sin(t * 8) * 0.12;
+			}
 		}
 	}
+
+	// ── Confetti (a big moment) ──
+	const CONFETTI = 320;
+	const confGeo = new T.BufferGeometry();
+	const confPos = new Float32Array(CONFETTI * 3);
+	const confCol = new Float32Array(CONFETTI * 3);
+	const confVel: number[] = [];
+	const palette = ['#f97316', '#facc15', '#22c55e', '#3b82f6', '#ec4899', '#f8fafc'].map((c) => new T.Color(c));
+	for (let i = 0; i < CONFETTI; i++) {
+		const c = palette[i % palette.length];
+		confCol.set([c.r, c.g, c.b], i * 3);
+		confPos.set([0, -50, 0], i * 3);
+		confVel.push(0, 0, 0);
+	}
+	confGeo.setAttribute('position', new T.BufferAttribute(confPos, 3));
+	confGeo.setAttribute('color', new T.BufferAttribute(confCol, 3));
+	const confetti = new T.Points(confGeo, new T.PointsMaterial({ size: 0.28, vertexColors: true }));
+	confetti.frustumCulled = false;
+	scene.add(confetti);
+	let confAt = -1e9;
+	function burstConfetti() {
+		confAt = performance.now();
+		for (let i = 0; i < CONFETTI; i++) {
+			// From both sidelines, up and in over the court.
+			const side = i % 2 ? 1 : -1;
+			confPos.set([side * (12 + Math.random() * 3), 2 + Math.random() * 2, -12 + Math.random() * 20], i * 3);
+			confVel[i * 3] = -side * (0.08 + Math.random() * 0.14);
+			confVel[i * 3 + 1] = 0.25 + Math.random() * 0.2;
+			confVel[i * 3 + 2] = (Math.random() - 0.5) * 0.08;
+		}
+	}
+	function animateConfetti(now: number) {
+		const live = now - confAt < 4500;
+		confetti.visible = live;
+		if (!live) return;
+		for (let i = 0; i < CONFETTI; i++) {
+			confVel[i * 3 + 1] = Math.max(-0.05, confVel[i * 3 + 1] - 0.012);
+			confVel[i * 3] *= 0.985;
+			confPos[i * 3] += confVel[i * 3] + Math.sin(now / 200 + i) * 0.01;
+			confPos[i * 3 + 1] += confVel[i * 3 + 1];
+			confPos[i * 3 + 2] += confVel[i * 3 + 2];
+		}
+		confGeo.attributes.position.needsUpdate = true;
+	}
+	let shakeAmt = 0;
 
 	// ── Players ──
 	function makeBaller(look: Look) {
@@ -840,7 +960,12 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			const to = new T.Vector3(HOOP.x + (f.made ? 0 : 0.85), HOOP.y + 0.35, HOOP.z);
 			ball.position.lerpVectors(f.from, to, k);
 			// A jumper arcs; a dunk goes straight down through.
-			ball.position.y += f.dunk ? Math.sin(k * Math.PI) * 0.4 : Math.sin(k * Math.PI) * (2.4 + f.from.distanceTo(to) * 0.18);
+			// A layup rises softly off the fingertips (eased, a small arc); a dunk goes straight down through.
+			if (f.soft && !f.dunk) {
+				const e = Math.sin((k * Math.PI) / 2);
+				ball.position.lerpVectors(f.from, to, e);
+				ball.position.y += Math.sin(e * Math.PI) * 0.9;
+			} else ball.position.y += f.dunk ? Math.sin(k * Math.PI) * 0.4 : Math.sin(k * Math.PI) * (2.4 + f.from.distanceTo(to) * 0.18);
 			ball.rotation.x -= 0.22;
 			if (k >= 1) {
 				const after = (now - f.t0 - f.dur) / 650;
@@ -915,6 +1040,12 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		if (camGlide && camPos.distanceTo(pos) < 0.05) camGlide = false;
 		camera.position.copy(camPos);
 		camera.lookAt(camLook);
+		// A shake on a big moment (a slam, a big three), settling quickly.
+		if (shakeAmt > 0.01) {
+			camera.position.x += (Math.random() - 0.5) * shakeAmt * 0.5;
+			camera.position.y += (Math.random() - 0.5) * shakeAmt * 0.4;
+			shakeAmt *= 0.9;
+		}
 	}
 
 	// ── Loop ──
@@ -942,6 +1073,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		cpu.set(otherJ ?? animate(cpuAnim.name, cpuMs(now)), otherJ ? 0.4 : 0.35);
 		clouds.position.x = Math.sin(now / 40000) * 6;
 		animateCrowd(now);
+		animateConfetti(now);
 		placeBall(now);
 		updateCamera(now);
 		renderer.render(scene, camera);
@@ -1014,6 +1146,20 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		},
 		cheer() {
 			excite = 1;
+			mood = { kind: 'roar', at: performance.now() };
+		},
+		react(kind) {
+			const now = performance.now();
+			mood = { kind, at: now };
+			if (kind == 'roar') {
+				excite = 1;
+				burstConfetti();
+			} else if (kind == 'cheer') excite = Math.max(excite, 0.6);
+			else if (kind == 'three') excite = Math.max(excite, 0.35);
+			else excite = 0;
+		},
+		shake(amount) {
+			shakeAmt = Math.max(shakeAmt, amount);
 		},
 		setLook(look) {
 			const at = you.root.position.clone();
@@ -1027,9 +1173,9 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			if (mode.kind == 'flight') return;
 			mode = m == 'hidden' ? { kind: 'hidden' } : { kind: m, who };
 		},
-		shoot(made, blocked = false, dunk = false) {
+		shoot(made, blocked = false, dunk = false, soft = false) {
 			const from = ball.position.clone();
-			const dur = blocked ? 600 : dunk ? 330 : 950 + from.distanceTo(new T.Vector3(HOOP.x, HOOP.y, HOOP.z)) * 22;
+			const dur = blocked ? 600 : dunk ? 330 : soft ? 620 : 950 + from.distanceTo(new T.Vector3(HOOP.x, HOOP.y, HOOP.z)) * 22;
 			if (dunk && made) {
 				excite = 1;
 				net.scale.y = 1.4;
@@ -1041,7 +1187,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 					settled = true;
 					resolve();
 				};
-				mode = { kind: 'flight', from, t0: performance.now(), dur, made, blocked, dunk, done };
+				mode = { kind: 'flight', from, t0: performance.now(), dur, made, blocked, dunk, soft, done };
 				// If the page isn't drawing (a background tab), the game still goes on.
 				setTimeout(() => {
 					if (!settled && mode.kind == 'flight' && mode.done == done) mode = { kind: 'hidden' };

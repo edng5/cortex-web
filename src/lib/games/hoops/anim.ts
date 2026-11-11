@@ -192,15 +192,28 @@ export function fromPose(p: Pose): Joints {
 	const lt = dir(p[P.lHip], p[P.lKnee]);
 	const rt = dir(p[P.rHip], p[P.rKnee]);
 	const lean = Math.atan2(p[P.rShoulder].y - p[P.lShoulder].y, p[P.lShoulder].x - p[P.rShoulder].x);
+	// Bends as the smallest turn (so a joint never flips round the long way).
+	const bend = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+	const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+	// The legs: when the knees or ankles are out of the picture (or guessed), the model makes them up
+	// and they can cross over each other. Keep each leg on its own side, bending the way knees bend,
+	// and fall back to an athletic stance when they can't be seen.
+	const seen = Math.min(p[P.lKnee].visibility ?? 1, p[P.rKnee].visibility ?? 1, p[P.lAnkle].visibility ?? 1, p[P.rAnkle].visibility ?? 1);
+	const legs =
+		seen < 0.5
+			? { lt: STANCE.lt!, ls: STANCE.ls!, rt: STANCE.rt!, rs: STANCE.rs! }
+			: {
+					lt: clamp(lt, -1.3, 0.12),
+					ls: clamp(bend(dir(p[P.lKnee], p[P.lAnkle]) - lt), -0.35, 1.7),
+					rt: clamp(rt, -0.12, 1.3),
+					rs: clamp(bend(dir(p[P.rKnee], p[P.rAnkle]) - rt), -1.7, 0.35)
+				};
 	return {
 		lu,
-		ll: dir(p[P.lElbow], p[P.lWrist]) - lu,
+		ll: bend(dir(p[P.lElbow], p[P.lWrist]) - lu),
 		ru,
-		rl: dir(p[P.rElbow], p[P.rWrist]) - ru,
-		lt,
-		ls: dir(p[P.lKnee], p[P.lAnkle]) - lt,
-		rt,
-		rs: dir(p[P.rKnee], p[P.rAnkle]) - rt,
+		rl: bend(dir(p[P.rElbow], p[P.rWrist]) - ru),
+		...legs,
 		y: 0, // set from Motion (crouch / jump)
 		lean: -lean
 	};

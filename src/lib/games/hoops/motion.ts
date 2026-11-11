@@ -6,7 +6,7 @@
 //  - dribble moves, with the hands low: crossover (hands swing across the body), in-and-out (out,
 //    in, out again on one side) and spin (a full turn: the shoulders narrow, then come back);
 //  - shots, layups and pump fakes (shot.ts).
-import { body, features, type Pose } from './pose';
+import { body, features, P, type Pose } from './pose';
 import { ShotDetector, type ShotTake } from './shot';
 
 export type MoveName = 'crossover' | 'inout' | 'spin';
@@ -19,7 +19,11 @@ export type MotionEvent =
 	| { type: 'move'; move: MoveName; to?: 'left' | 'right' }
 	| { type: 'jump' }
 	| { type: 'triple' }
-	| { type: 'stepback' };
+	| { type: 'stepback' }
+	/** A hand swiped across in front of you (a steal attempt on defense). */
+	| { type: 'swipe'; dir: 'left' | 'right' }
+	/** You started running in place (knees or arms pumping). */
+	| { type: 'sprint' };
 
 export interface MotionState {
 	/** Body in view this frame. */
@@ -42,17 +46,27 @@ export interface MotionState {
 	setting: boolean;
 	/** Hands low (dribbling height). */
 	low: boolean;
+	/** Running in place: 0 still … 1 knees (or arms) pumping hard. */
+	run: number;
+	/** Pounding the ball: the low hand bouncing up and down quickly. */
+	dribbling: boolean;
 	/** The latest frame's numbers (for the practice read-outs). */
 	f: number[];
 }
 
 export class Motion {
-	state: MotionState = { tracked: false, x: 0, depth: 0, lean: 0, hand: null, air: 0, crouch: 0, triple: false, setting: false, low: false, f: Array(8).fill(0) };
+	state: MotionState = { tracked: false, x: 0, depth: 0, lean: 0, hand: null, air: 0, crouch: 0, triple: false, setting: false, low: false, run: 0, dribbling: false, f: Array(8).fill(0) };
 	private base: { cx: number; sw: number; legs: number; lean: number } | null = null;
 	private calib: { cx: number; sw: number; legs: number; lean: number }[] | null = null;
 	private leanEma = 0;
 	private recent: { t: number; lean: number; sw: number }[] = [];
 	private stepCool = 0;
+	// Running, dribbling and swipes.
+	private knees: { t: number; d: number }[] = [];
+	private bounce: { t: number; y: number }[] = [];
+	private wrists: { t: number; l: number; r: number; ly: number; ry: number }[] = [];
+	private swipeCool = 0;
+	private sprinting = false;
 	private hipEma: number | null = null;
 	private swEma: number | null = null;
 	private airborne = false;
@@ -154,6 +168,7 @@ export class Motion {
 		s.triple = triple;
 		s.low = (f[0] + f[1]) / 2 < -0.5;
 
+		this.pumps(p, b, f, t);
 		this.shots.push(f, t);
 		s.setting = this.shots.phase == 'set';
 		this.dribbleMoves(b, t, sideOn);
@@ -201,6 +216,80 @@ export class Motion {
 			if (out2 > 0) return this.fire('inout', t);
 		}
 	}
+	/** Running in place, pounding the dribble, and swipes. */
+	private pumps(p: Pose, b: ReturnType<typeof body>, f: number[], t: number) {
+		const s = this.state;
+		const sw = b.sw;
+		// Running in place: the knees take turns coming up (if the legs are out of the picture, the
+		// arms pumping, which alternate the same way). Count the swaps over the last second.
+		const kv = Math.min(p[P.lKnee].visibility ?? 1, p[P.rKnee].visibility ?? 1);
+		const d = kv > 0.55 ? (p[P.lKnee].y - p[P.rKnee].y) / sw : (f[0] - f[1]) * 0.25;
+		this.knees.push({ t, d });
+		while (this.knees.length && this.knees[0].t < t - 1000) this.knees.shift();
+		let flips = 0;
+		let last = 0;
+		for (const k of this.knees) {
+			if (Math.abs(k.d) < 0.12) continue;
+			const sg = Math.sign(k.d);
+			if (last && sg != last) flips++;
+			last = sg;
+		}
+		const want = flips >= 3 ? Math.min(1, 0.45 + (flips - 3) * 0.2) : 0;
+		s.run += (want - s.run) * (want > s.run ? 0.35 : 0.1);
+		if (!this.sprinting && s.run > 0.5) {
+			this.sprinting = true;
+			this.events.push({ type: 'sprint' });
+		} else if (this.sprinting && s.run < 0.2) this.sprinting = false;
+
+		// Pounding the dribble: the low hand going up and down, fast, by a good amount.
+		const lowY = Math.min(f[0], f[1]);
+		if (lowY < -0.6 && !s.setting) this.bounce.push({ t, y: lowY });
+		else this.bounce = [];
+		while (this.bounce.length && this.bounce[0].t < t - 900) this.bounce.shift();
+		let dribbling = false;
+		if (this.bounce.length >= 6) {
+			const ys = this.bounce.map((q) => q.y);
+			const lo = Math.min(...ys);
+			const hi = Math.max(...ys);
+			const amp = hi - lo;
+			if (amp > 0.22) {
+				const mid = (lo + hi) / 2;
+				const band = amp * 0.2;
+				let turns = 0;
+				let side = 0;
+				for (const y of ys) {
+					const sg = y > mid + band ? 1 : y < mid - band ? -1 : 0;
+					if (sg && side && sg != side) turns++;
+					if (sg) side = sg;
+				}
+				dribbling = turns >= 3;
+			}
+		}
+		s.dribbling = dribbling;
+
+		// A swipe: one hand whips across in front of you (between the hips and the shoulders), fast.
+		const lx = (1 - p[P.lWrist].x - b.cx) / sw;
+		const rx = (1 - p[P.rWrist].x - b.cx) / sw;
+		this.wrists.push({ t, l: lx, r: rx, ly: f[0], ry: f[1] });
+		while (this.wrists.length && this.wrists[0].t < t - 280) this.wrists.shift();
+		if (t > this.swipeCool && this.wrists.length >= 3 && !s.dribbling && s.run < 0.4) {
+			const a = this.wrists[0];
+			const z = this.wrists[this.wrists.length - 1];
+			for (const [dx, y0, y1] of [
+				[z.l - a.l, a.ly, z.ly],
+				[z.r - a.r, a.ry, z.ry]
+			]) {
+				const atChest = y1 > -1.9 && y1 < 0.5;
+				if (Math.abs(dx) > 1.15 && atChest && Math.abs(y1 - y0) < 0.8) {
+					this.events.push({ type: 'swipe', dir: dx > 0 ? 'right' : 'left' });
+					this.swipeCool = t + 750;
+					this.wrists = [];
+					break;
+				}
+			}
+		}
+	}
+
 	private fire(move: MoveName, t: number, to?: 'left' | 'right') {
 		this.events.push({ type: 'move', move, ...(to ? { to } : {}) });
 		this.moveCool = t + 650;

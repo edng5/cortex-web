@@ -42,7 +42,7 @@ export interface Flash {
 	grade?: Grade;
 }
 /** Moments the opponent has something to say about. */
-export type TalkKind = 'theyScore' | 'youScore' | 'theyBreakYou' | 'youBreakThem' | 'youBlock' | 'theyBlock' | 'bit';
+export type TalkKind = 'theyScore' | 'youScore' | 'theyBreakYou' | 'youBreakThem' | 'youBlock' | 'theyBlock' | 'bit' | 'stolen' | 'youDeep';
 
 /** An opponent's seven ratings, from their three headline ones and their style. */
 export function cpuStats(l: Level): Stats {
@@ -235,6 +235,14 @@ export class SoloGame {
 	private lastJump = -9999;
 	private youAnim: AnimName | null = null;
 	private burst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
+	/** Attacking off the dribble (0..1): pound the ball and you take off toward the rim. */
+	private drive = 0;
+	private driveSaid = 0;
+	/** Running to recover on defense (0..1). */
+	private sprint = 0;
+	private reachUntil = 0;
+	/** Your layup (or dunk) in motion: the last steps to the rim and the finish, played smoothly. */
+	private layup: { from: { x: number; z: number }; to: { x: number; z: number }; at: number; dunk: boolean } | null = null;
 	/** The hand with the ball: a crossover swaps it (crossing toward the hand that already has it loses the ball). */
 	ballHand: 'left' | 'right' = 'right';
 	private cs: Stats;
@@ -274,6 +282,8 @@ export class SoloGame {
 	private check(now: number, m: MotionState) {
 		this.ballHand = 'right';
 		this.court.setYouHand('right');
+		this.drive = this.sprint = this.reachUntil = 0;
+		this.layup = null;
 		this.phase = 'check';
 		this.phaseAt = now;
 		this.bar = null;
@@ -318,13 +328,46 @@ export class SoloGame {
 		// sideways with your feet (steps from where you stood at the check).
 		const off = this.ball == 'you';
 		if (this.phase == 'live') {
-			let next = off ? leanMove(this.you, { ...m, hand: this.ballHand }, (6 + this.stats.speed * 0.05) / 60, -1) : { ...this.you };
+			// Pounding the dribble: take off toward the rim, picking up speed (unless you're leaning back).
+			const pounding = off && m.dribbling && m.lean >= 0 && !m.setting;
+			this.drive += ((pounding ? 1 : 0) - this.drive) * (pounding ? 0.05 : 0.1);
+			if (off && this.drive > 0.55 && now - this.driveSaid > 4000) {
+				this.driveSaid = now;
+				this.say(now, 'Attacking!', 'Keep pounding it to the rim', '#fb923c', { kind: 'move' });
+				this.sfx('squeak');
+			}
+			const drv = off ? this.drive : 0;
+			const mm = { ...m, hand: this.ballHand, lean: drv > 0.05 ? Math.max(m.lean, 0.35 + drv * 0.65) : m.lean };
+			let next = off ? leanMove(this.you, mm, ((6 + this.stats.speed * 0.05) / 60) * (1 + drv * 0.9), -1) : { ...this.you };
 			// A step-back: a quick burst straight away from the basket (and your defender).
 			if (off && this.burst && now - this.burst.at < 300) {
 				const k = 1 - (1 - (now - this.burst.at) / 300) ** 2;
 				next = { x: this.burst.from.x + (this.burst.to.x - this.burst.from.x) * k, z: this.burst.from.z + (this.burst.to.z - this.burst.from.z) * k };
 			}
-			if (!off && now > this.beatenUntil - 700) {
+			// Running in place on defense: sprint back in front of him (between him and the basket).
+			this.sprint += ((!off && m.run > 0.3 ? m.run : 0) - this.sprint) * 0.2;
+			if (!off && this.sprint > 0.25 && now > this.reachUntil) {
+				const hx = HOOP.x - this.cpu.x;
+				const hz = HOOP.z - this.cpu.z;
+				const hd = Math.hypot(hx, hz) || 1;
+				const spot = { x: this.cpu.x + (hx / hd) * 1.5, z: this.cpu.z + (hz / hd) * 1.5 };
+				const sx = spot.x - next.x;
+				const sz = spot.z - next.z;
+				const sd = Math.hypot(sx, sz);
+				const v = ((11 + this.stats.speed * 0.08) / 60) * this.sprint;
+				if (sd > 0.05) {
+					next.x += (sx / sd) * Math.min(sd, v);
+					next.z += (sz / sd) * Math.min(sd, v);
+				}
+				// Back in front: you've recovered.
+				if (now < this.beatenUntil && sd < 0.8) {
+					this.beatenUntil = now;
+					this.say(now, 'Recovered!', 'Back in front', '#34d399', { kind: 'move' });
+					this.sfx('squeak');
+				}
+				// Your side steps carry on from here.
+				this.anchor.x = m.x - (CHECK.x - next.x) / 2.6;
+			} else if (!off && now > this.beatenUntil - 700 && now > this.reachUntil) {
 				// Defense: side steps slide you across; lean forward to step up on him, back to sag off.
 				const targetX = CHECK.x - (m.x - this.anchor.x) * 2.6;
 				const v = (7.5 + this.stats.speed * 0.05) / 60;
@@ -346,10 +389,16 @@ export class SoloGame {
 			this.you.x = clamp(next.x, -11.5, 11.5);
 			this.you.z = clamp(next.z, -13, 9.5);
 		}
+		if (this.layup && this.phase == 'flight') {
+			const k = Math.min(1, (now - this.layup.at) / 480);
+			const e = 1 - (1 - k) ** 3;
+			this.you.x = this.layup.from.x + (this.layup.to.x - this.layup.from.x) * e;
+			this.you.z = this.layup.from.z + (this.layup.to.z - this.layup.from.z) * e;
+		}
 		for (const e of events) if (e.type == 'jump') this.lastJump = now;
 		if (this.phase == 'live') {
 			if (off) this.offense(now, m, events);
-			else this.defense(now, events);
+			else this.defense(now, events, m);
 			if (this.phase == 'live' && now - this.shotClockAt > SHOT_CLOCK) {
 				this.say(now, 'Shot clock!', 'Turnover', '#f87171');
 				this.sfx('buzzer');
@@ -406,8 +455,10 @@ export class SoloGame {
 				this.say(now, 'Triple threat', 'Next move is quicker', '#93c5fd');
 			} else if (e.type == 'pumpfake') {
 				this.bar = null;
-				if (near < 3.2 && now > this.cpuAir && Math.random() < 0.6 - this.level.defense * 0.004) {
-					this.cpuAir = now + 950;
+				if (near < 4.5 && now > this.cpuAir && now > this.cpuStumble && Math.random() < 0.72 - this.level.defense * 0.0045) {
+					this.cpuAir = now + 1000;
+					this.setCpuAnim('block', now, true);
+					this.court.react('cheer');
 					this.track('bites');
 					this.talk('bit');
 					this.say(now, 'He bit!', 'Shoot or drive now', '#34d399', { kind: 'move' });
@@ -495,16 +546,59 @@ export class SoloGame {
 		this.phase = 'flight';
 		this.court.ball('hold', 'you');
 		if (dunk) this.sfx('ooh');
-		void this.court.shoot(made, blocked, dunk).then(() => this.result(performance.now(), 'you', made, blocked, pts, dunk));
+		if (kind == 'layup') {
+			// The last two steps carry you in under the rim (a little off to the side, toward the glass).
+			const hx = HOOP.x - this.you.x;
+			const hz = HOOP.z - this.you.z;
+			const hd = Math.hypot(hx, hz) || 1;
+			const stop = dunk ? 0.9 : 1.5;
+			const go = Math.max(0, hd - stop);
+			this.layup = { from: { ...this.you }, to: { x: this.you.x + (hx / hd) * go, z: this.you.z + (hz / hd) * go }, at: now, dunk };
+		}
+		// From behind the arc: the crowd's arms go up as it flies.
+		if (pts == 2 && !blocked) {
+			this.court.react('three');
+			this.sfx('threeUp');
+		}
+		// A layup leaves the hand at the top of the rise (the animation's release), softly.
+		const fly = () => this.court.shoot(made, blocked, dunk, kind == 'layup').then(() => this.result(performance.now(), 'you', made, blocked, pts, dunk));
+		if (kind == 'layup') setTimeout(() => void fly(), (DURATION[dunk ? 'dunk' : 'layup']! * RELEASE_AT[dunk ? 'dunk' : 'layup']) - 40);
+		else void fly();
 	}
 
 	// ── The computer has the ball ──
-	private defense(now: number, events: MotionEvent[]) {
+	private defense(now: number, events: MotionEvent[], m: MotionState) {
 		const near = dist(this.you, this.cpu);
 		const beaten = now < this.beatenUntil;
 		const inFront = !beaten && Math.abs(this.you.x - this.cpu.x) < 1.6 && this.you.z < this.cpu.z + 0.3 && this.cpu.z - this.you.z < 2.6;
 		this.court.ball(this.cpuShot ? 'hold' : 'dribble', 'cpu');
 		if (this.cpuShot) return;
+		// A swipe at the ball: your defense against his handles. Miss and you're off balance.
+		for (const e of events) {
+			if (e.type != 'swipe') continue;
+			if (near > 2.4) {
+				this.say(now, 'Too far to reach', 'Get up on him first', '#cbd5e1', { kind: 'info' });
+				continue;
+			}
+			const chance = clamp(0.16 + this.stats.defense * 0.0045 - this.cs.dribbling * 0.0028 + (inFront ? 0.06 : -0.08) + (this.plan.kind == 'size' ? 0.04 : 0), 0.05, 0.5);
+			if (Math.random() < chance) {
+				this.say(now, 'STOLE IT!', 'Your ball', '#34d399', { kind: 'block' });
+				this.sfx('steal');
+				this.sfx('roar');
+				this.court.react('roar');
+				this.court.shake(0.25);
+				this.talk('stolen');
+				this.ball = 'you';
+				this.check(now + 400, m);
+				return;
+			}
+			// Reached and missed: he goes right by while you're off balance.
+			this.reachUntil = now + 650;
+			this.beatenUntil = Math.max(this.beatenUntil, now + 900);
+			if (this.plan.kind == 'size') this.plan = { kind: 'drive', until: now + 2400, lane: clamp(this.you.x > this.cpu.x ? this.cpu.x - 2.4 : this.cpu.x + 2.4, -6, 6) };
+			this.say(now, 'Reached!', 'Off balance: run to recover', '#f87171', { kind: 'bad' });
+			this.sfx('squeak');
+		}
 		const p = this.plan;
 		if (p.kind == 'size') {
 			this.setCpuAnim('dribble', now);
@@ -590,6 +684,7 @@ export class SoloGame {
 	private startCpuShotAs(now: number, kind: 'shoot' | 'layup' | 'dunk') {
 		const dur = DURATION[kind]!;
 		this.cpuShot = { start: now, release: now + dur * RELEASE_AT[kind], kind, resolved: false };
+		if (kind == 'shoot' && pointsFrom(this.cpu) == 2) this.court.react('three');
 		this.setCpuAnim(kind, now, true);
 		this.phase = 'flight';
 	}
@@ -620,10 +715,13 @@ export class SoloGame {
 			this.talk('youBlock');
 			this.say(now, 'BLOCKED!', 'Get outta here!', '#34d399', { kind: 'block' });
 			this.sfx('block');
+			this.sfx('roar');
+			this.court.react('roar');
+			this.court.shake(0.3);
 		} else if (contest > 0.4) this.say(now, 'Contested', undefined, '#cbd5e1', { kind: 'info' });
 		else if (!inFront || near > 3) this.say(now, 'Wide open!', 'Close out on him', '#f87171', { kind: 'bad' });
 		if (s.kind == 'dunk' && !blocked) this.sfx('ooh');
-		void this.court.shoot(made, blocked, s.kind == 'dunk').then(() => this.result(performance.now(), 'cpu', made, blocked, pts, s.kind == 'dunk'));
+		void this.court.shoot(made, blocked, s.kind == 'dunk', s.kind == 'layup').then(() => this.result(performance.now(), 'cpu', made, blocked, pts, s.kind == 'dunk'));
 	}
 
 	// ── After a shot ──
@@ -638,8 +736,18 @@ export class SoloGame {
 				if (zoneOf(toHoop(this.you)) == 'deep') this.track('deeps');
 			}
 			this.sfx(pts == 2 ? 'swish2' : 'swish');
-			this.talk(shooter == 'you' ? 'youScore' : 'theyScore');
-			if (dunk) this.court.cheer();
+			const deep = shooter == 'you' && zoneOf(toHoop(this.you)) == 'deep';
+			this.talk(shooter == 'you' ? (deep ? 'youDeep' : 'youScore') : 'theyScore');
+			if (shooter == 'you') {
+				const big = dunk || pts == 2;
+				this.court.react(big ? 'roar' : 'cheer');
+				this.sfx(big ? 'roar' : 'cheer');
+				if (big) this.court.shake(dunk ? 0.6 : 0.35);
+			} else {
+				this.court.react('groan');
+				this.sfx('groan');
+				if (dunk) this.court.shake(0.4);
+			}
 			this.say(now, shooter == 'you' ? (dunk ? '+1 POSTERIZED!' : pts == 2 ? '+2 SPLASH!' : '+1 Bucket') : `${this.level.name} +${pts}${dunk ? ' (slam)' : ''}`, `${this.score.you} – ${this.score.cpu}`, shooter == 'you' ? '#22c55e' : '#f87171', { kind: shooter == 'you' ? 'make' : 'bad' });
 		} else if (!blocked) {
 			this.sfx('rim');
@@ -686,6 +794,11 @@ export class SoloGame {
 		const youFacing = offense ? rim : { ...this.cpu };
 		const cpuFacing = offense ? { ...this.you } : rim;
 		let j = youJ;
+		if (this.layup && this.phase == 'flight') {
+			const ms = now - this.layup.at;
+			const name = this.layup.dunk ? 'dunk' : 'layup';
+			if (ms < DURATION[name]!) j = animate(name, ms);
+		}
 		if (this.phase == 'over') j = animate(this.winner == 'you' ? 'celebrate' : 'sad', now - this.phaseAt);
 		if (this.phase == 'over') this.setCpuAnim(this.winner == 'cpu' ? 'celebrate' : 'sad', now);
 		this.court.setYou(j, this.you.x, this.you.z, youFacing);

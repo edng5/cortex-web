@@ -160,11 +160,83 @@ export const LINES: Record<string, Lines> = {
 	}
 };
 
+/** More for each opponent: when they score, and when you score on them (so they don't repeat). */
+export const MORE: Record<string, { score: string[]; youScore: string[] }> = {
+	'Spud Web 1.0': {
+		score: ['Small screen, big bucket.', 'Dial-up speed, broadband finish.', 'Under your arm, through your net.'],
+		youScore: ['Buffering... okay, that one loaded.', 'Page refresh. Again.']
+	},
+	'Dennis RobotMan': {
+		score: ['Garbage collected. Into the net.', 'Hustle subroutine engaged.', 'I dyed my circuits for this.'],
+		youScore: ['I let that one through. For science.', 'Rebound protocol: delayed.']
+	},
+	'Manute BOOL': {
+		score: ['If tall, then bucket.', 'Your defense? Null.', 'Long arms, short work.'],
+		youScore: ['Bit flipped. Noted.', 'False positive.']
+	},
+	"Shaquille O'NeuralNet": {
+		score: ['Too big, too strong, too many parameters.', 'Back it down. Download complete.', 'Shaq attack, version two.'],
+		youScore: ['That tickled.', "Don't get comfortable, little guy."]
+	},
+	'Regex Miller': {
+		score: ['Start to finish. Caret to dollar sign.', 'Greedy match. I take everything.', 'Choke sign incoming.'],
+		youScore: ['Escaped that one. Barely.', 'Unmatched group. Rare.']
+	},
+	'Steve Hash': {
+		score: ['Pick, roll, salt.', 'Two hashes ahead of you.', 'Assist to myself. Efficient.'],
+		youScore: ['Collision detected.', 'Rehashing my defense.']
+	},
+	'Derrick ROWS': {
+		score: ['JOIN me at the rim.', 'Full table scan. Nothing stopped me.', 'Fast index, faster first step.'],
+		youScore: ['Deadlock. Temporary.', 'Transaction failed. Retrying.']
+	},
+	'A.I.': {
+		score: ['Too quick, too clean.', 'Answer that.', 'Heart over height. Every time.'],
+		youScore: ['Okay, you got heart.', 'One time. Do it twice.']
+	},
+	'Tim DuncANN': {
+		score: ['Glass. Square. Backpropagated.', 'Textbook. I read the whole textbook.', 'No emotion. Just output.'],
+		youScore: ['A small error. Within tolerance.', 'Retraining on that play.']
+	},
+	'Hakeem OlaJSON': {
+		score: ['Up and under. Parsed and done.', 'Shake, shake, nested object.', 'Footwork compiled cleanly.'],
+		youScore: ['Malformed defense. Mine, I mean.', 'Syntax error on my side.']
+	},
+	'Kernel Durant': {
+		score: ['Root access to the rim.', 'Pull-up from my home directory.', "Can't block what you can't reach."],
+		youScore: ['Segfault. Rebooting.', 'Patch incoming.']
+	},
+	'Steph cURL': {
+		score: ['Shimmy. 201 Created.', 'Range: unlimited. Bandwidth too.', 'I turned around before it went in.'],
+		youScore: ['Packet loss. Happens.', 'Retry with backoff.']
+	},
+	'Kobe BYTEant': {
+		score: ['Footwork. Film. Finish.', 'Fourth-quarter code. Clean.', 'Tough shot. Easy for me.'],
+		youScore: ['Again. Prove it was not luck.', 'Good. I hate giving up a bucket.']
+	},
+	'LeBot James': {
+		score: ['Full court vision. Full court bucket.', 'Taking my talents to the rim.', 'Strength, speed, and a firmware update.'],
+		youScore: ["I'll remember that in the playoffs.", 'Chalk it up. Momentum is still mine.']
+	},
+	'AI Jordan': {
+		score: ['Shrug. Did it again.', 'Last shot? Every shot.', 'I could fade away from the parking lot.'],
+		youScore: ["I'm taking that personally.", 'You woke me up. Mistake.']
+	}
+};
+
+/** Anyone, when they score or you score (mixed in with each opponent's own). */
+export const ANYONE = {
+	score: ['Cash.', 'Count it.', 'Get used to that.', 'Too easy.', 'Scoreboard.', "You're gonna need a bigger defense."],
+	youScore: ['Lucky.', 'Okay, okay.', "That won't happen again.", 'Enjoy it while it lasts.', 'Fine. One time.']
+};
+
 /** Things anyone says, for moments everybody has. */
 export const COMMON = {
-	theyBreakYou: ['Check your shoes, I think you left them over there.', 'Ankles insured? You might want to look into that.', 'Whoops. Mind the floor.'],
-	youBreakThem: ['Okay, okay! Just a slip.', 'The floor is slippery. That is my story.', 'I meant to sit down.'],
-	youBlock: ['Hey! That was a good shot!', "Fine. Get your hand outta my face."],
-	theyBlock: ['Not in my house.', 'Get that weak stuff outta here.', 'Denied.'],
-	bit: ['I thought you were shooting!', 'Rude. Very rude.']
+	theyBreakYou: ['Check your shoes, I think you left them over there.', 'Ankles insured? You might want to look into that.', 'Whoops. Mind the floor.', 'Get up, the game is still going.', 'Your ankles just filed a bug report.', 'Shook you like a snow globe.'],
+	youBreakThem: ['Okay, okay! Just a slip.', 'The floor is slippery. That is my story.', 'I meant to sit down.', 'That was lag. Pure lag.', 'My sensors got crossed.', "I'm fine. Totally fine."],
+	youBlock: ['Hey! That was a good shot!', "Fine. Get your hand outta my face.", 'Who taught you that?', 'Okay, the wall is real.', 'Rejected? Me?'],
+	theyBlock: ['Not in my house.', 'Get that weak stuff outta here.', 'Denied.', 'Return to sender.', 'Packet dropped.', 'Not today. Not ever.'],
+	bit: ['I thought you were shooting!', 'Rude. Very rude.', 'My jump was on a timer. You hacked it.', 'I knew. I just jumped anyway.', 'Fake news.'],
+	stolen: ['Hey! Give that back!', 'Pickpocket.', 'My handle had a memory leak.', 'Lucky hands.', 'Okay, quick hands. I see you.'],
+	youDeep: ['From there? Really?', "That's not even a real shot.", 'Range check failed. On me.', 'Who shoots from the parking lot?']
 };

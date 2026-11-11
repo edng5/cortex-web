@@ -17,7 +17,7 @@
 	import { judge, makeTemplate, shotWindow, type ShotKind, type ShotTake, type ShotTemplate } from './shot';
 	import { LADDER, leanMove, stepBackTo, SoloGame, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
 	import { UNLOCK_AT, perfectWindow, shotRating } from './shot';
-	import { COMMON, INTERLUDES, LINES, PROLOGUE, type SceneLine } from './lore';
+	import { ANYONE, COMMON, INTERLUDES, LINES, MORE, PROLOGUE, type SceneLine } from './lore';
 	import { Speaker } from '$lib/voice/speech';
 	import ItemIcon from './ItemIcon.svelte';
 	import { ACHIEVEMENTS, ALWAYS_ON, COURT_SLOTS, ITEMS, NO_PROGRESS, SLOT_NAMES, courtStyle, howToGet, unlocked as itemUnlocked, wear, type Progress, type Slot } from './items';
@@ -185,6 +185,14 @@
 	let bubble = $state<{ who: string; text: string; at: number } | null>(null);
 	let lastTalk = 0;
 	const pickOne = <X,>(a: X[]) => a[Math.floor(Math.random() * a.length)];
+	/** A line not said lately (the last 10), so the trash talk doesn't loop. */
+	let said: string[] = [];
+	function freshLine(pool: string[]) {
+		const left = pool.filter((l) => !said.includes(l));
+		const line = pickOne(left.length ? left : pool);
+		said = [line, ...said.filter((l) => l != line)].slice(0, 10);
+		return line;
+	}
 	function talk(who: string, text: string) {
 		bubble = { who, text, at: performance.now() };
 		speak(text);
@@ -192,14 +200,17 @@
 	/** The opponent reacts (not every time, and not too often). */
 	function onTalk(k: TalkKind) {
 		const t = performance.now();
-		const big = k == 'theyBreakYou' || k == 'youBreakThem' || k == 'theyBlock' || k == 'youBlock';
-		if (t - lastTalk < 4500 || (!big && Math.random() < 0.45)) return;
+		const big = k == 'theyBreakYou' || k == 'youBreakThem' || k == 'theyBlock' || k == 'youBlock' || k == 'stolen' || k == 'youDeep';
+		if (t - lastTalk < 4000 || (!big && Math.random() < 0.4)) return;
 		lastTalk = t;
 		const l = LINES[opp.name];
+		const more = MORE[opp.name];
+		// Their own lines most of the time; sometimes something anyone would say.
+		const own = (a: string[] | undefined, b: string[] | undefined, any: string[]) => [...(a ?? []), ...(b ?? []), ...(Math.random() < 0.3 ? any : [])];
 		const text =
-			k == 'theyScore' ? pickOne(l?.score ?? ['Too easy.']) :
-			k == 'youScore' ? pickOne(l?.youScore ?? ['Lucky.']) :
-			pickOne(COMMON[k]);
+			k == 'theyScore' ? freshLine(own(l?.score, more?.score, ANYONE.score)) :
+			k == 'youScore' ? freshLine(own(l?.youScore, more?.youScore, ANYONE.youScore)) :
+			freshLine(COMMON[k]);
 		talk(opp.name, text);
 	}
 
@@ -329,7 +340,7 @@
 	}
 
 	// ── Practice ──
-	type Drill = 'jumpshot' | 'layup' | 'pumpfake' | 'triple' | 'crossover' | 'inout' | 'spin' | 'stepback' | 'jump';
+	type Drill = 'jumpshot' | 'layup' | 'pumpfake' | 'triple' | 'crossover' | 'inout' | 'spin' | 'stepback' | 'drive' | 'sprint' | 'swipe' | 'jump';
 	const DRILLS: { id: Drill; name: string; how: string }[] = [
 		{ id: 'jumpshot', name: 'Jump shot', how: 'Bring both hands up together above your shoulders (your set point), then shoot: hands up over your head, arms extended. Record 3 to set your timing, then drill it: release in the green.' },
 		{ id: 'layup', name: 'Layup', how: "Step in and reach one hand high above your head while the other stays low. No timing: it's your Finishing and how well you're guarded." },
@@ -339,10 +350,13 @@
 		{ id: 'inout', name: 'In-and-out', how: 'Hands low on one side: push them in toward the middle and straight back out.' },
 		{ id: 'spin', name: 'Spin move', how: 'Turn all the way round, quickly, and face the camera again.' },
 		{ id: 'stepback', name: 'Step-back', how: 'Lean back sharply, or hop back away from the camera: a quick burst away from your defender to make room for a jumper.' },
+		{ id: 'drive', name: 'Attack dribble', how: 'On offense, pound the ball: one hand low, bouncing hard and fast. You take off toward the rim, faster the longer you keep it up. Lean back to stop.' },
+		{ id: 'sprint', name: 'Sprint back', how: 'On defense, run in place: knees up, arms pumping. You sprint back in front of the ball handler, even after he has gone by you.' },
+		{ id: 'swipe', name: 'Steal', how: 'On defense, swipe one hand quickly across in front of you at waist or chest height. Close to him, it can strip the ball. Miss and you are off balance for a moment.' },
 
 	];
 	let drill = $state<Drill>('jumpshot');
-	let counts = $state<Record<Drill, number>>({ jumpshot: 0, layup: 0, pumpfake: 0, triple: 0, crossover: 0, inout: 0, spin: 0, stepback: 0, jump: 0 });
+	let counts = $state<Record<Drill, number>>({ jumpshot: 0, layup: 0, pumpfake: 0, triple: 0, crossover: 0, inout: 0, spin: 0, stepback: 0, drive: 0, sprint: 0, swipe: 0, jump: 0 });
 	let takes = $state<ShotTake[]>([]);
 	let recording = $state(false);
 	let pBar = $state<{ start: number; release: number; zone: number; stop: number | null } | null>(null);
@@ -387,6 +401,10 @@
 				}
 				bump(e.move, { crossover: 'Crossover', inout: 'In-and-out', spin: 'Spin move' }[e.move]);
 				if (e.move == 'spin') court?.spin('you');
+			} else if (e.type == 'sprint') bump('sprint', 'Sprint');
+			else if (e.type == 'swipe') {
+				bump('swipe', 'Swipe');
+				sfx('steal');
 			} else if (e.type == 'stepback') {
 				bump('stepback', 'Step-back');
 				practiceBurst = { from: { ...practicePos }, to: stepBackTo(practicePos), at: now };
@@ -465,6 +483,8 @@
 	let practicePos = { x: 0, z: -2 };
 	/** The hand with the ball in practice. */
 	let pHand = $state<'left' | 'right'>('right');
+	let pDrive = 0;
+	let pDriving = false;
 	let practiceBurst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
 	// ── Player: look, gear and stats ──
@@ -667,7 +687,12 @@
 		} else if (screen == 'practice') {
 			const m = motion.state;
 			// Lean to move, toward your dribbling hand's side, like in a game.
-			let p = leanMove(practicePos, { ...m, hand: pHand }, (6 + save.stats.speed * 0.05) / 60, -1);
+			const pounding = m.dribbling && m.lean >= 0 && !m.setting;
+			if (pounding && !pDriving) bump('drive', 'Attack dribble');
+			pDriving = pounding;
+			pDrive += ((pounding ? 1 : 0) - pDrive) * (pounding ? 0.05 : 0.1);
+			const lean = pDrive > 0.05 ? Math.max(m.lean, 0.35 + pDrive * 0.65) : m.lean;
+			let p = leanMove(practicePos, { ...m, lean, hand: pHand }, ((6 + save.stats.speed * 0.05) / 60) * (1 + pDrive * 0.9), -1);
 			if (practiceBurst && t - practiceBurst.at < 300) {
 				const k = 1 - (1 - (t - practiceBurst.at) / 300) ** 2;
 				p = { x: practiceBurst.from.x + (practiceBurst.to.x - practiceBurst.from.x) * k, z: practiceBurst.from.z + (practiceBurst.to.z - practiceBurst.from.z) * k };
@@ -1097,11 +1122,11 @@
 			<header><h2>How to play</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<ul>
 				<li><b>Set up:</b> stand 2–3 m from the camera so it sees you head to knees, in good light, with room to step around.</li>
-				<li><b>Move:</b> lean toward the camera to drive at the hoop, lean back to retreat. You go toward the side of the hand you're dribbling with (dribble right to go right). On defense, lean toward or away from your man and slide your feet sideways.</li>
+				<li><b>Move:</b> lean toward the camera to drive at the hoop, lean back to retreat. You go toward the side of the hand you're dribbling with (dribble right to go right). Pound the dribble (one hand bouncing hard) to explode toward the rim. On defense, lean toward or away from your man and slide your feet sideways; run in place to sprint back in front of him.</li>
 				<li><b>Shoot:</b> both hands up together, then release over your head. Time it to your recorded release: the green zone on the shot bar.</li>
 				<li><b>Layup:</b> near the rim, reach one hand high.</li>
 				<li><b>Shake him:</b> crossover, in-and-out or spin (hands low) when he's close. Triple threat first makes it quicker. Pump fake to make him jump.</li>
-				<li><b>Defend:</b> stay in front of him, and jump with his release to block.</li>
+				<li><b>Defend:</b> stay in front of him, and jump with his release to block. Swipe a hand across to go for the steal (miss and you're off balance).</li>
 				<li><b>Score:</b> ones inside the arc, twos from behind it. First to {TO}. Online games have a 24-second shot clock.</li>
 				<li><b>Gear:</b> beat ladder opponents for their signature items, and earn the rest with achievements.</li>
 			</ul>
@@ -1300,6 +1325,45 @@
 	.sheet-btns {
 		display: none;
 		gap: 4px;
+	}
+	@media (min-width: 721px) {
+		.board {
+			top: 14px;
+			border-radius: 20px;
+		}
+		.side {
+			padding: 10px 28px;
+			gap: 18px;
+		}
+		.side.has::after {
+			width: 44px;
+			height: 4px;
+			margin-left: -22px;
+			bottom: 6px;
+		}
+		.nm {
+			font-size: clamp(0.9rem, 1.6vw, 1.25rem);
+			max-width: min(260px, 20vw);
+		}
+		.pts {
+			font-size: clamp(2.4rem, 4.6vw, 3.6rem);
+		}
+		.center {
+			padding: 6px 22px;
+		}
+		.to {
+			font-size: 0.78rem;
+		}
+		.clock {
+			font-size: 2rem;
+		}
+		.handtag {
+			top: 112px;
+			font-size: 0.85rem;
+		}
+		.ticker {
+			top: 146px;
+		}
 	}
 	@media (max-width: 720px) {
 		.board {

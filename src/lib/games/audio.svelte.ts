@@ -157,27 +157,37 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'k.hhs.hhk.hhs.hh'
 	},
-	// Check-up: laid-back boom-bap for the park (menu): dusty minor chords, a walking bass, a lazy beat.
+	// Check-up: upbeat park streetball (menu): a bouncing funk bass, horn stabs, a sing-song hook and
+	// a busy, swinging beat. F minor, 104 bpm.
 	'checkup-menu': {
-		bpm: 88,
-		gain: 0.85,
+		bpm: 104,
+		gain: 0.8,
 		parts: [
-			{ voice: 'pluck', level: 0.05, notes: 'Eb4 . . Eb4 . . . . D4 . . D4 . . . . C4 . . C4 . . . . D4 . . F4 . Eb4 . . ' },
-			{ voice: 'pluck', level: 0.045, notes: 'G4 . . G4 . . . . F4 . . F4 . . . . Eb4 . . Eb4 . . . . F4 . . Ab4 . G4 . . ' },
-			{ voice: 'sine', level: 0.11, notes: 'C2 . . C2 . . Eb2 . Bb1 . . Bb1 . . D2 . Ab1 . . Ab1 . . C2 . G1 . . G1 . Bb1 B1 . ' },
-			{ voice: 'bell', level: 0.016, notes: '. . . . . . G5 . . . . . . . F5 . . . . . . . Eb5 . . . . . . . D5 . ' }
+			{ voice: 'triangle', level: 0.13, notes: 'F2 . F3 F2 . . Ab2 Bb2 F2 . F3 F2 . Eb3 C3 Ab2 Db2 . Db3 Db2 . . F2 Ab2 Eb2 . Eb3 Eb2 . G2 Bb2 Eb3 ' },
+			{ voice: 'square', level: 0.022, notes: '. . Ab4 . . Ab4 . . . . G4 . . . Eb4 . . . F4 . . F4 . . . . G4 . Ab4 . Bb4 . ' },
+			{ voice: 'square', level: 0.018, notes: '. . F4 . . F4 . . . . Eb4 . . . C4 . . . Db4 . . Db4 . . . . Eb4 . F4 . G4 . ' },
+			{
+				voice: 'pluck',
+				level: 0.06,
+				notes:
+					'C5 . C5 Eb5 . F5 . Eb5 C5 . Bb4 . Ab4 . F4 . Ab4 . Ab4 Bb4 . C5 . Eb5 F5 . Eb5 C5 Bb4 . C5 . ' +
+					'F5 . Eb5 . C5 . Bb4 C5 . . Ab4 . F4 . . . Db5 . C5 . Bb4 . Ab4 Bb4 C5 - - - . . . . '
+			},
+			{ voice: 'bell', level: 0.016, notes: '. . . . . . . . . . . . . . C6 . . . . . . . . . . . . . . . Eb6 . ' }
 		],
-		drums: 'k.s.kks.k.s.k.sh'
+		drums: 'khshkkshkhshk.sk'
 	},
-	// Check-up in a game: the same groove, harder and quicker, so it stays under the sound effects.
+	// Check-up in a game: the same tune, quicker and harder, the bass and horns driving it.
 	'checkup-play': {
-		bpm: 96,
-		gain: 0.45,
+		bpm: 112,
+		gain: 0.5,
 		parts: [
-			{ voice: 'sine', level: 0.12, notes: 'C2 . C2 . Eb2 . C2 Bb1 . . Ab1 . Ab1 . G1 Bb1 ' },
-			{ voice: 'pluck', level: 0.04, notes: '. . Eb4 . . . G4 . . . Eb4 . . . F4 . ' }
+			{ voice: 'triangle', level: 0.13, notes: 'F2 . F3 F2 . . Ab2 Bb2 F2 . F3 F2 . Eb3 C3 Ab2 Db2 . Db3 Db2 . . F2 Ab2 Eb2 . Eb3 Eb2 . G2 Bb2 Eb3 ' },
+			{ voice: 'square', level: 0.02, notes: '. . Ab4 . . Ab4 . . . . G4 . . . Eb4 . . . F4 . . F4 . . . . G4 . Ab4 . Bb4 . ' },
+			{ voice: 'square', level: 0.016, notes: '. . F4 . . F4 . . . . Eb4 . . . C4 . . . Db4 . . Db4 . . . . Eb4 . F4 . G4 . ' },
+			{ voice: 'pluck', level: 0.04, notes: 'C5 . . . . . . . Ab4 . . . . . . . Db5 . . . . . . . Bb4 . . . C5 . . . ' }
 		],
-		drums: 'k.skk.s.k.sk.ksh'
+		drums: 'khshkkshkhshkhss'
 	},
 	// Chess: calm and thoughtful, a slow arpeggio in D minor.
 	'chess-menu': {
@@ -770,7 +780,36 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 		buzzer: (a) => a._tone('sawtooth', 210, 205, 0.7, 0.07),
 		move: (a) => a._arp([72, 79], 0.05, 'square', 0.04, 0.1),
 		perfect: (a) => a._arp([76, 83, 88], 0.06, 'triangle', 0.08, 0.16),
-		recorded: (a) => a._arp([67, 72, 76, 79], 0.07, 'triangle', 0.08, 0.18)
+		recorded: (a) => a._arp([67, 72, 76, 79], 0.07, 'triangle', 0.08, 0.18),
+		// The crowd: noise shaped like voices (bands around a voice's formants), layered.
+		cheer: (a) => {
+			a._fx(1.1, 0.09, 'bandpass', 900, 1300);
+			a._fx(0.9, 0.05, 'bandpass', 2200, 2600, 0.08);
+			a._tone('sine', 2400, 2700, 0.18, 0.025, 0.2);
+		},
+		roar: (a) => {
+			// On their feet: a big swell, whistles, and an air horn.
+			a._fx(2.2, 0.13, 'bandpass', 700, 1200);
+			a._fx(1.8, 0.08, 'bandpass', 1800, 2600, 0.1);
+			a._fx(1.4, 0.06, 'lowpass', 600, 300, 0.05);
+			a._tone('sine', 2500, 3000, 0.22, 0.03, 0.25);
+			a._tone('sine', 2700, 2300, 0.2, 0.025, 0.55);
+			a._tone('sawtooth', 233, 233, 0.32, 0.04, 0.1);
+			a._tone('sawtooth', 294, 294, 0.32, 0.03, 0.1);
+			a._tone('sawtooth', 233, 233, 0.5, 0.04, 0.5);
+			a._tone('sawtooth', 294, 294, 0.5, 0.03, 0.5);
+		},
+		groan: (a) => {
+			// "Awww": falling voices.
+			a._tone('sawtooth', 260, 150, 1.1, 0.022);
+			a._tone('sawtooth', 330, 190, 1.0, 0.016, 0.05);
+			a._fx(1.1, 0.06, 'bandpass', 700, 350);
+		},
+		threeUp: (a) => {
+			// A rising "ooooh" as a shot from deep flies.
+			a._fx(1.2, 0.07, 'bandpass', 450, 1100);
+			a._tone('sawtooth', 180, 260, 1.1, 0.014);
+		}
 	},
 	chess: {
 		move: (a) => {
