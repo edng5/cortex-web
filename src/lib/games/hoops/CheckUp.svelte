@@ -13,9 +13,9 @@
 	import { P, startTracking, type Pose, type Tracker } from './pose';
 	import { Motion, type MotionEvent } from './motion';
 	import { fromPose, type Joints } from './anim';
-	import { createCourt, BROWS, CHECK, DEFAULT_LOOK, EYES, FACIAL, HAIRS, HAIR_COLORS, HOOP, JERSEYS, MOUTHS, SKINS, type Court, type Look } from './court';
+	import { createCourt, BROWS, BUILDS, CHECK, EARRINGS, DEFAULT_LOOK, EYES, FACIAL, HAIRS, HAIR_COLORS, HOOP, JERSEYS, MOUTHS, SKINS, type Court, type Look } from './court';
 	import { judge, makeTemplate, shotWindow, type ShotKind, type ShotTake, type ShotTemplate } from './shot';
-	import { LADDER, leanMove, SoloGame, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
+	import { LADDER, leanMove, stepBackTo, SoloGame, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
 	import { UNLOCK_AT, shotRating } from './shot';
 	import { COMMON, INTERLUDES, LINES, PROLOGUE, type SceneLine } from './lore';
 	import { Speaker } from '$lib/voice/speech';
@@ -326,7 +326,7 @@
 	}
 
 	// ── Practice ──
-	type Drill = 'jumpshot' | 'layup' | 'pumpfake' | 'triple' | 'crossover' | 'inout' | 'spin' | 'jump';
+	type Drill = 'jumpshot' | 'layup' | 'pumpfake' | 'triple' | 'crossover' | 'inout' | 'spin' | 'stepback' | 'jump';
 	const DRILLS: { id: Drill; name: string; how: string }[] = [
 		{ id: 'jumpshot', name: 'Jump shot', how: 'Bring both hands up together above your shoulders (your set point), then shoot: hands up over your head, arms extended. Record 3 to set your timing, then drill it: release in the green.' },
 		{ id: 'layup', name: 'Layup', how: 'Step in and reach one hand high above your head while the other stays low. Either hand works. Record 3, then drill.' },
@@ -335,10 +335,11 @@
 		{ id: 'crossover', name: 'Crossover', how: 'Hands low (dribbling height): swing them quickly from one side of your body to the other.' },
 		{ id: 'inout', name: 'In-and-out', how: 'Hands low on one side: push them in toward the middle and straight back out.' },
 		{ id: 'spin', name: 'Spin move', how: 'Turn all the way round, quickly, and face the camera again.' },
+		{ id: 'stepback', name: 'Step-back', how: 'Lean back sharply, or hop back away from the camera: a quick burst away from your defender to make room for a jumper.' },
 		{ id: 'jump', name: 'Block jump', how: "Jump straight up with your arms high. On defense, time it with your opponent's release." }
 	];
 	let drill = $state<Drill>('jumpshot');
-	let counts = $state<Record<Drill, number>>({ jumpshot: 0, layup: 0, pumpfake: 0, triple: 0, crossover: 0, inout: 0, spin: 0, jump: 0 });
+	let counts = $state<Record<Drill, number>>({ jumpshot: 0, layup: 0, pumpfake: 0, triple: 0, crossover: 0, inout: 0, spin: 0, stepback: 0, jump: 0 });
 	let takes = $state<ShotTake[]>([]);
 	let recording = $state(false);
 	let pBar = $state<{ start: number; release: number; zone: number; stop: number | null } | null>(null);
@@ -370,7 +371,13 @@
 				bump('triple', 'Triple threat');
 				track('triples');
 			}
-			else if (e.type == 'move') bump(e.move, { crossover: 'Crossover', inout: 'In-and-out', spin: 'Spin move' }[e.move]);
+			else if (e.type == 'move') {
+				bump(e.move, { crossover: 'Crossover', inout: 'In-and-out', spin: 'Spin move' }[e.move]);
+				if (e.move == 'spin') court?.spin('you');
+			} else if (e.type == 'stepback') {
+				bump('stepback', 'Step-back');
+				practiceBurst = { from: { ...practicePos }, to: stepBackTo(practicePos), at: now };
+			}
 			else if (e.type == 'jump') bump('jump', 'Jump');
 			else if (e.type == 'shot') practiceShot(e.take, now);
 		}
@@ -443,6 +450,7 @@
 	}
 	// In practice you move around the court too (from where you started).
 	let practicePos = { x: 0, z: -2 };
+	let practiceBurst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
 	// ── Player: look, gear and stats ──
 	/** Your look with your gear on. */
@@ -642,9 +650,13 @@
 		} else if (screen == 'practice') {
 			const m = motion.state;
 			// Lean to move, toward your dribbling hand's side, like in a game.
-			const p = leanMove(practicePos, m, (6 + save.stats.dribbling * 0.05) / 60, -1);
+			let p = leanMove(practicePos, m, (6 + save.stats.speed * 0.05) / 60, -1);
+			if (practiceBurst && t - practiceBurst.at < 300) {
+				const k = 1 - (1 - (t - practiceBurst.at) / 300) ** 2;
+				p = { x: practiceBurst.from.x + (practiceBurst.to.x - practiceBurst.from.x) * k, z: practiceBurst.from.z + (practiceBurst.to.z - practiceBurst.from.z) * k };
+			}
 			practicePos = { x: Math.max(-11, Math.min(11, p.x)), z: Math.max(-12.5, Math.min(8, p.z)) };
-			court?.setYou(youJ, practicePos.x, practicePos.z, -1);
+			court?.setYou(youJ, practicePos.x, practicePos.z, { x: HOOP.x, z: HOOP.z });
 			practiceEvents(events, t);
 		}
 	}
@@ -891,10 +903,17 @@
 				</div>
 			{/snippet}
 			{#if playerTab == 'look'}
+				<h3>Body</h3>
+				<div class="gear">
+					<span>Build</span>
+					<div class="chips">
+						{#each BUILDS as b (b)}<button class:on={(save.look.build ?? 'standard') == b} onclick={() => setLook({ build: b })}>{b}</button>{/each}
+					</div>
+				</div>
 				<h3>Skin</h3>
 				<div class="swatches">{#each SKINS as c (c)}<button class="sw" class:on={save.look.skin == c} style="background:{c}" aria-label="Skin tone" onclick={() => setLook({ skin: c })}></button>{/each}</div>
 				<h3>Face</h3>
-				{#each [['Eyes', 'eyes', EYES, 'dots'], ['Brows', 'brows', BROWS, 'thin'], ['Mouth', 'mouth', MOUTHS, 'none'], ['Facial hair', 'facial', FACIAL, 'none']] as const as [label, key, options, dflt] (key)}
+				{#each [['Eyes', 'eyes', EYES, 'dots'], ['Brows', 'brows', BROWS, 'thin'], ['Mouth', 'mouth', MOUTHS, 'none'], ['Facial hair', 'facial', FACIAL, 'none'], ['Earrings', 'earrings', EARRINGS, 'none']] as const as [label, key, options, dflt] (key)}
 					<div class="gear">
 						<span>{label}</span>
 						<div class="chips">

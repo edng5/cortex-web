@@ -169,19 +169,43 @@ const toHoop = (p: { x: number; z: number }) => Math.hypot(p.x - HOOP.x, p.z - H
 const pointsFrom = (p: { x: number; z: number }) => (toHoop(p) > ARC ? 2 : 1);
 
 /**
- * Where leaning takes you this frame: forward (`facing` = -1: toward the hoop, -z) or back, drifting
- * toward your dribbling hand's side (the player's right is +x when facing the hoop).
+ * The ball handler's move this frame (facing the basket). Lean forward: attack the basket itself
+ * (so you don't drift into a corner), angled a little toward your dribbling hand, faster the more
+ * you lean. Lean back: back away. Stand tall: drift slowly back out toward the top of the key.
+ * (`facing` is kept for callers; the direction always comes from where the basket is.)
  */
-export function leanMove(p: { x: number; z: number }, m: MotionState, speed: number, facing: -1 | 1) {
-	if (!m.lean) return { ...p };
-	const side = m.hand == 'right' ? 1 : m.hand == 'left' ? -1 : 0;
-	// Forward and to the side at once: about 35° off straight.
-	const fx = side * 0.7;
-	const len = Math.hypot(fx, 1);
-	const step = Math.abs(m.lean) * speed;
-	const dir = Math.sign(m.lean);
-	// The player's right is +x facing the hoop (-1), -x facing away; forward is the way they face.
-	return { x: p.x - facing * (fx / len) * step, z: p.z + facing * (1 / len) * step * dir };
+export function leanMove(p: { x: number; z: number }, m: MotionState, speed: number, _facing: -1 | 1 = -1) {
+	void _facing;
+	const tx = HOOP.x - p.x;
+	const tz = HOOP.z - p.z;
+	const d = Math.hypot(tx, tz) || 1;
+	const fx = tx / d;
+	const fz = tz / d;
+	// Your right, facing the basket.
+	const rx = -fz;
+	const rz = fx;
+	if (m.lean > 0) {
+		if (d < 1.4) return { ...p }; // at the rim
+		const side = m.hand == 'right' ? 1 : m.hand == 'left' ? -1 : 0;
+		const a = side * 0.42; // about 24° toward the dribbling hand
+		const step = speed * (0.5 + m.lean * 0.55);
+		return { x: p.x + (fx * Math.cos(a) + rx * Math.sin(a)) * step, z: p.z + (fz * Math.cos(a) + rz * Math.sin(a)) * step };
+	}
+	if (m.lean < 0) {
+		const step = speed * 0.75 * -m.lean;
+		return { x: p.x - fx * step, z: p.z - fz * step };
+	}
+	// Standing tall: drift back out, slowly, until about the top of the key.
+	if (d < 10.5) return { x: p.x - fx * speed * 0.18, z: p.z - fz * speed * 0.18 };
+	return { ...p };
+}
+/** A step-back: this far straight away from the basket, over a moment. */
+export const STEPBACK = 2.8;
+export function stepBackTo(p: { x: number; z: number }) {
+	const tx = HOOP.x - p.x;
+	const tz = HOOP.z - p.z;
+	const d = Math.hypot(tx, tz) || 1;
+	return { x: p.x - (tx / d) * STEPBACK, z: p.z - (tz / d) * STEPBACK };
 }
 
 export class SoloGame {
@@ -210,6 +234,7 @@ export class SoloGame {
 	private beatenUntil = 0;
 	private lastJump = -9999;
 	private youAnim: AnimName | null = null;
+	private burst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 	private cs: Stats;
 	/** The defender being knocked back by an ankle breaker: from, to, when. */
 	private knock: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
@@ -284,7 +309,12 @@ export class SoloGame {
 		// sideways with your feet (steps from where you stood at the check).
 		const off = this.ball == 'you';
 		if (this.phase == 'live') {
-			const next = off ? leanMove(this.you, m, (6 + this.stats.speed * 0.05) / 60, -1) : { ...this.you };
+			let next = off ? leanMove(this.you, m, (6 + this.stats.speed * 0.05) / 60, -1) : { ...this.you };
+			// A step-back: a quick burst straight away from the basket (and your defender).
+			if (off && this.burst && now - this.burst.at < 300) {
+				const k = 1 - (1 - (now - this.burst.at) / 300) ** 2;
+				next = { x: this.burst.from.x + (this.burst.to.x - this.burst.from.x) * k, z: this.burst.from.z + (this.burst.to.z - this.burst.from.z) * k };
+			}
 			if (!off && now > this.beatenUntil - 700) {
 				// Defense: side steps slide you across; lean forward to step up on him, back to sag off.
 				const targetX = CHECK.x - (m.x - this.anchor.x) * 2.6;
@@ -361,8 +391,13 @@ export class SoloGame {
 					this.say(now, 'He bit!', 'Shoot or drive now', '#34d399', { kind: 'move' });
 					this.sfx('ooh');
 				} else this.say(now, 'Pump fake', 'He stayed down', '#cbd5e1');
+			} else if (e.type == 'stepback') {
+				this.burst = { from: { ...this.you }, to: stepBackTo(this.you), at: now };
+				this.say(now, 'Step-back', 'Room to shoot', '#93c5fd', { kind: 'move' });
+				this.sfx('squeak');
 			} else if (e.type == 'move') {
 				const name = { crossover: 'Crossover', inout: 'In-and-out', spin: 'Spin move' }[e.move];
+				if (e.move == 'spin') this.court.spin('you');
 				if (near > 2.8 || now < this.cpuStumble) {
 					this.say(now, name, undefined, '#cbd5e1');
 					continue;
@@ -480,6 +515,7 @@ export class SoloGame {
 				if (Math.random() < this.level.style.moves) {
 					const move: AnimName = Math.random() < 0.75 ? this.level.style.move : this.level.style.move == 'spin' ? 'crossover' : 'spin';
 					this.setCpuAnim(move, now, true);
+					if (move == 'spin') this.court.spin('cpu');
 					// His handles against your defense: better defense, fewer ankles broken.
 					const tight = this.cpu.z - this.you.z < 1.0 ? 0.08 : 0;
 					if (Math.random() < 0.3 + this.cs.dribbling * 0.0045 + tight - this.stats.defense * 0.006) {

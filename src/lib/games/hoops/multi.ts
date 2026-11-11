@@ -8,7 +8,7 @@ import { CHECK, HOOP, ARC, type Court, type Look } from './court';
 import type { Joints } from './anim';
 import type { MotionEvent, MotionState } from './motion';
 import { judge, shotRating, zoneOf, UNLOCK_AT, type ShotKind, type ShotTemplate } from './shot';
-import { leanMove, START_STATS, TO, type Flash, type Stats } from './game';
+import { leanMove, START_STATS, stepBackTo, TO, type Flash, type Stats } from './game';
 
 export const SHOT_CLOCK_MS = 24_000;
 const CHECK_MS = 2600;
@@ -67,6 +67,7 @@ export class Multi {
 	private pending: { seat: Seat; chance: number; at: number; kind: ShotKind; dunk: boolean } | null = null;
 	private ended = false;
 	private hostFlashAt = 0;
+	private burst: { seat: Seat; from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
 	constructor(
 		private court: Court,
@@ -119,6 +120,7 @@ export class Multi {
 		} else if (k == 'fly' && !this.host) {
 			this.fly(msg.seat as Seat, !!msg.made, !!msg.blocked, !!msg.dunk);
 		} else if (k == 'sfx' && !this.host) this.sfx(String(msg.name));
+		else if (k == 'spin' && !this.host) this.court.spin(msg.seat == this.seat ? 'you' : 'cpu');
 		else if (k == 'trk' && !this.host && ['makes', 'twos', 'shakes', 'blocks', 'bites', 'dunks', 'deeps', 'floors'].includes(msg.key as string)) this.track(msg.key as 'makes');
 		else if (k == 'end' && !this.host && !this.ended) {
 			this.ended = true;
@@ -172,7 +174,7 @@ export class Multi {
 					if (r.grade == 'perfect' && this.templates[e.take.kind]) this.track('perfects');
 					const dunk = this.canDunk(e.take.kind, this.pos[1], m);
 					this.send({ k: 'shot', kind: e.take.kind, chance: Math.round((dunk ? Math.min(0.97, r.chance + 0.3) : r.chance) * 1000) / 1000, dunk });
-				} else if (e.type == 'move' || e.type == 'pumpfake' || e.type == 'jump' || e.type == 'triple') this.send({ k: 'ev', ...e });
+				} else if (e.type == 'move' || e.type == 'pumpfake' || e.type == 'jump' || e.type == 'triple' || e.type == 'stepback') this.send({ k: 'ev', ...e });
 			}
 		}
 		this.draw(j);
@@ -249,7 +251,12 @@ export class Multi {
 		// The ball handler leans to attack (toward the dribbling hand); the defender leans and slides.
 		const so = this.statsOf(off);
 		const sd = this.statsOf(def);
-		const o = leanMove(this.pos[off], this.inputs[off] as unknown as MotionState, (6 + so.speed * 0.05) / 60, -1);
+		let o = leanMove(this.pos[off], this.inputs[off] as unknown as MotionState, (6 + so.speed * 0.05) / 60, -1);
+		const b = this.burst;
+		if (b && b.seat == off && now - b.at < 300) {
+			const k = 1 - (1 - (now - b.at) / 300) ** 2;
+			o = { x: b.from.x + (b.to.x - b.from.x) * k, z: b.from.z + (b.to.z - b.from.z) * k };
+		}
 		this.pos[off] = { x: clamp(o.x, -11.5, 11.5), z: clamp(o.z, -13, 9.5) };
 		if (now > this.stumble[def]) {
 			const vD = (6.5 + sd.speed * 0.045) / 60;
@@ -287,7 +294,16 @@ export class Multi {
 				this.cue('ooh');
 			}
 		} else if (e.type == 'pumpfake' && seat == off) this.fakeAt[off] = now;
+		else if (e.type == 'stepback' && seat == off) {
+			this.burst = { seat: off, from: { ...this.pos[off] }, to: stepBackTo(this.pos[off]), at: now };
+			this.say(now, 'Step-back', undefined, '#93c5fd', { kind: 'move' });
+			this.cue('squeak');
+		}
 		else if (e.type == 'move' && seat == off) {
+			if (e.move == 'spin') {
+				this.court.spin(off == this.seat ? 'you' : 'cpu');
+				this.send({ k: 'spin', seat: off });
+			}
 			const near = dist(this.pos[off], this.pos[def]);
 			if (near > 2.8 || now < this.stumble[def]) return;
 			if (Math.random() < 0.28 + this.statsOf(off).dribbling * 0.0065 - this.statsOf(def).defense * 0.0055) {

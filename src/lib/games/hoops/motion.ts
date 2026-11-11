@@ -17,7 +17,8 @@ export type MotionEvent =
 	| { type: 'pumpfake' }
 	| { type: 'move'; move: MoveName }
 	| { type: 'jump' }
-	| { type: 'triple' };
+	| { type: 'triple' }
+	| { type: 'stepback' };
 
 export interface MotionState {
 	/** Body in view this frame. */
@@ -49,6 +50,8 @@ export class Motion {
 	private base: { cx: number; sw: number; legs: number; lean: number } | null = null;
 	private calib: { cx: number; sw: number; legs: number; lean: number }[] | null = null;
 	private leanEma = 0;
+	private recent: { t: number; lean: number; sw: number }[] = [];
+	private stepCool = 0;
 	private hipEma: number | null = null;
 	private swEma: number | null = null;
 	private airborne = false;
@@ -104,6 +107,18 @@ export class Motion {
 		this.leanEma += (b.lean - base.lean - this.leanEma) * 0.18;
 		const lean = this.leanEma;
 		s.lean = Math.abs(lean) < 0.12 ? 0 : Math.max(-1, Math.min(1, (lean - Math.sign(lean) * 0.12) / 0.45));
+		// Step-back: a sudden lean back, or a quick hop away from the camera (you look smaller fast).
+		this.recent.push({ t, lean: s.lean, sw: b.sw });
+		while (this.recent.length && this.recent[0].t < t - 320) this.recent.shift();
+		if (t > this.stepCool && this.recent.length > 3) {
+			const first = this.recent[0];
+			const quickLean = first.lean > -0.1 && s.lean < -0.55;
+			const quickHop = b.sw < first.sw * 0.9 && !this.spin;
+			if (quickLean || quickHop) {
+				this.events.push({ type: 'stepback' });
+				this.stepCool = t + 900;
+			}
+		}
 		// The dribbling hand: the lower one, when it's down at the hips and clearly below the other.
 		s.hand = f[0] < -0.9 && f[0] < f[1] - 0.35 ? 'left' : f[1] < -0.9 && f[1] < f[0] - 0.35 ? 'right' : s.hand && Math.min(f[0], f[1]) < -0.9 ? s.hand : null;
 

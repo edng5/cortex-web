@@ -29,6 +29,8 @@ export interface Look {
 	brows?: (typeof BROWS)[number];
 	mouth?: (typeof MOUTHS)[number];
 	facial?: (typeof FACIAL)[number];
+	build?: (typeof BUILDS)[number];
+	earrings?: (typeof EARRINGS)[number];
 	/** Gear (items.ts): shoes 'main|sole', and colours for the rest (null / absent: none). */
 	shoes?: string;
 	band?: string | null;
@@ -46,11 +48,14 @@ export const SKINS = [
 	'#b5794a', '#a0663a', '#8d5a34', '#7a4a26', '#65391d', '#4e2f19', '#3d2414', '#2b190e'
 ];
 export const HAIRS = [
-	'short', 'fade', 'buzz', 'afro', 'curly', 'twists', 'locs', 'cornrows', 'mohawk', 'flattop', 'bun', 'ponytail', 'long', 'flow', 'bald'
+	'short', 'fade', 'buzz', 'afro', 'curly', 'twists', 'locs', 'cornrows', 'braids', 'mohawk', 'flattop', 'bob', 'bun', 'spacebuns', 'pigtails', 'ponytail', 'long', 'flow', 'bald'
 ] as const;
-export const EYES = ['dots', 'wide', 'sleepy', 'focused'] as const;
+export const EYES = ['dots', 'wide', 'lashes', 'sleepy', 'focused'] as const;
+/** Body build: standard, or slim (narrower shoulders and hips). */
+export const BUILDS = ['standard', 'slim'] as const;
+export const EARRINGS = ['none', 'studs', 'hoops'] as const;
 export const BROWS = ['none', 'thin', 'thick', 'angry'] as const;
-export const MOUTHS = ['none', 'smile', 'grin', 'flat'] as const;
+export const MOUTHS = ['none', 'smile', 'grin', 'flat', 'lips'] as const;
 export const FACIAL = ['none', 'stubble', 'mustache', 'goatee', 'beard'] as const;
 export const HAIR_COLORS = ['#0b0806', '#1f130a', '#3b2414', '#5a3825', '#6b4423', '#8b5a2b', '#a0522d', '#c49a5a', '#e3c27a', '#f0e0b0', '#9ca3af', '#e5e7eb', '#b91c1c', '#2563eb', '#db2777', '#16a34a'];
 export const JERSEYS = ['#7c3aed', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#0f172a', '#f8fafc', '#db2777'];
@@ -96,6 +101,8 @@ export interface Court {
 	camera(mode: CamMode, move?: 'cut' | 'glide'): void;
 	/** Which hand you're dribbling with (the ball follows it). */
 	setYouHand(hand: 'left' | 'right' | null): void;
+	/** A spin move: the player turns all the way round. */
+	spin(who: 'you' | 'cpu'): void;
 	onBounce: () => void;
 	dispose(): void;
 }
@@ -464,9 +471,11 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			parent.add(m);
 			return m;
 		};
-		box(1.7, 2.1, 0.9, look.jersey, hips, 0, 1.05);
-		// Trim at the neck and arms.
-		box(1.72, 0.12, 0.92, look.shorts, hips, 0, 2.05);
+		const slim = look.build == 'slim';
+		const tw = slim ? 1.42 : 1.7;
+		box(tw, 2.1, slim ? 0.8 : 0.9, look.jersey, hips, 0, 1.05);
+		// Trim at the neck.
+		box(tw + 0.02, 0.12, slim ? 0.82 : 0.92, look.shorts, hips, 0, 2.05);
 		box(0.9, 0.9, 0.9, look.skin, hips, 0, 2.65);
 		face(look, box, hips);
 		hair(look, hips);
@@ -480,7 +489,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			return pivot;
 		};
 		const arm = (side: number) => {
-			const upper = part(0.42, 1.1, look.skin, hips, side * 1.05, 2.0);
+			const upper = part(slim ? 0.38 : 0.42, 1.1, look.skin, hips, side * (slim ? 0.9 : 1.05), 2.0);
 			// Sleeve-less jersey edge.
 			box(0.46, 0.25, 0.46, look.jersey, upper, 0, -0.1);
 			const lower = part(0.38, 1.0, look.skin, upper, 0, -1.1);
@@ -490,7 +499,7 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			return { upper, lower, hand };
 		};
 		const leg = (side: number) => {
-			const upper = part(0.62, 1.4, look.shorts, hips, side * 0.45, 0);
+			const upper = part(slim ? 0.58 : 0.62, 1.4, look.shorts, hips, side * (slim ? 0.4 : 0.45), 0);
 			const lower = part(0.55, 1.4, look.skin, upper, 0, -1.4);
 			box(0.58, 0.4, 0.58, '#f8fafc', lower, 0, -1.0); // socks
 			// Shoes (toes forward): upper and sole.
@@ -566,6 +575,11 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			if (eyes == 'wide') {
 				box(0.2, 0.18, 0.03, '#f8fafc', hips, x, 2.72, z);
 				box(0.1, 0.12, 0.03, ink, hips, x, 2.71, z - 0.02);
+			} else if (eyes == 'lashes') {
+				box(0.13, 0.13, 0.04, ink, hips, x, 2.71, z);
+				// Lashes: a line over the eye, flicked out at the side.
+				box(0.2, 0.04, 0.04, ink, hips, x, 2.8, z - 0.01);
+				box(0.05, 0.06, 0.04, ink, hips, x + (x < 0 ? -0.11 : 0.11), 2.83, z - 0.01);
 			} else if (eyes == 'sleepy') box(0.19, 0.06, 0.04, ink, hips, x, 2.7, z);
 			else if (eyes == 'focused') box(0.16, 0.09, 0.04, ink, hips, x, 2.71, z);
 			else box(0.13, 0.13, 0.04, ink, hips, x, 2.72, z);
@@ -586,6 +600,18 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			box(0.32, 0.12, 0.04, ink, hips, 0, 2.46, z - 0.02);
 			box(0.26, 0.05, 0.04, '#f8fafc', hips, 0, 2.48, z - 0.03);
 		} else if (mouth == 'flat') box(0.24, 0.045, 0.04, ink, hips, 0, 2.46, z - 0.02);
+		else if (mouth == 'lips') {
+			box(0.26, 0.06, 0.04, '#be185d', hips, 0, 2.48, z - 0.02);
+			box(0.2, 0.05, 0.04, '#db2777', hips, 0, 2.43, z - 0.02);
+		}
+		// Earrings, on the sides of the head.
+		if (look.earrings == 'studs') for (const x of [-0.47, 0.47]) box(0.08, 0.08, 0.08, '#facc15', hips, x, 2.52, 0.02);
+		if (look.earrings == 'hoops')
+			for (const x of [-0.47, 0.47]) {
+				box(0.05, 0.22, 0.05, '#facc15', hips, x, 2.42, -0.06);
+				box(0.05, 0.22, 0.05, '#facc15', hips, x, 2.42, 0.1);
+				box(0.05, 0.05, 0.2, '#facc15', hips, x, 2.31, 0.02);
+			}
 	}
 	/** A darker (or lighter) version of a colour. */
 	function shade(hex: string, k: number) {
@@ -648,6 +674,31 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 				top();
 				h(0.96, 0.5, 0.16, 2.9, 0.47);
 				h(0.24, 0.8, 0.24, 2.55, 0.6);
+				break;
+			case 'braids':
+				// Two long braids down the back.
+				h(0.96, 0.24, 0.96, 3.07);
+				h(0.96, 0.4, 0.18, 2.85, 0.42);
+				for (const x of [-0.25, 0.25]) for (let k = 0; k < 4; k++) h(0.17, 0.22, 0.17, 2.55 - k * 0.24, 0.5, look.hairColor, x + (k % 2 ? 0.03 : -0.03));
+				break;
+			case 'bob':
+				// Chin length all round.
+				h(1.0, 0.26, 1.0, 3.07);
+				h(1.02, 0.6, 0.2, 2.7, 0.42);
+				for (const x of [-0.5, 0.5]) h(0.14, 0.6, 0.84, 2.72, 0.02, look.hairColor, x);
+				h(0.9, 0.16, 0.14, 3.0, -0.44);
+				break;
+			case 'spacebuns':
+				top();
+				for (const x of [-0.3, 0.3]) h(0.36, 0.34, 0.36, 3.33, -0.02, look.hairColor, x);
+				break;
+			case 'pigtails':
+				top();
+				h(0.96, 0.36, 0.18, 2.9, 0.42);
+				for (const x of [-0.58, 0.58]) {
+					h(0.2, 0.2, 0.2, 2.9, 0.12, look.hairColor, x);
+					h(0.22, 0.55, 0.22, 2.6, 0.18, look.hairColor, x * 1.08);
+				}
 				break;
 			case 'flow':
 				// Steve Hash's flow: swept over, down to the neck.
@@ -879,9 +930,20 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	function turn(root: Three, facing: Facing) {
 		// The rig faces -z at rotation 0; facing a direction (dx, dz) is atan2(-dx, -dz).
 		const want = typeof facing == 'number' ? (facing < 0 ? 0 : Math.PI) : Math.atan2(-(facing.x - root.position.x), -(facing.z - root.position.z));
-		let d = want - root.rotation.y;
+		const u = root.userData as { yaw?: number; spinAt?: number };
+		let yaw = u.yaw ?? root.rotation.y;
+		let d = want - yaw;
 		d = Math.atan2(Math.sin(d), Math.cos(d));
-		root.rotation.y += d * 0.14;
+		yaw += d * 0.18;
+		u.yaw = yaw;
+		// A spin move: one full turn on top of the heading.
+		let extra = 0;
+		if (u.spinAt) {
+			const k = (performance.now() - u.spinAt) / 620;
+			if (k >= 1) u.spinAt = 0;
+			else extra = (1 - (1 - k) ** 2) * Math.PI * 2;
+		}
+		root.rotation.y = yaw + extra;
 	}
 
 	api = {
@@ -966,6 +1028,9 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 			camMode = m;
 			camCut = move == 'cut';
 			camGlide = move == 'glide';
+		},
+		spin(who) {
+			(who == 'you' ? you : cpu).root.userData.spinAt = performance.now();
 		},
 		setYouHand(h) {
 			if (h) youHand = h;
