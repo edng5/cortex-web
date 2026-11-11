@@ -185,26 +185,45 @@
 		font-size: 78cqh;
 		line-height: 1;
 		font-family: 'Segoe UI Symbol', 'DejaVu Sans', 'Noto Sans Symbols 2', 'Arial Unicode MS', serif;
+		/* Solid pieces with an outline in the other side's colour, so both sides read clearly on
+		   every theme (white pieces on light squares included). */
 		color: #1b1b1f;
-		text-shadow:
-			0 0 2px rgba(255, 255, 255, 0.9),
-			0 2px 3px rgba(0, 0, 0, 0.35);
+		-webkit-text-stroke: 0.08em rgba(255, 255, 255, 0.9);
+		paint-order: stroke fill;
+		text-shadow: 0 2px 3px rgba(0, 0, 0, 0.35);
 		user-select: none;
 	}
 	.pc.white {
-		color: #fbfbfb;
-		text-shadow:
-			0 0 2px #000,
-			0 0 1px #000,
-			0 2px 3px rgba(0, 0, 0, 0.5);
+		color: #fff;
+		-webkit-text-stroke: 0.09em #1b1b1f;
+		text-shadow: 0 2px 3px rgba(0, 0, 0, 0.45);
 	}
+	.theme-ocean .pc {
+		color: #0d2a4a;
+		-webkit-text-stroke-color: #eaf3fb;
+	}
+	.theme-ocean .pc.white {
+		color: #fffaf0;
+		-webkit-text-stroke-color: #0d2a4a;
+	}
+	.theme-marble .pc {
+		color: #25282e;
+		-webkit-text-stroke-color: #fbfaf7;
+	}
+	.theme-marble .pc.white {
+		color: #fffdf8;
+		-webkit-text-stroke-color: #25282e;
+	}
+	/* Neon: a bright side and a dark side, each outlined in its glow. */
 	.theme-neon .pc {
-		color: #ff4fd8;
-		text-shadow: 0 0 8px rgba(255, 79, 216, 0.8);
+		color: #3b0a45;
+		-webkit-text-stroke: 0.08em #ff4fd8;
+		text-shadow: 0 0 8px rgba(255, 79, 216, 0.85);
 	}
 	.theme-neon .pc.white {
-		color: #5ef1ff;
-		text-shadow: 0 0 8px rgba(94, 241, 255, 0.8);
+		color: #e8fdff;
+		-webkit-text-stroke: 0.08em #00c8ff;
+		text-shadow: 0 0 8px rgba(94, 241, 255, 0.85);
 	}
 	.rank,
 	.file {

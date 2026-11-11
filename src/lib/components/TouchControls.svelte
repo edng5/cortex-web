@@ -175,6 +175,12 @@
 	</div>
 {/if}
 <div class="touch" class:center={spec.center} aria-hidden="true">
+	<!-- Pause (Enter): a menu button just above the controls, under the game. -->
+	{#if spec.buttons.some((b) => b.code == 'Enter') && !hidden.includes('Enter')}
+		<div class="btn menu-btn" class:off={disabled.includes('Enter')} use:button={'Enter'} aria-hidden="true">
+			<svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+		</div>
+	{/if}
 	{#if spec.arrows}
 		<div class="arrows">
 			{#each spec.arrows as d (d)}
@@ -190,7 +196,7 @@
 		<span></span>
 	{/if}
 	<div class="right">
-		{#each spec.buttons.filter((b) => !hidden.includes(b.code)) as b (b.code)}
+		{#each spec.buttons.filter((b) => b.code != 'Enter' && !hidden.includes(b.code)) as b (b.code)}
 			<div class="btn" class:big={b.big} class:off={disabled.includes(b.code)} use:button={b.code}>{b.label}</div>
 		{/each}
 		{#if spec.stick2}
@@ -340,6 +346,17 @@
 		font: 700 0.72rem/1 system-ui, sans-serif;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
+	}
+	/* The pause menu: centred just above the controls. */
+	.btn.menu-btn {
+		position: absolute;
+		bottom: calc(100% + 12px);
+		left: calc(50% - 21px);
+		width: 42px;
+		height: 42px;
+		border-color: rgba(255, 255, 255, 0.25);
+		background: rgba(10, 14, 26, 0.95);
+		color: #fff;
 	}
 	.btn.big {
 		width: 82px;

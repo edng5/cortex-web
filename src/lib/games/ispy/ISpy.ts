@@ -6,7 +6,7 @@
 //  - Stump the Computer (the original game, turned round): pick a thing in your head, say its
 //    colour, and the computer gets three guesses. Stump it to score.
 // Scenes are rooms and places with things where they belong, filled differently every game. Menus are clicked or tapped; H for a hint,
-// Enter to pause. No public leaderboard (your best stays in this browser and account).
+// Enter to pause. Seek & Find scores go on the public leaderboard.
 import { Gfx, buttonAt, drawButtons, drawGameOver, loadArcadeFont, loadSave, panel, roundRect, text, touchScreen, writeSave, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
 import { SCALE, SCENES, SPOTS, drawScene, type Scene, type Spot } from './scenes';
 
@@ -131,7 +131,7 @@ export class ISpy implements ArcadeGame {
 
 	sfx: (name: string) => void = () => {};
 	onQuit: () => void = () => {};
-	onScore: (board: number, score: number) => void = () => {}; // no public leaderboard
+	onScore: (board: number, score: number) => void = () => {};
 	global: Board | null = null;
 	loggedIn = false;
 
@@ -291,6 +291,7 @@ export class ISpy implements ArcadeGame {
 	}
 	private endSeek() {
 		if (this.score > this.best) this.best = this.score;
+		if (this.score > 0) this.onScore(1, this.score); // Seek & Find's public leaderboard
 		this.screen = 'over';
 		this.goy = -60;
 		this.save();
@@ -378,7 +379,8 @@ export class ISpy implements ArcadeGame {
 			case 'seek':
 				return [
 					{ id: 'hint', label: `Hint (${this.hints})`, x: GAME_W - 150, y: 92, w: 130, h: 44, size: 17, disabled: this.hints <= 0, onClick: () => this.useHint() },
-					{ id: 'pause', label: 'II', x: GAME_W - 66, y: 18, w: 48, h: 48, size: 18, onClick: () => (this.screen = 'paused') }
+					// (On phones the menu button is with the touch controls.)
+					...(touchScreen() ? [] : [{ id: 'pause', label: '☰', x: GAME_W - 66, y: 18, w: 48, h: 48, size: 22, onClick: () => (this.screen = 'paused') }])
 				];
 			case 'paused':
 				return [

@@ -213,7 +213,7 @@ export const GAMES: GameSpec[] = [
 		tickMs: 16,
 		help: [MOUSE, { keys: ['H'], label: 'hint' }, { keys: ['Enter'], label: 'pause' }],
 		touch: { buttons: [{ label: 'Hint', code: 'KeyH' }, { label: 'Pause', code: 'Enter' }] },
-		boards: {},
+		boards: { 1: 'Seek & Find' },
 		load: async () => (await import('./ispy/ISpy')).create()
 	},
 	{

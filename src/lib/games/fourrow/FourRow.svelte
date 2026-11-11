@@ -21,6 +21,7 @@
 		if (reason == 'four') return won ? 'Four in a row! You win' : 'They got four in a row. You lose';
 		if (reason == 'resign') return won ? 'Your opponent resigned. You win' : 'You resigned';
 		if (reason == 'abandoned') return won ? 'Your opponent left. You win' : 'You left the game';
+		if (reason == 'timeout') return won ? 'Their time ran out. You win' : 'Out of time. You lose';
 		return won ? 'You win' : 'You lose';
 	}
 </script>

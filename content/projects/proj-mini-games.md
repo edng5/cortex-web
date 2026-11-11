@@ -35,9 +35,9 @@ Block Drop, Chess and Four in a Row are new. Each has its own soundtrack.
 - **Controls:** W, A, S and D on a computer; an on-screen joystick and buttons on phones.
 - **Leaderboards:** signed-in players get global all-time and monthly boards for each game.
 - **Saves:** progress is synced to your account, so it's the same on phone and computer.
-- **Online:** Chess, Four in a Row and Fishy's multiplayer are played against a friend with a
-  6-digit room code (logged-in players only). Each player has a private rating (MMR) that rises
-  and falls with wins and losses.
+- **Online:** Chess, Four in a Row and Fishy's multiplayer are played over the network
+  (logged-in players only). Each player has a private rating (MMR) that rises and falls with
+  ranked wins and losses.
 
 ## ![](/images/mini-games/top-gun.jpg) Top Gun
 A flight-combat game across three missions (fighter jets, ships, then an army base), earning money
@@ -93,7 +93,7 @@ arcade game.
 
 - **Seek & Find:** "I spy with my little eye, something red…": click a match in a busy scene
   before time runs out. Quick finds build a combo; later levels add lookalikes and clues like
-  "something green you can eat".
+  "something green you can eat". Scores go on the global leaderboards.
 - **Stump the Computer:** think of something in the scene, say its colour, and the computer gets
   three guesses.
 
@@ -102,5 +102,8 @@ An original falling-block puzzle game: fill rows to clear them; every 10 rows th
 and the pieces fall faster. On the global leaderboards.
 
 ## ![](/games/icons/chess.png) Chess and Four in a Row
-Played online against a friend with a room code. The server checks every move, so ratings can't
-be cheated. Pick a board theme; resign, offer a draw (chess) or ask for a rematch.
+Played online. **Ranked** matches you with someone else who's looking: random first move, 10
+minutes each, rated. A **custom** game is for a friend with a 6-digit room code: choose who goes
+first, takebacks and a clock (or none); it isn't rated. The server checks every move and keeps the
+clocks, so ratings can't be cheated. Pick a board theme; resign, offer a draw (chess) or ask for a
+rematch.

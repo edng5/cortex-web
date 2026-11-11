@@ -1,8 +1,8 @@
 <!--
   The online shell for E.Ngine Games' room-code games (Chess, Four in a Row): log in, see your
-  rating (MMR) and record, pick a theme, create a room (and share its code) or join one, then play
-  with the game's own board inside. Results update the ratings on the server; they're private to
-  each player, not on the public leaderboards.
+  rating (MMR) and record, pick a theme, then play ranked (matched with someone, rated) or a custom
+  game (set who goes first, takebacks and a clock, and share the room's code; unrated), with the
+  game's own board inside. Ratings are private to each player, not on the public leaderboards.
 -->
 <script lang="ts" module>
 	export interface Theme {
@@ -22,6 +22,12 @@
 		four?: import('$lib/games/fourrow/rules').FourState;
 		lastMove?: Record<string, unknown>;
 		drawOffer: number;
+		settings: { rated: boolean; ranked: boolean; takebacks: boolean; clockMin: number };
+		/** The seat asking for a takeback, or -1. */
+		takeback: number;
+		canTakeBack: boolean;
+		/** Time left on each clock (ms, when this view was sent) and whose is running (-1: none). */
+		clock: { left: number[]; running: number } | null;
 	}
 	export interface BoardContext {
 		view: RoomView;
@@ -33,7 +39,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Room, myRating, type Rating, type RoomEvent } from '$lib/games/net';
+	import { Room, myRating, type Rating, type RoomEvent, type RoomOptions } from '$lib/games/net';
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import { session } from '$lib/session.svelte';
 	import { untrack } from 'svelte';
@@ -97,7 +103,7 @@
 	// ── Room ──
 	let room: Room | null = null;
 	let view = $state<RoomView | null>(null);
-	let end = $state<{ winner: number | null; reason: string; ratings: { mmr: number; delta: number }[] } | null>(null);
+	let end = $state<{ winner: number | null; reason: string; ratings: { mmr: number; delta: number }[] | null } | null>(null);
 	let theyWantRematch = $state(false);
 	let iWantRematch = $state(false);
 	let notice = $state('');
@@ -105,6 +111,36 @@
 	let busy = $state(false);
 	let joinCode = $state('');
 	let confirmResign = $state(false);
+
+	// ── Custom game settings ──
+	let firstMove = $state<'host' | 'guest' | 'random'>('random');
+	let takebacks = $state(false);
+	let clockMin = $state(0);
+	const FIRST = $derived(
+		game == 'chess'
+			? ([['host', 'White'], ['guest', 'Black'], ['random', 'Random']] as const)
+			: ([['host', 'Me'], ['guest', 'Friend'], ['random', 'Random']] as const)
+	);
+	const CLOCKS = [0, 1, 3, 5, 10, 15, 30];
+
+	// ── Clocks: counted down here between the server's updates ──
+	let receivedAt = $state(0);
+	let nowTick = $state(0);
+	$effect(() => {
+		if (!view?.clock || view.phase != 'playing') return;
+		const id = setInterval(() => (nowTick = Date.now()), 200);
+		return () => clearInterval(id);
+	});
+	function clockLeft(seat: number): number {
+		const c = view?.clock;
+		if (!c) return 0;
+		return Math.max(0, c.left[seat] - (c.running == seat ? Math.max(0, nowTick - receivedAt) : 0));
+	}
+	function fmt(ms: number): string {
+		if (ms < 20_000) return (ms / 1000).toFixed(1);
+		const sec = Math.ceil(ms / 1000);
+		return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+	}
 
 	function onEvent(e: RoomEvent) {
 		if (e.t == 'room') {
@@ -116,6 +152,10 @@
 				iWantRematch = false;
 			}
 			view = next;
+			receivedAt = nowTick = Date.now();
+		} else if (e.t == 'takeback-declined') {
+			notice = 'Your opponent said no to the takeback.';
+			setTimeout(() => notice == 'Your opponent said no to the takeback.' && (notice = ''), 3000);
 		} else if (e.t == 'end') {
 			end = e as unknown as typeof end;
 			const you = view?.you ?? 0;
@@ -135,10 +175,11 @@
 		}
 	}
 
-	async function create() {
+	async function create(ranked: boolean) {
 		error = '';
 		busy = true;
-		const r = await Room.create(game);
+		const opts: RoomOptions = ranked ? { ranked: true } : { first: firstMove, takebacks, clock: clockMin };
+		const r = await Room.create(game, opts);
 		busy = false;
 		if ('error' in r) return (error = r.error);
 		open(r.code);
@@ -210,18 +251,40 @@
 					<button class="primary" onclick={() => (session.loginOpen = true)}>Log in</button>
 				</div>
 			{:else}
-				<div class="panel stats">
+				<div class="panel stats" aria-label="Ranked record">
 					<div><span>Rating</span><b>{rating?.mmr ?? '…'}</b></div>
 					<div><span>Wins</span><b>{rating?.wins ?? 0}</b></div>
 					<div><span>Losses</span><b>{rating?.losses ?? 0}</b></div>
 					<div><span>Draws</span><b>{rating?.draws ?? 0}</b></div>
 				</div>
-				<p class="private">Your rating goes up when you win and down when you lose, by more against a higher-rated player. Only you can see it.</p>
+				<p class="private">Ranked games move your rating: up when you win, down when you lose, by more against a higher-rated player. Only you can see it.</p>
+				<div class="panel ranked">
+					<div>
+						<h2>Ranked</h2>
+						<p>Play someone new. Random first move, 10 minutes each, no takebacks. Rated.</p>
+					</div>
+					<button class="primary" disabled={busy} onclick={() => create(true)}>Find a game</button>
+				</div>
 				<div class="panel play">
 					<div>
-						<h2>Start a game</h2>
-						<p>Make a room and send its code to a friend.</p>
-						<button class="primary" disabled={busy} onclick={create}>Create room</button>
+						<h2>Custom game</h2>
+						<p>Set it up, then send the room code to a friend. Not rated.</p>
+						<span class="opt-label">{game == 'chess' ? 'You play' : 'Goes first'}</span>
+						<div class="seg">
+							{#each FIRST as [v, label] (v)}
+								<button class:on={firstMove == v} onclick={() => (firstMove = v)}>{label}</button>
+							{/each}
+						</div>
+						<span class="opt-label">Takebacks</span>
+						<div class="seg">
+							<button class:on={!takebacks} onclick={() => (takebacks = false)}>Off</button>
+							<button class:on={takebacks} onclick={() => (takebacks = true)}>On</button>
+						</div>
+						<label class="opt-label" for="{game}-clock">Clock</label>
+						<select id="{game}-clock" bind:value={clockMin}>
+							{#each CLOCKS as m (m)}<option value={m}>{m ? `${m} min each` : 'No clock'}</option>{/each}
+						</select>
+						<button class="primary create" disabled={busy} onclick={() => create(false)}>Create room</button>
 					</div>
 					<form onsubmit={join}>
 						<h2>Join a game</h2>
@@ -257,9 +320,17 @@
 	{:else if view.phase == 'waiting'}
 		<!-- Waiting for the second player -->
 		<div class="waiting">
-			<h2>Room code</h2>
-			<button class="code" onclick={copyCode} title="Copy">{view.code}</button>
-			<p>Send this code to a friend. The game starts as soon as they join.</p>
+			{#if view.settings.ranked}
+				<h2>Finding an opponent…</h2>
+				<p>Ranked: random first move, 10 minutes each. The game starts as soon as someone else is looking.</p>
+			{:else}
+				<h2>Room code</h2>
+				<button class="code" onclick={copyCode} title="Copy">{view.code}</button>
+				<p>Send this code to a friend. The game starts as soon as they join.</p>
+				<p class="summary">
+					{view.settings.clockMin ? `${view.settings.clockMin} min each` : 'No clock'} · Takebacks {view.settings.takebacks ? 'on' : 'off'} · Not rated
+				</p>
+			{/if}
 			<div class="dots"><i></i><i></i><i></i></div>
 			<button class="ghost" onclick={leave}>Cancel</button>
 			{#if notice}<p class="note">{notice}</p>{/if}
@@ -271,13 +342,26 @@
 				<div class="player them" class:off={!them?.online}>
 					<b>{them?.name}</b><span>{them?.mmr}</span>{#if !them?.online}<em>reconnecting…</em>{/if}
 				</div>
-				<div class="room">Room {view.code}</div>
+				{#if view.clock}
+					{@const t = clockLeft(1 - view.you)}
+					<div class="clock" class:run={view.clock.running == 1 - view.you} class:low={t < 30_000}>{fmt(t)}</div>
+				{/if}
+				<div class="room">{view.settings.ranked ? 'Ranked' : `Custom · Room ${view.code}`}</div>
 			</div>
 			<div class="board">{@render board({ view, send, theme, sound })}</div>
 			<div class="bar">
 				<div class="player you"><b>{me?.name} (you)</b><span>{me?.mmr}</span></div>
+				{#if view.clock}
+					{@const t = clockLeft(view.you)}
+					<div class="clock" class:run={view.clock.running == view.you} class:low={t < 30_000}>{fmt(t)}</div>
+				{/if}
 				<div class="actions">
 					{#if view.phase == 'playing'}
+						{#if view.settings.takebacks}
+							<button class="ghost" disabled={view.takeback == view.you || !view.canTakeBack} onclick={() => send({ type: 'takeback' })}>
+								{view.takeback == view.you ? 'Takeback asked' : 'Takeback'}
+							</button>
+						{/if}
 						{#if game == 'chess'}
 							<button class="ghost" onclick={() => send({ type: 'draw' })}>
 								{view.drawOffer == 1 - view.you ? 'Accept draw' : view.drawOffer == view.you ? 'Draw offered' : 'Offer draw'}
@@ -293,6 +377,13 @@
 				</div>
 			</div>
 			{#if view.drawOffer == 1 - view.you && view.phase == 'playing'}<p class="note">Your opponent offers a draw.</p>{/if}
+			{#if view.takeback == 1 - view.you && view.phase == 'playing'}
+				<div class="ask">
+					<span>Your opponent asks to take back their last move.</span>
+					<button class="primary" onclick={() => send({ type: 'takeback-answer', accept: true })}>Allow</button>
+					<button class="ghost" onclick={() => send({ type: 'takeback-answer', accept: false })}>No</button>
+				</div>
+			{/if}
 			{#if error}<p class="err" role="alert">{error}</p>{/if}
 			{#if notice}<p class="note">{notice}</p>{/if}
 
@@ -300,9 +391,11 @@
 				<div class="end">
 					<div class="box">
 						<h2>{describe(end.winner, end.reason, view.you)}</h2>
-						{#if end.ratings[view.you]}
+						{#if end.ratings?.[view.you]}
 							{@const r = end.ratings[view.you]}
 							<p class="mmr">Rating {r.mmr} <span class:up={r.delta > 0} class:down={r.delta < 0}>({r.delta > 0 ? '+' : ''}{r.delta})</span></p>
+						{:else if !end.ratings}
+							<p class="mmr">Custom game: no rating change</p>
 						{/if}
 						<div class="row">
 							{#if !notice}
@@ -390,6 +483,89 @@
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 18px;
+	}
+	.ranked {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+	}
+	.ranked p {
+		margin: 0;
+	}
+	.ranked .primary {
+		flex: none;
+	}
+	.opt-label {
+		display: block;
+		margin: 10px 0 4px;
+		font-size: 0.8rem;
+		color: #94a3b8;
+	}
+	.seg {
+		display: inline-flex;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 9px;
+		overflow: hidden;
+	}
+	.seg button {
+		border: none;
+		border-radius: 0;
+		background: transparent;
+		padding: 6px 12px;
+		font-size: 0.85rem;
+	}
+	.seg button + button {
+		border-left: 1px solid rgba(255, 255, 255, 0.2);
+	}
+	.seg button.on {
+		background: var(--accent);
+		color: #070a14;
+	}
+	select {
+		padding: 6px 8px;
+		border-radius: 8px;
+		border: 1px solid rgba(148, 163, 184, 0.4);
+		background: #11162a;
+		color: inherit;
+		font: inherit;
+		font-size: 0.9rem;
+	}
+	.create {
+		display: block;
+		margin-top: 14px;
+	}
+	.summary {
+		font-size: 0.85rem;
+		color: #94a3b8 !important;
+	}
+	.clock {
+		font: 700 1.05rem ui-monospace, monospace;
+		padding: 3px 10px;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.06);
+		color: #94a3b8;
+	}
+	.clock.run {
+		background: var(--accent);
+		color: #070a14;
+	}
+	.clock.run.low {
+		background: #ef4444;
+		color: #fff;
+	}
+	.ask {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+		justify-content: center;
+		color: #fde68a;
+		font-size: 0.9rem;
+	}
+	.ask button {
+		padding: 5px 12px;
 	}
 	@media (max-width: 520px) {
 		.play {

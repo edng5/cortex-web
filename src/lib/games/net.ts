@@ -3,6 +3,13 @@
 // with the player's login session; the server only lets the room's two players in.
 
 export type RoomEvent = { t: string } & Record<string, unknown>;
+/** Ranked, or a custom room's settings (who goes first, takebacks, minutes on the clock: 0 none). */
+export interface RoomOptions {
+	ranked?: boolean;
+	first?: 'host' | 'guest' | 'random';
+	takebacks?: boolean;
+	clock?: number;
+}
 
 async function post(url: string, body: object): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; message: string }> {
 	try {
@@ -23,9 +30,12 @@ export class Room {
 		private onEvent: (e: RoomEvent) => void
 	) {}
 
-	/** Makes a room for `game`; resolves to its code, or an error message. */
-	static async create(game: string): Promise<{ code: string } | { error: string }> {
-		const r = await post('/api/rooms', { game });
+	/**
+	 * Makes a room for `game` (custom: with its settings), or with `ranked`, finds an opponent (or
+	 * a room to wait for one in); resolves to its code, or an error message.
+	 */
+	static async create(game: string, opts: RoomOptions = {}): Promise<{ code: string } | { error: string }> {
+		const r = await post('/api/rooms', { game, ...opts });
 		return r.ok ? { code: String(r.data.code) } : { error: r.message };
 	}
 

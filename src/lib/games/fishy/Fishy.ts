@@ -6,7 +6,7 @@
 //  - Single player moves with WASD or the arrow keys (so either on-screen joystick works on
 //    phones); in multiplayer, player 1 has WASD and player 2 the arrow keys, as before.
 //  - A moment of safety after losing a life, so you can't be eaten again where you respawn.
-import { BUBBLY, Gfx, loadBubblyFont, Mask, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, pips, pixelsTouch, text, writeSave, type ArcadeGame, type Board, type Sprite, type UiButton, type UiTheme } from '../common';
+import { BUBBLY, Gfx, loadBubblyFont, touchScreen, Mask, buttonAt, drawButtons, drawRecord, keyRow, loadImages, loadSave, padlock, panel, pips, pixelsTouch, text, writeSave, type ArcadeGame, type Board, type Sprite, type UiButton, type UiTheme } from '../common';
 import { Room, myRating, type Rating, type RoomEvent } from '../net';
 
 export const GAME_W = 900;
@@ -524,8 +524,9 @@ export class Fishy implements ArcadeGame {
 			case 5:
 				return [back];
 			case 1: case 2:
-				if (this.net) return []; // no pausing an online game
-				return [{ id: 'pause', x: 838, y: 12, w: 48, h: 48, label: 'II', size: 18, onClick: () => this.pause() }];
+				// No pausing an online game; on phones the menu button is with the touch controls.
+				if (this.net || touchScreen()) return [];
+				return [{ id: 'pause', x: 838, y: 12, w: 48, h: 48, label: '☰', size: 22, onClick: () => this.pause() }];
 			case PAUSED:
 				return [
 					{ id: 'resume', x: 330, y: 270, w: 240, h: 54, label: 'Resume', kind: 'primary', onClick: () => this.resume() },

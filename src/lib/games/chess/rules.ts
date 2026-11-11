@@ -202,6 +202,12 @@ export function result(s: ChessState): ChessResult | null {
 	return null;
 }
 
+/** `color` has only its king, or king and one bishop or knight: it can't mate (a timeout against it is a draw). */
+export function cannotMate(board: string[], color: Color): boolean {
+	const mine = board.filter((p) => p != '.' && colorOf(p) == color && p.toLowerCase() != 'k');
+	return mine.length == 0 || (mine.length == 1 && 'nb'.includes(mine[0].toLowerCase()));
+}
+
 /** Neither side can possibly mate: K v K, K+minor v K, or K+B v K+B with bishops on one colour. */
 function insufficient(board: string[]): boolean {
 	const pieces = board.map((p, sq) => ({ p, sq })).filter((x) => x.p != '.' && x.p.toLowerCase() != 'k');
