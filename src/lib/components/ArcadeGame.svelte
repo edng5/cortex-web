@@ -262,33 +262,50 @@
 		if (Ui && active && spec.music) gameAudio.music(spec.music);
 	});
 
-	function onKeyDown(e: KeyboardEvent) {
-		if (!game || !active) return;
+	// Keys are read from the whole window while the game is showing (not only while the canvas
+	// has focus), so clicking the sound button or the scores never leaves the controls dead.
+	const typing = (e: KeyboardEvent) => {
+		const el = e.target as HTMLElement | null;
+		return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+	};
+	/** The other key on the same axis (left / right, up / down). */
+	const OPPOSITE: Record<string, string> = {
+		KeyA: 'KeyD', KeyD: 'KeyA', KeyW: 'KeyS', KeyS: 'KeyW',
+		ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft', ArrowUp: 'ArrowDown', ArrowDown: 'ArrowUp'
+	};
+	function keyDown(code: string) {
+		if (!game || !active) return false;
 		repaint = true;
-		if (game.keyPressed(e.code)) {
-			e.preventDefault();
-			held.add(e.code);
-		}
+		if (!game.keyPressed(code)) return false;
+		held.add(code);
+		return true;
+	}
+	function keyUp(code: string) {
+		// (Games kept in the background only hear about keys they saw pressed.)
+		if (!game || (!active && !held.has(code))) return false;
+		repaint = true;
+		const used = game.keyReleased(code);
+		const wasHeld = held.delete(code);
+		// The games stop moving when either key of a pair is let go (as the originals did). If the
+		// other one is still held (A held, D tapped and let go), carry on in its direction.
+		const other = OPPOSITE[code];
+		if (wasHeld && other && held.has(other) && active) game.keyPressed(other);
+		return used;
+	}
+	function onKeyDown(e: KeyboardEvent) {
+		if (!active || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+		if (keyDown(e.code)) e.preventDefault();
 	}
 	function onKeyUp(e: KeyboardEvent) {
-		if (!game) return;
-		repaint = true;
-		if (game.keyReleased(e.code)) {
-			e.preventDefault();
-			held.delete(e.code);
-		}
+		if (typing(e)) return;
+		if (keyUp(e.code)) e.preventDefault();
 	}
 	// On-screen controls: the same as pressing and releasing keys.
 	function touchPress(code: string) {
-		if (!game || !active) return;
-		repaint = true;
-		if (game.keyPressed(code)) held.add(code);
+		keyDown(code);
 	}
 	function touchRelease(code: string) {
-		if (!game) return;
-		repaint = true;
-		game.keyReleased(code);
-		held.delete(code);
+		keyUp(code);
 	}
 
 	function releaseAll() {
@@ -316,6 +333,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={onKeyDown} onkeyup={onKeyUp} onblur={releaseAll} />
+
 <section class="stage">
 	<div class="screen" class:ui={!!spec.ui} style="--w: {spec.w}; --h: {spec.h}; --accent: {spec.accent}">
 		{#if spec.ui}
@@ -326,9 +345,6 @@
 			class:pointer
 			tabindex="0"
 			aria-label={spec.title}
-			onkeydown={onKeyDown}
-			onkeyup={onKeyUp}
-			onblur={releaseAll}
 			onpointermove={onPointerMove}
 			onpointerdown={onPointerDown}
 		></canvas>
