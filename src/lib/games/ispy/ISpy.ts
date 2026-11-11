@@ -5,9 +5,10 @@
 //    level is busier, with smaller things, more lookalikes, and clues that add what kind of thing it is.
 //  - Stump the Computer (the original game, turned round): pick a thing in your head, say its
 //    colour, and the computer gets three guesses. Stump it to score.
-// Scenes are generated, so every game is different. Menus are clicked or tapped; H for a hint,
+// Scenes are rooms and places with things where they belong, filled differently every game. Menus are clicked or tapped; H for a hint,
 // Enter to pause. No public leaderboard (your best stays in this browser and account).
 import { Gfx, buttonAt, drawButtons, drawGameOver, loadArcadeFont, loadSave, panel, roundRect, text, touchScreen, writeSave, type ArcadeGame, type Board, type UiButton, type UiTheme } from '../common';
+import { SCALE, SCENES, SPOTS, drawScene, type Scene, type Spot } from './scenes';
 
 export const GAME_W = 900;
 export const GAME_H = 640;
@@ -29,7 +30,7 @@ interface Item {
 const ITEMS: Item[] = [
 	...(
 		[
-			['🍎', 'apple', 'food'], ['🍓', 'strawberry', 'food'], ['🍒', 'cherries', 'food'], ['🎈', 'balloon', 'toy'], ['🚒', 'fire truck', 'vehicle'],
+			['🍎', 'apple', 'food'], ['🍓', 'strawberry', 'food'], ['🍒', 'cherries', 'food'], ['🎈', 'balloon', 'toy'], ['🚒', 'fire truck', 'vehicle'], ['🍅', 'tomato', 'food'], ['🦜', 'parrot', 'animal'], ['🐞', 'ladybug', 'animal'],
 			['🍄', 'mushroom', 'nature'], ['🌹', 'rose', 'nature'], ['🦀', 'crab', 'animal'], ['🧲', 'magnet', 'thing'], ['🥊', 'boxing glove', 'thing']
 		] as const
 	).map(([e, name, kind]) => ({ e, name, kind, colour: 'red' as const })),
@@ -37,12 +38,12 @@ const ITEMS: Item[] = [
 		([e, name, kind]) => ({ e, name, kind, colour: 'orange' as const })
 	),
 	...(
-		[['🍌', 'banana', 'food'], ['🧀', 'cheese', 'food'], ['🍋', 'lemon', 'food'], ['🐥', 'chick', 'animal'], ['🌻', 'sunflower', 'nature'], ['⭐', 'star', 'thing'], ['🚕', 'taxi', 'vehicle']] as const
+		[['🍌', 'banana', 'food'], ['🧀', 'cheese', 'food'], ['🍋', 'lemon', 'food'], ['🐥', 'chick', 'animal'], ['🌻', 'sunflower', 'nature'], ['⭐', 'star', 'thing'], ['🚕', 'taxi', 'vehicle'], ['🌽', 'corn', 'food'], ['🍍', 'pineapple', 'food'], ['🐝', 'bee', 'animal']] as const
 	).map(([e, name, kind]) => ({ e, name, kind, colour: 'yellow' as const })),
 	...(
-		[['🐸', 'frog', 'animal'], ['🐢', 'turtle', 'animal'], ['🦖', 'dinosaur', 'animal'], ['🥦', 'broccoli', 'food'], ['🥒', 'cucumber', 'food'], ['🍏', 'green apple', 'food'], ['🌵', 'cactus', 'nature'], ['🍀', 'clover', 'nature']] as const
+		[['🐸', 'frog', 'animal'], ['🐢', 'turtle', 'animal'], ['🦖', 'dinosaur', 'animal'], ['🥦', 'broccoli', 'food'], ['🥒', 'cucumber', 'food'], ['🍏', 'green apple', 'food'], ['🌵', 'cactus', 'nature'], ['🍀', 'clover', 'nature'], ['🐍', 'snake', 'animal'], ['🐊', 'crocodile', 'animal'], ['👽', 'alien', 'toy']] as const
 	).map(([e, name, kind]) => ({ e, name, kind, colour: 'green' as const })),
-	...([['🐳', 'whale', 'animal'], ['🐟', 'fish', 'animal'], ['🫐', 'blueberries', 'food'], ['📘', 'book', 'thing'], ['💎', 'gem', 'thing'], ['🧢', 'cap', 'thing']] as const).map(
+	...([['🐳', 'whale', 'animal'], ['🐟', 'fish', 'animal'], ['🫐', 'blueberries', 'food'], ['📘', 'book', 'thing'], ['💎', 'gem', 'thing'], ['🧢', 'cap', 'thing'], ['🐬', 'dolphin', 'animal'], ['🦋', 'butterfly', 'animal']] as const).map(
 		([e, name, kind]) => ({ e, name, kind, colour: 'blue' as const })
 	),
 	...([['🍇', 'grapes', 'food'], ['🍆', 'eggplant', 'food'], ['🔮', 'crystal ball', 'thing'], ['👾', 'space invader', 'toy']] as const).map(([e, name, kind]) => ({
@@ -51,7 +52,7 @@ const ITEMS: Item[] = [
 	...([['🐷', 'pig', 'animal'], ['🦩', 'flamingo', 'animal'], ['🍩', 'donut', 'food'], ['🌸', 'blossom', 'nature'], ['🎀', 'ribbon', 'thing']] as const).map(([e, name, kind]) => ({
 		e, name, kind, colour: 'pink' as const
 	})),
-	...([['🧸', 'teddy bear', 'toy'], ['🐻', 'bear', 'animal'], ['🍪', 'cookie', 'food'], ['🥔', 'potato', 'food'], ['🎻', 'violin', 'thing'], ['🪵', 'log', 'nature']] as const).map(
+	...([['🧸', 'teddy bear', 'toy'], ['🐻', 'bear', 'animal'], ['🍪', 'cookie', 'food'], ['🥔', 'potato', 'food'], ['🎻', 'violin', 'thing'], ['🪵', 'log', 'nature'], ['🐒', 'monkey', 'animal'], ['🥥', 'coconut', 'food']] as const).map(
 		([e, name, kind]) => ({ e, name, kind, colour: 'brown' as const })
 	),
 	...([['🐑', 'sheep', 'animal'], ['🦢', 'swan', 'animal'], ['🥚', 'egg', 'food'], ['🧻', 'toilet roll', 'thing'], ['☁️', 'cloud', 'nature'], ['👻', 'ghost', 'toy']] as const).map(
@@ -70,9 +71,8 @@ const KIND_HINT: Record<Kind, string> = {
 	food: 'you can eat', animal: "that's an animal", toy: 'you can play with', thing: "that's a thing you own", nature: 'that grows or floats outside', vehicle: 'with wheels'
 };
 
-/** Backdrops, drawn in code. */
-const SCENES = ['bedroom', 'garden', 'ocean', 'space', 'kitchen', 'jungle'] as const;
-type Scene = (typeof SCENES)[number];
+const itemNamed = new Map(ITEMS.map((i) => [i.name, i]));
+const poolOf = (spot: Spot) => spot.pool.map((n) => itemNamed.get(n)!).filter(Boolean);
 
 interface Placed {
 	item: Item;
@@ -80,6 +80,10 @@ interface Placed {
 	y: number;
 	size: number;
 	rot: number;
+	/** Where it rests (for its shadow), or null when it floats. */
+	base: number | null;
+	/** What else could be in its spot (for lookalikes). */
+	pool: Item[];
 	found: number; // 0, or when it was found (fades out)
 }
 
@@ -152,18 +156,32 @@ export class ISpy implements ArcadeGame {
 	}
 
 	// ── Scenes ──
-	/** Scatters `n` things over the scene (not too crowded on top of one another). */
-	private populate(n: number, size: number, mustHave?: Item[]) {
+	/** Puts `n` things where they belong in the scene (books on shelves, frogs in the pond). */
+	private populate(n: number, size: number) {
+		const spots = SPOTS[this.scene];
+		const weight = spots.map((p) => (p.x1 - p.x0) * (p.float ? (p.y1 - p.y0) * 0.4 : 110 + (p.y1 - p.y0)) * p.s);
+		const total = weight.reduce((a, b) => a + b, 0);
 		const placed: Placed[] = [];
-		const items = [...(mustHave ?? [])];
-		while (items.length < n) items.push(pick(ITEMS));
-		for (const item of items) {
+		for (let i = 0; i < n; i++) {
+			let r = Math.random() * total;
+			let k = 0;
+			while (r > weight[k] && k < spots.length - 1) r -= weight[k++];
+			const spot = spots[k];
+			const pool = poolOf(spot);
+			const item = pick(pool);
 			let best: Placed | null = null;
 			let bestGap = -1;
 			// Try a few spots; keep the one furthest from the rest.
-			for (let k = 0; k < 14; k++) {
-				const s = size * (0.8 + Math.random() * 0.5);
-				const p: Placed = { item, x: 40 + Math.random() * (GAME_W - 80), y: 150 + Math.random() * (GAME_H - 190), size: s, rot: (Math.random() - 0.5) * 0.7, found: 0 };
+			for (let t = 0; t < 16; t++) {
+				const x = spot.x0 + Math.random() * (spot.x1 - spot.x0);
+				const y = spot.y0 + Math.random() * (spot.y1 - spot.y0);
+				if (spot.avoid) {
+					const [ax, ay, rx, ry] = spot.avoid;
+					if (((x - ax) / rx) ** 2 + ((y - ay) / ry) ** 2 < 1) continue;
+				}
+				const far = spot.depth && spot.y1 > spot.y0 ? 0.78 + 0.32 * ((y - spot.y0) / (spot.y1 - spot.y0)) : 1;
+				const s = size * spot.s * far * (SCALE[item.name] ?? 1) * (0.92 + Math.random() * 0.16);
+				const p: Placed = { item, x, y: spot.float ? y : y - s * 0.42, size: s, rot: (Math.random() - 0.5) * 0.16, base: spot.float ? null : y, pool, found: 0 };
 				const gap = placed.reduce((m, q) => Math.min(m, Math.hypot(q.x - p.x, q.y - p.y) - (q.size + p.size) * 0.45), 1e9);
 				if (gap > bestGap) {
 					bestGap = gap;
@@ -171,9 +189,10 @@ export class ISpy implements ArcadeGame {
 				}
 				if (gap > 6) break;
 			}
-			placed.push(best!);
+			if (best) placed.push(best);
 		}
-		return placed;
+		// Back to front: things lower down are nearer, drawn over the ones behind.
+		return placed.sort((p, q) => (p.base ?? p.y) - (q.base ?? q.y));
 	}
 
 	// ── Seek & Find ──
@@ -205,10 +224,11 @@ export class ISpy implements ArcadeGame {
 		this.clue = { colour: target.item.colour, kind: withKind ? target.item.kind : null };
 		// More lookalikes later: things of the same colour but another kind.
 		if (withKind && this.level >= 4) {
-			const look = ITEMS.filter((i) => i.colour == target.item.colour && i.kind != target.item.kind);
-			for (let k = 0; k < Math.min(3, this.level - 3) && look.length; k++) {
-				const spare = this.things.find((t) => !t.found && t.item.colour != target.item.colour && t != target);
-				if (spare) spare.item = pick(look);
+			// (Only things that belong in that spot: no fish on the bookshelf.)
+			const lookFor = (t: Placed) => t.pool.filter((i) => i.colour == target.item.colour && i.kind != target.item.kind);
+			for (let k = 0; k < Math.min(3, this.level - 3); k++) {
+				const spare = this.things.find((t) => !t.found && t.item.colour != target.item.colour && t != target && lookFor(t).length);
+				if (spare) spare.item = pick(lookFor(spare));
 			}
 		}
 	}
@@ -412,61 +432,7 @@ export class ISpy implements ArcadeGame {
 
 	// ── Drawing ──
 	private backdrop(ctx: CanvasRenderingContext2D, scene: Scene) {
-		const sky = (a: string, b: string, y0 = 0, y1 = GAME_H) => {
-			const g = ctx.createLinearGradient(0, y0, 0, y1);
-			g.addColorStop(0, a);
-			g.addColorStop(1, b);
-			ctx.fillStyle = g;
-			ctx.fillRect(0, y0, GAME_W, y1 - y0);
-		};
-		if (scene == 'bedroom') {
-			sky('#fde68a', '#fcd34d', 0, 400);
-			ctx.fillStyle = 'rgba(255,255,255,0.35)';
-			for (let x = 0; x < GAME_W; x += 60) ctx.fillRect(x, 0, 24, 400);
-			sky('#d6a96b', '#b07d45', 400, GAME_H);
-			ctx.fillStyle = '#93c5fd';
-			ctx.fillRect(620, 150, 180, 140);
-			ctx.strokeStyle = '#fff';
-			ctx.lineWidth = 8;
-			ctx.strokeRect(620, 150, 180, 140);
-		} else if (scene == 'garden') {
-			sky('#7dd3fc', '#e0f2fe', 0, 380);
-			sky('#86efac', '#22c55e', 380, GAME_H);
-			ctx.fillStyle = '#fde047';
-			ctx.beginPath();
-			ctx.arc(120, 170, 46, 0, Math.PI * 2);
-			ctx.fill();
-		} else if (scene == 'ocean') {
-			sky('#38bdf8', '#0c4a6e');
-			ctx.fillStyle = 'rgba(255,255,255,0.12)';
-			for (let i = 0; i < 12; i++) {
-				ctx.beginPath();
-				ctx.arc((i * 137) % GAME_W, ((i * 211) % 480) + 140, 8 + (i % 4) * 4, 0, Math.PI * 2);
-				ctx.fill();
-			}
-			sky('#fcd34d', '#d97706', 580, GAME_H);
-		} else if (scene == 'space') {
-			sky('#1e1b4b', '#020617');
-			ctx.fillStyle = '#fff';
-			for (let i = 0; i < 80; i++) ctx.fillRect((i * 97) % GAME_W, (i * 53) % GAME_H, 2, 2);
-			ctx.fillStyle = '#c084fc';
-			ctx.beginPath();
-			ctx.arc(760, 200, 60, 0, Math.PI * 2);
-			ctx.fill();
-		} else if (scene == 'kitchen') {
-			sky('#ecfeff', '#cffafe', 0, 420);
-			ctx.fillStyle = 'rgba(14,116,144,0.12)';
-			for (let x = 0; x < GAME_W; x += 40) for (let y = 0; y < 420; y += 40) if ((x + y) % 80 == 0) ctx.fillRect(x, y, 40, 40);
-			sky('#a8a29e', '#78716c', 420, GAME_H);
-		} else {
-			sky('#14532d', '#052e16');
-			ctx.fillStyle = 'rgba(74,222,128,0.25)';
-			for (let i = 0; i < 18; i++) {
-				ctx.beginPath();
-				ctx.ellipse((i * 113) % GAME_W, (i * 71) % GAME_H, 60, 22, i, 0, Math.PI * 2);
-				ctx.fill();
-			}
-		}
+		drawScene(ctx, scene, GAME_W, GAME_H, this.now);
 	}
 
 	private drawThings(ctx: CanvasRenderingContext2D) {
@@ -474,6 +440,13 @@ export class ISpy implements ArcadeGame {
 		ctx.textBaseline = 'middle';
 		for (const t of this.things) {
 			if (t.found && this.now - t.found > 500) continue;
+			// A soft shadow under things that rest on something.
+			if (t.base != null && !t.found) {
+				ctx.fillStyle = 'rgba(0,0,0,0.18)';
+				ctx.beginPath();
+				ctx.ellipse(t.x, t.base, t.size * 0.32, t.size * 0.07, 0, 0, Math.PI * 2);
+				ctx.fill();
+			}
 			ctx.save();
 			ctx.translate(t.x, t.y);
 			ctx.rotate(t.rot);
@@ -483,6 +456,7 @@ export class ISpy implements ArcadeGame {
 				ctx.scale(1 + k, 1 + k);
 			}
 			ctx.font = `${Math.round(t.size)}px ${EMOJI}`;
+			ctx.fillStyle = '#000';
 			ctx.fillText(t.item.e, 0, 0);
 			ctx.restore();
 		}
