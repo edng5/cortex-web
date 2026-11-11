@@ -106,6 +106,7 @@
 
 	function go(s: Screen) {
 		sfx('select');
+		pending = {};
 		screen = s;
 		court?.camera(s == 'player' ? (playerTab == 'court' ? 'menu' : 'locker') : s == 'practice' ? 'practice' : s == 'game' || s == 'calibrate' ? 'offense' : 'menu');
 		court?.showCpu(s == 'game' || s == 'calibrate' || s == 'online');
@@ -525,12 +526,32 @@
 		persist();
 		sfx('select');
 	}
+	// Spending skill points: + and − set aside points (nothing is spent yet); Apply spends them,
+	// Cancel puts them back.
+	let pending = $state<Partial<Record<keyof Stats, number>>>({});
+	const spent = $derived(Object.values(pending).reduce((a, n) => a + (n ?? 0), 0));
+	const left = $derived(save.points - spent);
 	function raise(k: keyof Stats) {
-		if (save.points <= 0 || save.stats[k] >= 99) return;
-		save.points--;
-		save.stats[k] = Math.min(99, save.stats[k] + 1);
-		persist();
+		if (left <= 0 || save.stats[k] + (pending[k] ?? 0) >= 99) return;
+		pending[k] = (pending[k] ?? 0) + 1;
 		sfx('move');
+	}
+	function lower(k: keyof Stats) {
+		if (!pending[k]) return;
+		pending[k]! -= 1;
+		sfx('select');
+	}
+	function applyPoints() {
+		if (spent <= 0 || spent > save.points) return;
+		for (const [k, n] of Object.entries(pending) as [keyof Stats, number][]) save.stats[k] = Math.min(99, save.stats[k] + n);
+		save.points -= spent;
+		pending = {};
+		persist();
+		sfx('recorded');
+	}
+	function cancelPoints() {
+		pending = {};
+		sfx('select');
 	}
 	// Achievements: counters, and the gear (and a skill point) each one unlocks.
 	let toast = $state<{ text: string; sub: string; at: number } | null>(null);
@@ -554,6 +575,7 @@
 	// My player's tabs; the Court tab shows the whole court so you can see it change.
 	let playerTab = $state<'look' | 'gear' | 'court' | 'stats'>('look');
 	function pickTab(t: typeof playerTab) {
+		pending = {};
 		playerTab = t;
 		court?.camera(t == 'court' ? 'menu' : 'locker');
 		sfx('select');
@@ -1023,7 +1045,7 @@
 				<p class="hint">Style the park: floor, paint, backboard, net, ball and half-court logo.</p>
 				{#each COURT_SLOTS as slot (slot)}{@render slotRow(slot)}{/each}
 			{:else}
-				<h3>Attributes <span class="pts">{save.points} skill point{save.points == 1 ? '' : 's'}</span></h3>
+				<h3>Attributes <span class="pts">{left} skill point{left == 1 ? '' : 's'}{spent ? ` (${spent} to spend)` : ''}</span></h3>
 				{#each STAT_INFO as { key: k, name, what } (k)}
 					<div class="stat">
 						<span
@@ -1032,11 +1054,21 @@
 								<small class="unlock" class:got={save.stats[k] >= UNLOCK_AT}>{save.stats[k] >= UNLOCK_AT ? '✓' : '🔒'} {UNLOCK_AT}: {k == 'finishing' ? 'dunks' : 'deep threes'}</small>
 							{/if}</span
 						>
-						<div class="meter"><i style="width:{save.stats[k]}%"></i></div>
-						<em>{save.stats[k]}</em>
-						<button class="plus" disabled={save.points <= 0 || save.stats[k] >= 99} onclick={() => raise(k)} aria-label="Raise {name}">+</button>
+						<div class="meter"><i style="width:{save.stats[k]}%"></i>{#if pending[k]}<i class="add" style="width:{pending[k]}%"></i>{/if}</div>
+						<em class:up={pending[k]}>{save.stats[k] + (pending[k] ?? 0)}</em>
+						<span class="pm">
+							<button class="plus" disabled={!pending[k]} onclick={() => lower(k)} aria-label="Lower {name}">−</button>
+							<button class="plus" disabled={left <= 0 || save.stats[k] + (pending[k] ?? 0) >= 99} onclick={() => raise(k)} aria-label="Raise {name}">+</button>
+						</span>
 					</div>
 				{/each}
+				{#if spent}
+					<div class="apply-row">
+						<span>Spend {spent} skill point{spent == 1 ? '' : 's'}?</span>
+						<button class="ghost small" onclick={cancelPoints}>Cancel</button>
+						<button class="small" onclick={applyPoints}>Apply</button>
+					</div>
+				{/if}
 				<p class="foot">Record {save.record.wins}–{save.record.losses}. Earn points by winning ladder games (more the first time), from achievements and a little practice.</p>
 			{/if}
 		</div>
@@ -2305,7 +2337,7 @@
 	}
 	.stat {
 		display: grid;
-		grid-template-columns: 1fr 90px 28px 32px;
+		grid-template-columns: 1fr 90px 28px 68px;
 		align-items: center;
 		gap: 8px;
 		margin: 8px 0;
@@ -2316,10 +2348,44 @@
 		background: rgba(255, 255, 255, 0.12);
 		overflow: hidden;
 	}
+	.meter {
+		display: flex;
+	}
 	.meter i {
 		display: block;
 		height: 100%;
 		background: linear-gradient(90deg, #f97316, #facc15);
+	}
+	/* Points set aside but not applied yet. */
+	.meter i.add {
+		background: #4ade80;
+	}
+	.stat em.up {
+		color: #4ade80;
+	}
+	.pm {
+		display: flex;
+		gap: 4px;
+	}
+	.pm .plus {
+		flex: 1;
+	}
+	.apply-row {
+		position: sticky;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(15, 23, 42, 0.95);
+		border: 1px solid #4ade80;
+	}
+	.apply-row span {
+		flex: 1;
+		font-weight: 700;
+		font-size: 0.85rem;
 	}
 	.stat em {
 		font-style: normal;
