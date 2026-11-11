@@ -18,7 +18,10 @@ import * as chess from '$lib/games/chess/rules';
 import * as four from '$lib/games/fourrow/rules';
 import { getRating, recordMatch, type RatedGame } from './ratings';
 
-export type RoomGame = RatedGame;
+/** Rated games, plus Keyboard Karaoke (rooms to sing together: relayed, never rated). */
+export type RoomGame = RatedGame | 'karaoke';
+/** Real-time games: run in the host's browser, the room only passes messages on. */
+const REALTIME: RoomGame[] = ['fishy', 'checkup', 'karaoke'];
 type SeatNo = 0 | 1;
 
 interface Stream {
@@ -98,7 +101,7 @@ function sendTo(room: Room, seat: SeatNo, event: object) {
 
 /** What a player sees of the room: players, ratings, the board, whose turn. */
 function view(room: Room, you: SeatNo) {
-	const players = room.seats.map((s, i) => s && { seat: i, name: s.name, mmr: getRating(s.userId, room.game).mmr, online: s.streams.size > 0 });
+	const players = room.seats.map((s, i) => s && { seat: i, name: s.name, mmr: room.game == 'karaoke' ? 0 : getRating(s.userId, room.game).mmr, online: s.streams.size > 0 });
 	return {
 		t: 'room',
 		code: room.code,
@@ -215,7 +218,7 @@ function finish(room: Room, winner: SeatNo | null, reason: string) {
 	if (room.clock) clearTimeout(room.clock.timer);
 	const [a, b] = [room.seats[0], room.seats[1]];
 	// Custom games aren't rated (or counted in the record).
-	const summary = room.settings.rated ? recordMatch(room.game, a.userId, b.userId, winner == null ? null : room.seats[winner]!.userId, reason) : null;
+	const summary = room.settings.rated ? recordMatch(room.game as RatedGame, a.userId, b.userId, winner == null ? null : room.seats[winner]!.userId, reason) : null;
 	broadcast(room, {
 		t: 'end',
 		winner,
@@ -432,7 +435,7 @@ export function act(code: string, userId: string, msg: Record<string, unknown>):
 			return { ok: true };
 		// Fishy (real-time, run in the host's browser): pass the message on to the other player.
 		case 'relay': {
-			if (room.game != 'fishy' && room.game != 'checkup') return bad('Not a real-time game.');
+			if (!REALTIME.includes(room.game)) return bad('Not a real-time game.');
 			const sec = Math.floor(Date.now() / 1000);
 			if (room.relays.second != sec) room.relays = { second: sec, count: 0 };
 			if (++room.relays.count > 80) return bad('Too many messages.', 429);
@@ -441,7 +444,7 @@ export function act(code: string, userId: string, msg: Record<string, unknown>):
 		}
 		// Fishy: the host reports who won the round.
 		case 'result': {
-			if ((room.game != 'fishy' && room.game != 'checkup') || seat != 0) return bad('Only the host reports the result.');
+			if (room.game == 'karaoke' || !REALTIME.includes(room.game) || seat != 0) return bad('Only the host reports the result.');
 			const w = msg.winner;
 			finish(room, w === 0 || w === 1 ? w : null, 'eaten');
 			return { ok: true };

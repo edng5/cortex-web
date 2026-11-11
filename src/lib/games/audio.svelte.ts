@@ -189,6 +189,18 @@ const TRACKS: Record<string, Track> = {
 		],
 		drums: 'khshkkshkhshkhss'
 	},
+	// Keyboard Karaoke: a bright, bouncy pop groove for the song list (silent while you sing).
+	'karaoke-menu': {
+		bpm: 112,
+		gain: 0.7,
+		parts: [
+			{ voice: 'pluck', level: 0.06, notes: 'E5 . G5 . A5 . G5 E5 . . D5 . E5 - . . C5 . E5 . G5 . E5 C5 . . D5 . C5 - . . ' },
+			{ voice: 'square', level: 0.016, notes: 'C4 . . C4 . . E4 . A3 . . A3 . . C4 . F3 . . F3 . . A3 . G3 . . G3 . . B3 . ' },
+			{ voice: 'triangle', level: 0.12, notes: 'C2 . C3 . C2 . C3 . A1 . A2 . A1 . A2 . F1 . F2 . F1 . F2 . G1 . G2 . G1 . B1 . ' },
+			{ voice: 'bell', level: 0.018, notes: '. . . . . . . . . . . . E6 . . . . . . . . . . . . . . . D6 . . . ' }
+		],
+		drums: 'k.hsk.hsk.hsk.hh'
+	},
 	// Chess: calm and thoughtful, a slow arpeggio in D minor.
 	'chess-menu': {
 		bpm: 72,
@@ -809,6 +821,34 @@ const SOUNDS: Record<GameId | 'common', Record<string, Sound>> = {
 			// A rising "ooooh" as a shot from deep flies.
 			a._fx(1.2, 0.07, 'bandpass', 450, 1100);
 			a._tone('sawtooth', 180, 260, 1.1, 0.014);
+		}
+	},
+	karaoke: {
+		// Applause for a finished song, and a sparkle for a new best.
+		applause: (a) => {
+			for (let i = 0; i < 6; i++) a._fx(0.5, 0.06, 'bandpass', 1800 + i * 300, 2400, i * 0.12);
+		},
+		best: (a) => a._arp([72, 76, 79, 84, 88], 0.07, 'triangle', 0.08, 0.2),
+		// A crowd going wild: a big swell, whistles, an air horn.
+		cheer: (a) => {
+			a._fx(2.4, 0.12, 'bandpass', 700, 1300);
+			a._fx(2.0, 0.07, 'bandpass', 1900, 2700, 0.1);
+			a._tone('sine', 2500, 3100, 0.25, 0.03, 0.3);
+			a._tone('sine', 2800, 2300, 0.22, 0.03, 0.7);
+			a._tone('sawtooth', 233, 233, 0.4, 0.035, 0.15);
+			a._tone('sawtooth', 294, 294, 0.4, 0.028, 0.15);
+		},
+		// "Booooo": low voices falling, under a grumble.
+		boo: (a) => {
+			a._tone('sawtooth', 180, 120, 1.6, 0.028);
+			a._tone('sawtooth', 150, 98, 1.7, 0.024, 0.08);
+			a._tone('sawtooth', 210, 140, 1.5, 0.02, 0.15);
+			a._fx(1.8, 0.08, 'lowpass', 500, 200);
+		},
+		// A tomato landing.
+		splat: (a) => {
+			a._fx(0.18, 0.22, 'lowpass', 1400, 150);
+			a._tone('sine', 160, 50, 0.15, 0.12);
 		}
 	},
 	chess: {

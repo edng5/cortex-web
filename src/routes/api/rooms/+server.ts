@@ -13,10 +13,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) error(401, 'Log in to play online.');
 	const body = await request.json().catch(() => null);
 	const game = String(body?.game ?? '');
-	if (!isRatedGame(game)) error(400, 'Unknown game.');
+	if (!isRatedGame(game) && game != 'karaoke') error(400, 'Unknown game.');
 	if (!rateLimit(`room-create:${locals.user.id}`, 30, 10 * 60_000)) error(429, 'Too many rooms, slow down.');
 	const player = roomPlayer(locals.user);
 	// Real-time games (run in the host's browser): rated rooms by code.
+	// Karaoke: a room to sing together (never rated).
+	if (game == 'karaoke') return json({ code: createRoom(game, player, { rated: false, matchmade: false, first: 'host', takebacks: false, clockMin: 0 }) });
 	if (game == 'fishy' || game == 'checkup') return json({ code: createRoom(game, player, { rated: true, matchmade: false, first: 'random', takebacks: false, clockMin: 0 }) });
 	if (body?.ranked === true) return json({ code: findRanked(game, player) });
 	const first = ['host', 'guest', 'random'].includes(body?.first) ? (body.first as RoomSettings['first']) : 'random';

@@ -1,7 +1,7 @@
 ---
 title: "E.Ngine Games"
-subtitle: "Top Gun · Fishy · Space Invaders · Frogger · Pong × Brick Breaker · iSpy · FishMart · Chess · Four in a Row · Block Drop · Check-up"
-summary: "E.Ngine Games: eleven games playable on the site. Six are Edward's high-school games (Top Gun, Fishy, Space Invaders, Frogger, Pong × Brick Breaker and iSpy), ported to TypeScript, plus FishMart, Block Drop, online Chess and Four in a Row, and Check-up, motion-controlled street ball."
+subtitle: "Top Gun · Fishy · Space Invaders · Frogger · Pong × Brick Breaker · iSpy · FishMart · Chess · Four in a Row · Block Drop · Check-up · Keyboard Karaoke"
+summary: "E.Ngine Games: twelve games playable on the site. Six are Edward's high-school games (Top Gun, Fishy, Space Invaders, Frogger, Pong × Brick Breaker and iSpy), ported to TypeScript, plus FishMart, Block Drop, online Chess and Four in a Row, Check-up, motion-controlled street ball, and Keyboard Karaoke."
 tags: [game-development, java, typescript, python, pygame, games, high-school, simulation, how-to-play]
 weight: 2
 icon: /games/engine-icon.png
@@ -28,14 +28,14 @@ related: [int-video-games, edu-john-cabot]
 <!-- play: engine -->
 
 ## E.Ngine Games
-Eleven games playable right here: six are Edward's high-school and university Java and Python
-games, ported to TypeScript, and five are new. Each has its own soundtrack, saves sync to your
+Twelve games playable right here: six are Edward's high-school and university Java and Python
+games, ported to TypeScript, and six are new. Each has its own soundtrack, saves sync to your
 account, and signed-in players get global leaderboards and online play.
 
 <!-- details: Under the hood -->
 
 ### The engine
-E.Ngine is the small framework all eleven games share, built into this SvelteKit site (Svelte 5,
+E.Ngine is the small framework all twelve games share, built into this SvelteKit site (Svelte 5,
 TypeScript, a Node server and SQLite). Each game is code-split and lazy-loaded (a dynamic
 `import()`) from a registry when you open it. The arcade games implement one interface: a
 fixed-rate `tick()` (the body of the original Java `run()` loop), `paint()` onto a canvas, key and
@@ -433,5 +433,100 @@ cross the network, never video.
 **Audio and voice.** The soundtracks and every effect (swishes, the crowd, air horns) are
 synthesized with the Web Audio API, and opponents' trash talk and the cut scenes are read aloud in
 the Cortex voice, choosing from a pool of lines so they don't repeat.
+
+<!-- /details -->
+
+## ![](/games/icons/karaoke.png) Keyboard Karaoke
+Queue songs from YouTube and sing: synced lyrics scroll with the video, a pitch guide shows the
+notes, and you're scored on pitch and timing. Sing solo or in a room with a friend.
+
+<!-- details: Keyboard Karaoke -->
+
+### How to play
+- **Pick songs** from the song book, a YouTube search, or a pasted video or playlist link, and
+  queue them up.
+- **Sing** into your microphone (headphones help). The lyrics fill with colour as each word is
+  sung.
+- **The pitch guide:** note bars scroll toward a "now" line; your voice is the trail of dots, green
+  when you're on the note. Any octave counts.
+- **Grades** from S+ down to F, revealed when the song ends, with your best per song. The crowd bar
+  across the top works like a life bar: it starts full, nailed notes fill it back up and misses
+  drain it. It pulses on every word, glows as you sing, and catches fire when you're on a roll.
+  Finish well for cheers and confetti; finish badly and the crowd boos and throws tomatoes. Nail a note and it pops: Good,
+  Great!, Perfect!, or GOLDEN! on a golden note.
+- **Difficulty** is how close to the note counts (easy: within 1½ semitones; normal: 1; hard: ⅔)
+  and how much a miss costs. Turn scoring off to just sing, and skip songs any time.
+- **Favourites:** star up to 100 songs and they wait in your song book.
+- **Sing with a friend:** make a room and share the code. The host runs the queue, and you see
+  each other's score and pitch live.
+
+### Controls
+- <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge the lyrics, <kbd>T</kbd> "the first line
+  starts now", <kbd>N</kbd> skip.
+- Everything else is clicks or taps.
+
+### How it was made
+**Hearing you.** The microphone goes into the Web Audio API, and each frame (about 46 ms of
+sound) runs through **YIN**, a pitch-detection algorithm designed for voices. It finds the delay at
+which the waveform best repeats itself, normalises it so it doesn't lock onto half or double the
+real pitch, and refines it between samples with a parabolic fit. It's accurate to well under a
+cent on test tones. A noise gate and a clarity threshold separate singing from background noise,
+and nothing is recorded or sent.
+
+**Playing songs.** Videos play in YouTube's official IFrame Player. Its audio is cross-origin, so
+the page can't analyse it; instead the game follows the player's clock, polling its current time
+every frame to drive the lyrics, the pitch guide and the score. Search reads YouTube's results page
+server-side (no API key), and pasted links are resolved through YouTube's oEmbed endpoint.
+
+**Lyrics in sync.** The server looks up time-stamped lyrics in **LRCLIB**, an open database of
+synced lyrics in LRC format (a time per line, sometimes per word). It parses video titles into
+artist and track: "Artist - Song (Official Video)", the K-pop style `aespa 에스파 'Switchblade (Feat.
+Ty Dolla $ign)' MV` (the song in quotes, a name written in two scripts, a featured artist) and the
+J-pop style 「…」, titles split into `|` sections, "Song By Artist", and "SONG - ARTIST" the
+wrong way round. Both the **song and the singer** have to check out before lyrics are used: the
+song's exact name ("Free" isn't "Free Free Free"), and the artist (or, for a soundtrack, the album,
+say "KPop Demon Hunters") matching something about the video. When a title doesn't name the singer,
+the video's own description and tags are read for it. No lyrics beats the wrong lyrics: when
+none can be trusted, the video plays with YouTube's own subtitles switched on, if it has any (drawn
+by YouTube's player; the song is then scored on pitch control).
+
+**No waiting.** A song never starts before its lyrics are ready: a loading screen covers the lookup.
+Lookups start the moment a song is queued, and the next songs in the queue are looked up while the
+current one plays, so by the time a song comes up its lyrics are usually already there. Each search
+runs on its own, so one failed request (a timeout, rate limiting) can't sink the rest, and a failure
+is never remembered as “no lyrics”.
+
+**Cross-checking.** LRCLIB often holds many versions of a song, sent in by different people, and
+some are wrong (junk lines, the wrong song, shifted timings), sometimes submitted several times
+over. The server compares all versions of the song with each other: one vote per distinct file,
+scored on shared words, on agreeing when the first line starts, and on whether its opening lines
+are in everyone else's lyrics at all (junk like "Let's Go karaoke… Are You Ready" isn't). The
+version most of the others agree with wins. When the video runs longer than the recording the lyrics were timed to (usually
+an intro), the game offers to shift the lyrics by the difference. Lines without word timings get their words spread across the line by length for the
+colour wipe. Music videos often have an intro the album recording doesn't, so each song keeps an
+offset you can nudge, or set by tapping when the first line starts.
+
+**The pitch guide.** Pitch targets come from note charts in the open **UltraStar** format: notes
+with a start beat, length and pitch, converted to seconds from the chart's BPM and gap. A built-in
+public-domain warm-up plays on a small Web Audio synth driven by its own chart, and you can paste a
+chart for any song. Without a chart, a song is scored on timing (singing while lines are up, not
+over the gaps) and pitch control (holding steady notes in the key you've been singing in, found by
+fitting your notes to a major scale).
+
+**Scoring.** Out of 100 behind the scenes, shown as a letter grade (S+ … F): live, over what you've
+sung so far, and finally over the whole song. A health bar adds the arcade feel: each note's
+verdict fills or drains it, more steeply on hard. The page can't hear the YouTube audio, so the bar,
+the lyrics and the light show move to the song's rhythm as the game knows it (every word and note
+starting) and to your voice's loudness from the microphone. With a chart, every moment of every note counts: full marks within half a semitone,
+half marks within one (the leeway depends on the difficulty), octave-independent, with golden notes
+worth double. Getting the right note at the wrong time misses, so pitch and timing are judged
+together.
+
+**Rooms.** Rooms use the site's room service (Server-Sent Events down, `POST`s up). The host's queue
+and video clock lead: start, pause and a time sync every two seconds go out to the other player,
+whose video seeks back into step if it drifts. Each singer is scored on their own device against
+their own video, so network delay never costs points. Live scores and pitch are shared a few times
+a second. Hearing each other is left out on purpose: voices sent over the internet arrive a beat
+late against music playing in time on each screen.
 
 <!-- /details -->

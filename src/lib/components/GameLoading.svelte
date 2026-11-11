@@ -72,6 +72,11 @@
 			<span class="cu-floor"></span>
 			<span class="cu-hoop"><span class="cu-board"></span><span class="cu-rim"></span><span class="cu-net"></span></span>
 			<span class="cu-ball"></span>
+		{:else if spec.id === 'karaoke'}
+			<span class="kk-mic">🎤</span>
+			{#each [0, 1, 2, 3, 4, 5, 6] as i (i)}
+				<span class="kk-eq" style="left: {14 + i * 11}%; animation-delay: {(i % 4) * 0.13}s"></span>
+			{/each}
 		{:else}
 			<span class="paddle left"></span>
 			<span class="paddle right"></span>
@@ -656,6 +661,29 @@
 		background: repeating-linear-gradient(90deg, #e5e7eb 0 3px, transparent 3px 7px);
 		clip-path: polygon(0 0, 100% 0, 80% 100%, 20% 100%);
 		animation: swish 2.4s infinite;
+	}
+	/* Keyboard Karaoke: an equalizer bouncing under a microphone. */
+	.kk-mic {
+		position: absolute;
+		left: 50%;
+		top: 10px;
+		transform: translateX(-50%);
+		font-size: 38px;
+		filter: drop-shadow(0 0 10px #e879f9);
+	}
+	.kk-eq {
+		position: absolute;
+		bottom: 8px;
+		width: 8%;
+		height: 30px;
+		border-radius: 4px 4px 2px 2px;
+		background: linear-gradient(#f0abfc, #7c3aed);
+		transform-origin: bottom;
+		animation: kk-eq 0.9s ease-in-out infinite alternate;
+	}
+	@keyframes kk-eq {
+		from { transform: scaleY(0.25); }
+		to { transform: scaleY(1); }
 	}
 	.cu-ball {
 		position: absolute;

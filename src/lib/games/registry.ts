@@ -3,7 +3,7 @@
 import type { Component } from 'svelte';
 import type { ArcadeGame } from './common';
 
-export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ispy' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow' | 'checkup';
+export type GameId = 'topgun' | 'fishy' | 'spaceinvaders' | 'frogger' | 'pong' | 'ispy' | 'blockdrop' | 'ifish' | 'chess' | 'fourrow' | 'checkup' | 'karaoke';
 
 /** What a component game (spec.ui) is given. */
 export interface GameUiProps {
@@ -319,6 +319,24 @@ export const GAMES: GameSpec[] = [
 		boards: {},
 		// Picks its own soundtrack (menus, and a harder beat in games).
 		ui: async () => (await import('./hoops/CheckUp.svelte')).default
+	},
+	{
+		id: 'karaoke',
+		saveKey: 'karaoke-save',
+		title: 'Keyboard Karaoke',
+		blurb: 'Queue songs from YouTube and sing: live pitch and timing scoring, synced lyrics, and rooms to sing with a friend.',
+		icon: '/games/icons/karaoke.png',
+		preview: '/games/previews/karaoke.jpg',
+		tagline: 'Sing along, scored on pitch',
+		accent: '#e879f9',
+		row: 2,
+		w: 1600,
+		h: 1000,
+		tickMs: 1000,
+		help: [],
+		touch: { buttons: [] },
+		boards: {},
+		ui: async () => (await import('./karaoke/Karaoke.svelte')).default
 	}
 ];
 
