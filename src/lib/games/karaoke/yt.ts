@@ -93,8 +93,20 @@ export class Video {
 	seek(s: number) {
 		this.p?.seekTo(Math.max(0, s), true);
 	}
+	// YouTube's player only reports its time a few times a second, so read on its own the lyrics
+	// would move in steps (and lag). Between reports, while it's playing, the clock runs on.
+	private reported = -1;
+	private reportedAt = 0;
 	get time() {
-		return this.p?.getCurrentTime() ?? 0;
+		if (!this.p) return 0;
+		const t = this.p.getCurrentTime() ?? 0;
+		const now = performance.now();
+		if (t != this.reported) {
+			this.reported = t;
+			this.reportedAt = now;
+			return t;
+		}
+		return this.state == 'playing' ? t + Math.min(0.6, (now - this.reportedAt) / 1000) : t;
 	}
 	get duration() {
 		return this.p?.getDuration() ?? 0;

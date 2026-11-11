@@ -60,10 +60,9 @@
 		}
 	}
 	const keyOf = (s: Song) => s.id || `builtin:${s.title}`;
-	// Difficulty: how close to the note counts (in semitones), and how fast misses drain your health.
-	const TOL = { easy: 1.5, normal: 1, hard: 0.6 };
-	const LEVELS = { easy: 'within 1½ semitones', normal: 'within 1 semitone', hard: 'within ⅔ of a semitone' };
-	const DRAIN = { easy: 0.6, normal: 1, hard: 1.5 };
+	// How close to the note counts (semitones): lenient, since a video and its lyrics or chart are
+	// rarely perfectly in step.
+	const TOLERANCE = 1.5;
 
 	// ── Favourites ──
 	const FAV_MAX = 100;
@@ -228,7 +227,7 @@
 		// The chart: the song's own, one you've added, or lyrics found online.
 		const own = item.chart ?? save.charts[keyOf(item)];
 		chart = own ? parseUltraStar(own) : { lines: [], notes: [] };
-		scorer = new Scorer(chart, TOL[save.level]);
+		scorer = new Scorer(chart, TOLERANCE);
 		live = scorer.live;
 		if (!item.id) {
 			synth = new Synth(chart.notes);
@@ -299,7 +298,7 @@
 		const l = f.lyrics;
 		if (l?.synced) {
 			chart = { lines: parseLRC(l.synced), notes: [] };
-			scorer = new Scorer(chart, TOL[save.level]);
+			scorer = new Scorer(chart, TOLERANCE);
 			live = scorer.live;
 			lyricsNote = `Lyrics: ${l.artist} – ${l.track}${l.versions > 1 ? ` (checked against ${l.versions} versions)` : ''}. Out of time? Nudge them, or tap when the first line starts.`;
 			// A music video often has an intro the recording doesn't: offer to shift the lyrics by
@@ -390,7 +389,7 @@
 		lostCrowd = false;
 		beatIdx = -1;
 		beatAt = 0;
-		scorer = new Scorer(chart, TOL[save.level]);
+		scorer = new Scorer(chart, TOLERANCE);
 		live = scorer.live;
 		paused = false;
 		if (synth) synth.play(0);
@@ -465,7 +464,7 @@
 		if (!save.scoring) return;
 		// Lines (lyrics only) are fewer and longer than notes, so each counts for more.
 		const k = v.midi == null ? 2 : 1;
-		const change = v.frac >= 0.85 ? (v.golden ? 8 : 5) : v.frac >= 0.6 ? 3 : v.frac >= 0.35 ? 1 : -9 * DRAIN[save.level];
+		const change = v.frac >= 0.85 ? (v.golden ? 8 : 5) : v.frac >= 0.6 ? 3 : v.frac >= 0.35 ? 1 : -6;
 		health = Math.max(0, Math.min(100, health + change * k));
 		healthFx = { kind: change >= 0 ? 'up' : 'down', at: now };
 		if (health <= 0 && !lostCrowd) {
@@ -763,7 +762,7 @@
 		save.charts[keyOf(song)] = chartText;
 		persist();
 		chart = c;
-		scorer = new Scorer(chart, TOL[save.level]);
+		scorer = new Scorer(chart, TOLERANCE);
 		showChart = false;
 		lyricsNote = 'Chart added: the pitch guide is on, and this song now has full scoring.';
 	}
@@ -886,13 +885,6 @@
 						</ol>
 						{#if !room || isHost}<button class="go" onclick={nextSong}>Sing the next song ▶</button>{:else}<p class="hint">The host starts the songs.</p>{/if}
 					{/if}
-					<div class="opts">
-						<span>Difficulty</span>
-						{#each ['easy', 'normal', 'hard'] as const as l (l)}
-							<button class="small" class:ghost={save.level != l} title="On pitch = {LEVELS[l]}" onclick={() => ((save.level = l), persist())}>{l}</button>
-						{/each}
-					</div>
-					<p class="hint tiny">How close to the note counts: {LEVELS[save.level]}{save.level == 'easy' ? ', and misses cost less health' : save.level == 'hard' ? ', and misses cost more health' : ''}.</p>
 					<label class="toggle">
 						<input type="checkbox" bind:checked={save.scoring} onchange={persist} />
 						<span>Scoring {save.scoring ? 'on: grades, health and pop-ups' : 'off: just sing'}</span>
@@ -1070,7 +1062,7 @@
 				<li><b>Sing</b> into your microphone (headphones help, so it hears you, not the song). Nothing is recorded or sent.</li>
 				<li><b>The pitch guide</b>: bars scrolling toward the line are the notes to sing; your voice is the trail of dots, green when you're on the note. Any octave counts.</li>
 				<li><b>Grades</b> go from S+ down to F. The crowd bar starts full: notes you nail fill it back up, misses drain it. Turn scoring off to just sing.</li>
-				<li><b>Difficulty</b> is how close to the note counts (easy: within 1½ semitones; normal: 1; hard: ⅔) and how much a miss costs.</li>
+				<li><b>Lenient on purpose</b>: within 1½ semitones counts, in any octave, and a little early or late is fine (videos and lyrics are rarely perfectly in step).</li>
 				<li><b>How it's judged</b>: With a note chart: every moment you're on the right note at the right time (golden notes double). With lyrics only: singing while lines are up, and holding steady notes in key.</li>
 				<li><b>Lyrics</b> are found and timed automatically. Music videos often have intros: nudge the lyrics with − / + (or ← / →), or press <kbd>T</kbd> when the first line starts.</li>
 				<li><b>Keys</b>: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge lyrics, <kbd>T</kbd> tap to sync, <kbd>R</kbd> restart, <kbd>N</kbd> skip.</li>

@@ -454,8 +454,9 @@ notes, and you're scored on pitch and timing. Sing solo or in a room with a frie
   drain it. It pulses on every word, glows as you sing, and catches fire when you're on a roll.
   Finish well for cheers and confetti; finish badly and the crowd boos and throws tomatoes. Nail a note and it pops: Good,
   Great!, Perfect!, or GOLDEN! on a golden note.
-- **Difficulty** is how close to the note counts (easy: within 1½ semitones; normal: 1; hard: ⅔)
-  and how much a miss costs. Turn scoring off to just sing, and skip songs any time.
+- **Lenient on purpose:** within 1½ semitones counts, in any octave, and a little early or late is
+  fine, since videos and lyrics are rarely perfectly in step. Turn scoring off to just sing, restart
+  a song, or skip it any time.
 - **Favourites:** star up to 100 songs and they wait in your song book.
 - **Sing with a friend:** make a room and share the code. The host runs the queue, and you see
   each other's score and pitch live.
@@ -518,8 +519,8 @@ sung so far, and finally over the whole song. A health bar adds the arcade feel:
 verdict fills or drains it, more steeply on hard. The page can't hear the YouTube audio, so the bar,
 the lyrics and the light show move to the song's rhythm as the game knows it (every word and note
 starting) and to your voice's loudness from the microphone. With a chart, every moment of every note counts: full marks within half a semitone,
-half marks within one (the leeway depends on the difficulty), octave-independent, with golden notes
-worth double. Getting the right note at the wrong time misses, so pitch and timing are judged
+partial marks within a semitone and a half, octave-independent, with a quarter-second of timing
+slack either way and golden notes worth double. Getting the right note at the wrong time misses, so pitch and timing are judged
 together.
 
 **Rooms.** Rooms use the site's room service (Server-Sent Events down, `POST`s up). The host's queue

@@ -52,23 +52,38 @@ export function parseLRC(lrc: string): Line[] {
 	raw.forEach((r, i) => {
 		if (!r.text) return; // a blank stamped line just ends the previous one
 		const start = r.t - offset;
-		const next = raw[i + 1] ? raw[i + 1].t - offset : start + 5;
-		const end = Math.min(next, start + Math.max(2, r.text.length * 0.35));
+		const next = raw[i + 1] ? raw[i + 1].t - offset : start + 6;
+		// How long the line takes to sing: about a quarter of a second a syllable (and never past the
+		// next line). Stretching it over the whole gap would drag the words through instrumental breaks.
+		const sung = 0.35 + syllables(r.text) * 0.26;
+		const end = Math.min(next - 0.05, start + Math.max(1, sung));
 		const parts = r.words.length
-			? r.words.map((w, k) => ({ t: w.t - offset, end: r.words[k + 1] ? r.words[k + 1].t - offset : end, text: w.text }))
-			: // No word times: spread the words over the line, by length.
+			? r.words.map((w, k) => ({ t: w.t - offset, end: r.words[k + 1] ? r.words[k + 1].t - offset : Math.max(w.t - offset + 0.3, end), text: w.text }))
+			: // No word times: pace the words over the line by their syllables.
 				spread(r.text, start, end);
 		lines.push({ start, end, text: r.text, parts });
 	});
 	return lines;
 }
 
+/** Syllables in some lyrics: vowel groups in Latin script; a syllable a character in CJK and Hangul. */
+export function syllables(text: string) {
+	let n = 0;
+	for (const w of text.toLowerCase().split(/\s+/)) {
+		if (!w) continue;
+		const cjk = w.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g)?.length ?? 0;
+		const latin = w.replace(/[^a-z\u00e0-\u024f]/g, '').replace(/e$/, '').match(/[aeiouy\u00e0-\u00ff]+/g)?.length ?? 0;
+		n += cjk + (cjk ? 0 : Math.max(w.replace(/[^a-z0-9\u00e0-\u024f]/g, '') ? 1 : 0, latin));
+	}
+	return Math.max(1, n);
+}
+
 function spread(text: string, start: number, end: number) {
 	const words = text.split(' ').map((w, i, a) => (i < a.length - 1 ? w + ' ' : w));
-	const total = words.reduce((n, w) => n + w.length, 0) || 1;
+	const total = words.reduce((n, w) => n + syllables(w), 0) || 1;
 	let t = start;
 	return words.map((w) => {
-		const d = ((end - start) * w.length) / total;
+		const d = ((end - start) * syllables(w)) / total;
 		const p = { t, end: t + d, text: w };
 		t += d;
 		return p;

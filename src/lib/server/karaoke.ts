@@ -392,7 +392,7 @@ export async function findLyrics(track: string, artist: string, seconds: number,
 				});
 				return known.length / lines.length;
 			};
-			const votes = (a: (typeof info)[number]) => info.reduce((s, o) => s + (o == a ? 0 : agree(a, o)), 0) + opening(a) * 3 + fit(a.h) * 0.3;
+			const votes = (a: (typeof info)[number]) => info.reduce((s, o) => s + (o == a ? 0 : agree(a, o)), 0) + opening(a) * 3 + fit(a.h) * 0.3 + (/<\d+:\d+/.test(a.h.syncedLyrics!) ? 0.5 : 0);
 			const best = info.reduce((a, b) => (votes(b) > votes(a) ? b : a));
 			const h = best.h;
 			lyrics = { synced: h.syncedLyrics, plain: h.plainLyrics, track: h.trackName, artist: h.artistName, duration: h.duration, versions: info.length };

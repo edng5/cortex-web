@@ -13,6 +13,8 @@ import type { Heard } from './pitch';
 
 /** Distance between two pitches in semitones, ignoring octaves (0..6). */
 export const pitchGap = (a: number, b: number) => Math.abs((((a - b) % 12) + 18) % 12 - 6);
+/** Timing leeway (s): notes and lines count a little early or late. */
+export const SLACK = 0.25;
 
 export interface Live {
 	/** The score out of 100, over the whole song (the final score at the end). */
@@ -105,17 +107,23 @@ export class Scorer {
 	private pushNotes(t: number, dt: number, h: Heard, singing: boolean) {
 		const note = this.chart.notes.find((n) => t >= n.start && t < n.end && !n.free) ?? null;
 		let hit = false;
+		let k = 0;
 		if (note) {
 			const w = note.golden ? 2 : 1;
 			this.noteW += dt * w;
 			if (singing) {
-				const gap = pitchGap(h.midi, note.midi);
-				const k = gap <= this.tolerance * 0.5 ? 1 : gap <= this.tolerance ? 0.5 : 0;
+				// A note sung a little early or late (the video and the chart a touch out of step, or
+				// you are) still counts: any note within SLACK of now, at its pitch.
+				const near = this.chart.notes.filter((n) => !n.free && t >= n.start - SLACK && t < n.end + SLACK);
+				for (const n of near) {
+					const gap = pitchGap(h.midi, n.midi);
+					k = Math.max(k, gap <= this.tolerance * 0.5 ? 1 : gap <= this.tolerance ? 0.6 : 0);
+				}
 				this.hitW += dt * w * k;
 				hit = k > 0;
 			}
 		}
-		this.track(note, note && singing ? (pitchGap(h.midi, note.midi) <= this.tolerance * 0.5 ? 1 : pitchGap(h.midi, note.midi) <= this.tolerance ? 0.5 : 0) : 0, dt, { golden: !!note?.golden, midi: note?.midi ?? null });
+		this.track(note, k, dt, { golden: !!note?.golden, midi: note?.midi ?? null });
 		this.combo = hit ? this.combo + dt : note ? 0 : this.combo;
 		this.live = {
 			score: Math.round((this.hitW / (this.totalW || 1)) * 100),
@@ -130,7 +138,8 @@ export class Scorer {
 
 	private pushLines(t: number, dt: number, h: Heard, singing: boolean) {
 		const line = this.chart.lines.find((l: Line) => t >= l.start && t < l.end) ?? null;
-		const inLine = !!line;
+		// (Singing just before a line starts or just after it ends counts as in it.)
+		const inLine = !!line || this.chart.lines.some((l: Line) => t >= l.start - SLACK * 2 && t < l.end + SLACK * 3);
 		if (inLine) {
 			this.lineT += dt;
 			if (singing) this.voicedInLine += dt;
@@ -151,8 +160,8 @@ export class Scorer {
 		// A line's verdict: on-pitch singing over ~60% of it is a perfect line.
 		this.track(line, hit ? 1 / 0.6 : 0, dt, { golden: false, midi: null });
 		this.combo = hit ? this.combo + dt : inLine && !singing ? this.combo : 0;
-		// People sing about 60% of a line (breaths, short words): that's full marks for timing.
-		const timing = Math.max(0, Math.min(1, this.voicedInLine / (0.6 * (this.lineT || 1))) - Math.min(0.3, this.gapVoiced / (this.lineT + 10)));
+		// People sing about half of a line (breaths, short words): that's full marks for timing.
+		const timing = Math.max(0, Math.min(1, this.voicedInLine / (0.45 * (this.lineT || 1))) - Math.min(0.2, this.gapVoiced / (this.lineT + 20)));
 		const pitch = this.voiced ? this.onNote / this.voiced : 0;
 		const sung = this.lineT / (this.chart.lines.reduce((s, l) => s + (l.end - l.start), 0) || 1);
 		this.live = { score: Math.round((0.6 * timing + 0.4 * pitch) * 100 * Math.min(1, sung)), sofar: this.lineT > 1 ? Math.round((0.6 * timing + 0.4 * pitch) * 100) : null, pitch, timing, note: null, hit, combo: Math.floor(this.combo) };
