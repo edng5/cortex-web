@@ -106,6 +106,16 @@ export function body(p: Pose) {
 		 * in shoulder widths. Leaning toward the camera moves you forward.
 		 */
 		lean: -(((p[P.lShoulder].z ?? 0) + (p[P.rShoulder].z ?? 0) + (p[P.nose].z ?? 0)) / 3 - ((p[P.lHip].z ?? 0) + (p[P.rHip].z ?? 0)) / 2) / (Math.hypot(p[P.lShoulder].x - p[P.rShoulder].x, p[P.lShoulder].y - p[P.rShoulder].y) || 0.1),
+		/**
+		 * Which way the body is turned, from the shoulders' depth (radians; + = turned to the
+		 * player's own right: the left shoulder comes toward the camera, the right one goes back).
+		 */
+		yaw: Math.atan2((p[P.rShoulder].z ?? 0) - (p[P.lShoulder].z ?? 0), Math.abs(p[P.lShoulder].x - p[P.rShoulder].x) || 0.01),
+		/**
+		 * The torso's length (shoulders to hips) in the picture: smaller when you step back from the
+		 * camera, but (unlike the shoulders' width) the same when you turn.
+		 */
+		torso: Math.hypot((p[P.lShoulder].x + p[P.rShoulder].x - p[P.lHip].x - p[P.rHip].x) / 2, (p[P.lShoulder].y + p[P.rShoulder].y - p[P.lHip].y - p[P.rHip].y) / 2) || 0.1,
 		/** How sure the model is that the upper body is in view (0..1). */
 		seen: Math.min(p[P.lShoulder].visibility ?? 1, p[P.rShoulder].visibility ?? 1, p[P.lHip].visibility ?? 1, p[P.rHip].visibility ?? 1)
 	};

@@ -15,7 +15,7 @@
 	import { fromPose, type Joints } from './anim';
 	import { createCourt, BROWS, BUILDS, CHECK, EARRINGS, SHAPES, DEFAULT_LOOK, EYES, FACIAL, HAIRS, HAIR_COLORS, HOOP, JERSEYS, MOUTHS, SKINS, type Court, type Look } from './court';
 	import { judge, makeTemplate, shotWindow, type ShotKind, type ShotTake, type ShotTemplate } from './shot';
-	import { LADDER, leanMove, stepBackTo, SoloGame, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
+	import { LADDER, aheadOf, handleStep, stepBackTo, SoloGame, type Handle, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
 	import { UNLOCK_AT, perfectWindow, shotRating } from './shot';
 	import { ANYONE, COMMON, INTERLUDES, LINES, MORE, PROLOGUE, type SceneLine } from './lore';
 	import { Speaker } from '$lib/voice/speech';
@@ -347,11 +347,11 @@
 		{ id: 'layup', name: 'Layup', how: "Step in and reach one hand high above your head while the other stays low. No timing: it's your Finishing and how well you're guarded." },
 		{ id: 'pumpfake', name: 'Pump fake', how: 'From your set point, bring the ball up part way and back down without shooting. Defenders who bite jump out of position.' },
 		{ id: 'triple', name: 'Triple threat', how: 'Knees bent, both hands together at your waist, hold it a moment. Your next move is quicker.' },
-		{ id: 'crossover', name: 'Crossover', how: 'Hands low (dribbling height): swing them quickly from one side of your body to the other.' },
+		{ id: 'crossover', name: 'Crossover', how: 'Hands low (dribbling height): swing them across your body, from one side to the other. A quick swing is enough.' },
 		{ id: 'inout', name: 'In-and-out', how: 'Hands low on one side: push them in toward the middle and straight back out.' },
 		{ id: 'spin', name: 'Spin move', how: 'Turn all the way round, quickly, and face the camera again.' },
-		{ id: 'stepback', name: 'Step-back', how: 'Lean back sharply, or hop back away from the camera: a quick burst away from your defender to make room for a jumper.' },
-		{ id: 'drive', name: 'Attack dribble', how: 'On offense, pound the ball: one hand low, bouncing hard and fast. You take off toward the rim, faster the longer you keep it up. Lean back to stop.' },
+		{ id: 'stepback', name: 'Step-back', how: 'Take a quick step back, away from the camera: a burst away from your defender to make room for a jumper. (Leaning back alone doesn\'t count.)' },
+		{ id: 'drive', name: 'Attack dribble', how: 'Dribble (one hand low, bouncing) to move; lean in while you dribble to speed up. Turn your body while dribbling to head that way; stop, or face forward again, and you turn back to the rim. Shoot while still turned away and it\'s a fadeaway: harder to guard, harder to make, and its green comes a little later.' },
 		{ id: 'sprint', name: 'Sprint back', how: 'On defense, run in place: knees up, arms pumping. You sprint back in front of the ball handler, even after he has gone by you.' },
 		{ id: 'swipe', name: 'Steal', how: 'On defense, swipe one hand quickly across in front of you at waist or chest height. Close to him, it can strip the ball. Miss and you are off balance for a moment.' },
 
@@ -484,7 +484,8 @@
 	let practicePos = { x: 0, z: -2 };
 	/** The hand with the ball in practice. */
 	let pHand = $state<'left' | 'right'>('right');
-	let pDrive = 0;
+	/** Practice: your heading and speed off the dribble, like in a game. */
+	let pHandle: Handle = { yaw: 0, drive: 0 };
 	let pDriving = false;
 	let practiceBurst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
@@ -709,18 +710,17 @@
 		} else if (screen == 'practice') {
 			const m = motion.state;
 			// Lean to move, toward your dribbling hand's side, like in a game.
-			const pounding = m.dribbling && m.lean >= 0 && !m.setting;
+			const pounding = m.dribbling && !m.setting;
 			if (pounding && !pDriving) bump('drive', 'Attack dribble');
 			pDriving = pounding;
-			pDrive += ((pounding ? 1 : 0) - pDrive) * (pounding ? 0.05 : 0.1);
-			const lean = pDrive > 0.05 ? Math.max(m.lean, 0.35 + pDrive * 0.65) : m.lean;
-			let p = leanMove(practicePos, { ...m, lean, hand: pHand }, ((6 + save.stats.speed * 0.05) / 60) * (1 + pDrive * 0.9), -1);
+			// Dribble to move (the way you're turned), lean in to speed up, like in a game.
+			let p = handleStep(practicePos, m, pHandle, (6 + save.stats.speed * 0.05) / 60, pHand);
 			if (practiceBurst && t - practiceBurst.at < 300) {
 				const k = 1 - (1 - (t - practiceBurst.at) / 300) ** 2;
 				p = { x: practiceBurst.from.x + (practiceBurst.to.x - practiceBurst.from.x) * k, z: practiceBurst.from.z + (practiceBurst.to.z - practiceBurst.from.z) * k };
 			}
 			practicePos = { x: Math.max(-11, Math.min(11, p.x)), z: Math.max(-12.5, Math.min(8, p.z)) };
-			court?.setYou(youJ, practicePos.x, practicePos.z, { x: HOOP.x, z: HOOP.z });
+			court?.setYou(youJ, practicePos.x, practicePos.z, aheadOf(practicePos, pHandle.yaw));
 			practiceEvents(events, t);
 		}
 	}
@@ -1154,8 +1154,8 @@
 			<header><h2>How to play</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<ul>
 				<li><b>Set up:</b> stand 2–3 m from the camera so it sees you head to knees, in good light, with room to step around.</li>
-				<li><b>Move:</b> lean toward the camera to drive at the hoop, lean back to retreat. You go toward the side of the hand you're dribbling with (dribble right to go right). Pound the dribble (one hand bouncing hard) to explode toward the rim. On defense, lean toward or away from your man and slide your feet sideways; run in place to sprint back in front of him.</li>
-				<li><b>Shoot:</b> both hands up together, then release over your head. Time it to your recorded release: the green zone on the shot bar.</li>
+				<li><b>Move:</b> dribble (one hand low, bouncing) to move; lean in while you dribble to speed up, lean back to retreat. Turn your body while dribbling and you head that way; stop dribbling or face forward again and you turn back to the rim. Step back from the camera for a step-back. On defense, lean toward or away from your man and slide your feet sideways; run in place to sprint back in front of him.</li>
+				<li><b>Shoot:</b> both hands up together, then release over your head. Time it to your recorded release: the green zone on the shot bar. Shoot while turned away from the rim for a fadeaway: harder to contest, but less likely to go in, and its green comes a little later.</li>
 				<li><b>Layup:</b> near the rim, reach one hand high.</li>
 				<li><b>Shake him:</b> crossover, in-and-out or spin (hands low) when he's close. Triple threat first makes it quicker. Pump fake to make him jump.</li>
 				<li><b>Defend:</b> stay in front of him, and jump with his release to block. Swipe a hand across to go for the steal (miss and you're off balance).</li>

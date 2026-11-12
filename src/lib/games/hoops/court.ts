@@ -587,6 +587,8 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	function makeBaller(look: Look) {
 		const root = new T.Group();
 		const body = new T.Group();
+		// (A touch shorter than the rig's natural size.)
+		body.scale.set(0.97, 0.91, 0.97);
 		root.add(body);
 		const hips = new T.Group();
 		hips.position.y = 2.9;
