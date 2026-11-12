@@ -520,9 +520,8 @@ colour wipe. Music videos often have an intro the album recording doesn't, so ea
 offset you can nudge, or set by tapping when the first line starts.
 
 **The pitch guide.** Pitch targets come from note charts in the open **UltraStar** format: notes
-with a start beat, length and pitch, converted to seconds from the chart's BPM and gap. A built-in
-public-domain warm-up plays on a small Web Audio synth driven by its own chart, and you can paste a
-chart for any song. Without a chart, a song is scored on timing (singing while lines are up, not
+with a start beat, length and pitch, converted to seconds from the chart's BPM and gap. You can paste
+a chart for any song. Without a chart, a song is scored on timing (singing while lines are up, not
 over the gaps) and pitch control (holding steady notes in the key you've been singing in, found by
 fitting your notes to a major scale).
 

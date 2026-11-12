@@ -78,5 +78,5 @@ export const WARMUP: Song = {
 E`
 };
 
-/** The song book: add songs here (see the top of this file). */
-export const SONGS: Song[] = [WARMUP];
+/** The song book: add songs here (see the top of this file). (The warm-up above isn't listed.) */
+export const SONGS: Song[] = [];

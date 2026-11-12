@@ -17,7 +17,7 @@
 	import { Scorer, gradeColor, gradeOf, pitchGap, type Live, type Verdict } from './score';
 	import { Video, videoIdFrom, type VideoState } from './yt';
 	import { Synth } from './synth';
-	import { SONGS, WARMUP, type Song } from './songs';
+	import { SONGS, type Song } from './songs';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
 
@@ -960,6 +960,7 @@
 						<button role="tab" aria-selected={tab == 'link'} class:on={tab == 'link'} onclick={() => (tab = 'link')}>Paste a link</button>
 					</div>
 					{#if tab == 'book'}
+						{#if SONGS.length}
 						<ul class="list">
 							{#each SONGS as s (keyOf(s))}
 								<li>
@@ -970,6 +971,7 @@
 								</li>
 							{/each}
 						</ul>
+						{/if}
 						<h3 class="sect">★ Favourites <small>{save.favs.length}/{FAV_MAX}</small></h3>
 						{#if !save.favs.length}
 							<p class="hint">Star songs (☆) in a search, the queue or after singing, and they'll wait here.</p>
