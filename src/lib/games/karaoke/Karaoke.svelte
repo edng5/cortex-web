@@ -39,8 +39,10 @@
 		favs: Item[];
 		/** Scoring on (grades, the health bar, pop-ups), or just singing. */
 		scoring: boolean;
+		/** The lyrics version picked per song (LRCLIB id), when it isn't the best match. */
+		picks: Record<string, number>;
 	}
-	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true });
+	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {} });
 	let save = $state<Save>(load());
 	function load(): Save {
 		try {
@@ -66,6 +68,39 @@
 
 	// ── Favourites ──
 	const FAV_MAX = 100;
+
+	// ── Per-song memory (lyric timing, the lyrics picked), kept small ──
+	/**
+	 * How many songs' settings are kept. Past this, the oldest go first (first in, first out),
+	 * except favourites, which are kept for as long as there are others to clear; if every song
+	 * left is a favourite, the oldest of those go.
+	 */
+	const SONG_MEMORY = 1000;
+	function remember<T>(map: Record<string, T>, key: string, value: T): Record<string, T> {
+		// Re-added at the end: the newest.
+		const out = { ...map };
+		delete out[key];
+		out[key] = value;
+		let excess = Object.keys(out).length - SONG_MEMORY;
+		if (excess > 0) {
+			const favs = new Set(save.favs.map(keyOf));
+			for (const k of Object.keys(out)) {
+				if (excess <= 0) break;
+				if (k != key && !favs.has(k)) {
+					delete out[k];
+					excess--;
+				}
+			}
+			for (const k of Object.keys(out)) {
+				if (excess <= 0) break;
+				if (k != key) {
+					delete out[k];
+					excess--;
+				}
+			}
+		}
+		return out;
+	}
 	const isFav = (s: Song) => save.favs.some((f) => keyOf(f) == keyOf(s));
 	function toggleFav(s: Item) {
 		if (isFav(s)) {
@@ -176,6 +211,17 @@
 	// ── Singing ──
 	const mic = new Mic();
 	let micErr = $state('');
+	// The notes under the lyrics (lyrics found, no microphone…) go away after a few seconds.
+	$effect(() => {
+		if (!lyricsNote) return;
+		const t = setTimeout(() => (lyricsNote = ''), 6000);
+		return () => clearTimeout(t);
+	});
+	$effect(() => {
+		if (!micErr) return;
+		const t = setTimeout(() => (micErr = ''), 6000);
+		return () => clearTimeout(t);
+	});
 	let video = $state.raw<Video | null>(null);
 	let synth: Synth | null = null;
 	let videoEl = $state<HTMLDivElement>();
@@ -221,6 +267,8 @@
 		lostCrowd = false;
 		introHint = 0;
 		lyricsNote = '';
+		lyricOptions = [];
+		lyricPick = 0;
 		paused = false;
 		micErr = (await mic.start()) ?? '';
 		offset = save.offsets[keyOf(item)] ?? item.offset ?? 0;
@@ -264,7 +312,7 @@
 	}
 	// ── Lyrics: looked up before a song starts, and ahead of time for the songs queued next ──
 	interface Found {
-		lyrics: { synced: string | null; plain: string | null; artist: string; track: string; duration: number; versions: number } | null;
+		lyrics: { synced: string | null; plain: string | null; artist: string; track: string; duration: number; versions: number; id?: number; options?: LyricsOption[] } | null;
 		captions: boolean;
 		error?: boolean;
 	}
@@ -294,10 +342,25 @@
 		for (const it of items) if (it.id && !(it.chart ?? save.charts[keyOf(it)])) void lyricsFor(it);
 	}
 	/** Puts found lyrics in place (and what to tell the singer). */
+	interface LyricsOption {
+		id: number;
+		artist: string;
+		track: string;
+		duration: number;
+		synced: string;
+		words: boolean;
+	}
+	/** The lyric versions found for the song that's on, and the one in use. */
+	let lyricOptions = $state<LyricsOption[]>([]);
+	let lyricPick = $state(0);
 	function useLyrics(item: Item, f: Found) {
 		const l = f.lyrics;
+		lyricOptions = l?.options ?? [];
+		// The version picked last time for this song (if it's still among them), else the best match.
+		const picked = lyricOptions.find((o) => o.id == save.picks[keyOf(item)]);
+		lyricPick = picked?.id ?? l?.id ?? 0;
 		if (l?.synced) {
-			chart = { lines: parseLRC(l.synced), notes: [] };
+			chart = { lines: parseLRC(picked?.synced ?? l.synced), notes: [] };
 			scorer = new Scorer(chart, TOLERANCE);
 			live = scorer.live;
 			lyricsNote = `Lyrics: ${l.artist} – ${l.track}${l.versions > 1 ? ` (checked against ${l.versions} versions)` : ''}. Out of time? Nudge them, or tap when the first line starts.`;
@@ -306,6 +369,7 @@
 			const extra = (video?.duration ?? item.seconds ?? 0) - l.duration;
 			if (extra >= 3 && extra <= 45 && !save.offsets[keyOf(item)]) introHint = Math.round(extra * 2) / 2;
 		} else if (f.captions) {
+			lyricOptions = [];
 			lyricsNote = "No synced lyrics we could trust for this one, so YouTube's own subtitles are on instead. You're scored on pitch control.";
 		} else if (l?.plain) {
 			lyricsNote = "Only unsynced lyrics were found for this one, and the video has no subtitles. You're scored on pitch control.";
@@ -313,9 +377,32 @@
 			lyricsNote = "Couldn't reach the lyrics service. Sing along anyway: you're scored on pitch control.";
 		} else lyricsNote = "No lyrics we could trust for this video, and it has no subtitles. Sing along anyway: you're scored on pitch control.";
 	}
+	/** Switch to another version of the lyrics (remembered for this song). */
+	function pickLyrics(id: number) {
+		const o = lyricOptions.find((x) => x.id == id);
+		if (!o || !song) return;
+		lyricPick = id;
+		chart = { lines: parseLRC(o.synced), notes: [] };
+		scorer = new Scorer(chart, TOLERANCE);
+		live = scorer.live;
+		beatIdx = -1;
+		save.picks = remember(save.picks, keyOf(song), id);
+		persist();
+		note = `Lyrics: ${o.artist} – ${o.track}`;
+	}
+	// ── Jump to the song: past a long intro, to just before the first line ──
+	/** A few seconds to get ready before the first line. */
+	const READY = 3;
+	const firstLineAt = $derived(chart.lines.length ? chart.lines[0].start + offset : null);
+	function jumpToSong() {
+		if (firstLineAt == null || !video || (room && !isHost)) return;
+		video.seek(Math.max(0, firstLineAt - READY));
+		video.play();
+		note = 'Get ready…';
+	}
 	function nudge(d: number) {
 		offset = Math.round((offset + d) * 100) / 100;
-		if (song) save.offsets[keyOf(song)] = offset;
+		if (song) save.offsets = remember(save.offsets, keyOf(song), offset);
 		persist();
 	}
 	/** "The first line starts now": lines the lyrics up with the video. */
@@ -323,7 +410,7 @@
 		const first = chart.lines[0];
 		if (!first || !song) return;
 		offset = Math.round((clock() - first.start) * 100) / 100;
-		save.offsets[keyOf(song)] = offset;
+		save.offsets = remember(save.offsets, keyOf(song), offset);
 		persist();
 	}
 	const clock = () => (synth ? synth.time : (video?.time ?? 0));
@@ -348,7 +435,7 @@
 		// Skipped: graded on the part you sang (and not counted as a best).
 		const score = skipped ? (live.sofar ?? 0) : scorer.final();
 		const k = keyOf(song);
-		const best = !skipped && save.scoring && score > (save.best[k] ?? 0);
+		const best = !skipped && save.scoring && (chart.lines.length > 0 || chart.notes.length > 0) && score > (save.best[k] ?? 0);
 		if (best) save.best[k] = score;
 		// Played: off the front of the queue.
 		if (save.queue[0] && keyOf(save.queue[0]) == k) save.queue = save.queue.slice(1);
@@ -357,8 +444,11 @@
 		if (room) send({ k: 'done', score });
 		// The host ended or skipped it: end it for the other singer too.
 		if (room && isHost) send({ k: 'end', skipped });
-		const mood: Mood = !save.scoring ? 'ok' : score >= 76 ? 'great' : score < 56 ? 'bad' : 'ok';
-		result = { score, best, song, theirs: partner?.done ?? undefined, lost: lostCrowd, scored: save.scoring, skipped, mood };
+		// No lyrics (and no chart): nothing to score against, so no grade: just the confetti.
+		const words = chart.lines.length > 0 || chart.notes.length > 0;
+		const scored = save.scoring && words;
+		const mood: Mood = !words ? 'great' : !save.scoring ? 'ok' : score >= 76 ? 'great' : score < 56 ? 'bad' : 'ok';
+		result = { score, best: best && words, song, theirs: partner?.done ?? undefined, lost: lostCrowd, scored, skipped, mood };
 		// The crowd's verdict: cheers and applause, polite applause, or boos (and tomatoes).
 		if (mood == 'great') {
 			gameAudio.play('karaoke', 'cheer');
@@ -528,7 +618,7 @@
 			g.font = '700 12px system-ui, sans-serif';
 			for (const l of chart.lines)
 				if (l.end > t - 2 && l.start < t + SPAN)
-					for (const p of l.parts) {
+					for (const p of l.timed ? l.parts : [{ t: l.start, end: l.end, text: l.text }]) {
 						const x0 = x(p.t);
 						const x1 = x(p.end);
 						if (x1 < 0 || x0 > w) continue;
@@ -750,6 +840,7 @@
 		else if (e.code == 'KeyT') tapSync();
 		else if (e.code == 'KeyN' && (!room || isHost)) skipSong();
 		else if (e.code == 'KeyR' && (!room || isHost)) restartSong();
+		else if (e.code == 'KeyJ' && (!room || isHost)) jumpToSong();
 	}
 
 	// Paste a chart for the song that's on.
@@ -947,10 +1038,17 @@
 			<div class="lyrics">
 				{#if lyric.now}
 					{#key beatAt}
-						<p class="now" class:soon={songT < lyric.now.start} class:beat={beatAt > 0}>
-							{#each lyric.now.parts as p, i (i)}<span class="w" style="--k:{wipe(lyric.now, i)}">{p.text}</span>{/each}
-						</p>
+						{#if lyric.now.timed}
+							<p class="now" class:soon={songT < lyric.now.start} class:beat={beatAt > 0}>
+								{#each lyric.now.parts as p, i (i)}<span class="w" style="--k:{wipe(lyric.now, i)}">{p.text}</span>{/each}
+							</p>
+						{:else}
+							<p class="now whole" class:soon={songT < lyric.now.start} class:on={songT >= lyric.now.start} class:beat={beatAt > 0}>{lyric.now.text}</p>
+						{/if}
 					{/key}
+					{#if !lyric.now.timed && songT >= lyric.now.start}
+						<div class="lineprog" aria-hidden="true"><i style="width:{Math.min(100, ((songT - lyric.now.start) / Math.max(0.5, lyric.now.end - lyric.now.start)) * 100)}%"></i></div>
+					{/if}
 					{#if lyric.next}<p class="next">{lyric.next.text}</p>{/if}
 				{:else if chart.lines.length && songT < chart.lines[0].start}
 					<p class="next">♪ {Math.max(0, Math.ceil(chart.lines[0].start - songT))}…</p>
@@ -965,10 +1063,23 @@
 						<button class="small ghost" aria-label="Lyrics later" onclick={() => nudge(0.25)}>+</button>
 						{#if chart.lines.length}<button class="small ghost" onclick={tapSync} title="Press when the first line starts (T)">Tap: first line now</button>{/if}
 					</span>
+					{#if lyricOptions.length > 1}
+						<label class="pick">
+							<span class="vh">Lyrics version</span>
+							<select value={lyricPick} onchange={(e) => pickLyrics(Number((e.currentTarget as HTMLSelectElement).value))} title="Other versions of these lyrics">
+								{#each lyricOptions as o, i (o.id)}
+									<option value={o.id}>{i == 0 ? '★ ' : ''}{o.artist} – {o.track} · {mmss(o.duration)}{o.words ? ' · word by word' : ''}</option>
+								{/each}
+							</select>
+						</label>
+					{/if}
 					<button class="small ghost" onclick={() => (showChart = !showChart)}>{chart.notes.length ? 'Chart ✓' : 'Add a chart'}</button>
 				{/if}
 				<span class="grow"></span>
 				{#if !room || isHost}
+					{#if song.id && firstLineAt != null && songT + offset < firstLineAt - READY - 1}
+						<button class="small jump" onclick={jumpToSong} title="Skip the intro: to {READY} seconds before the first line (J)">Jump to song ⏩</button>
+					{/if}
 					<button class="small ghost" onclick={() => restartSong()} title="Start this song again (R)">Restart ↺</button>
 					<button class="small ghost" onclick={skipSong} title="Skip to the next song (N)">Skip ⏭</button>
 					<button class="small ghost" onclick={() => finish()}>End song</button>
@@ -1065,7 +1176,7 @@
 				<li><b>Lenient on purpose</b>: within 1½ semitones counts, in any octave, and a little early or late is fine (videos and lyrics are rarely perfectly in step).</li>
 				<li><b>How it's judged</b>: With a note chart: every moment you're on the right note at the right time (golden notes double). With lyrics only: singing while lines are up, and holding steady notes in key.</li>
 				<li><b>Lyrics</b> are found and timed automatically. Music videos often have intros: nudge the lyrics with − / + (or ← / →), or press <kbd>T</kbd> when the first line starts.</li>
-				<li><b>Keys</b>: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge lyrics, <kbd>T</kbd> tap to sync, <kbd>R</kbd> restart, <kbd>N</kbd> skip.</li>
+				<li><b>Keys</b>: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge lyrics, <kbd>T</kbd> tap to sync, <kbd>J</kbd> jump past the intro, <kbd>R</kbd> restart, <kbd>N</kbd> skip.</li>
 			</ul>
 		</div>
 	{/if}
@@ -1962,6 +2073,54 @@
 	.now.soon {
 		opacity: 0.75;
 	}
+	.pick select {
+		max-width: 220px;
+		font: 600 0.78rem system-ui, sans-serif;
+		color: var(--ink);
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 8px;
+		padding: 3px 6px;
+	}
+	.pick option {
+		background: #1e1240;
+	}
+	.vh {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+	}
+	.jump {
+		background: linear-gradient(135deg, #22d3ee, #6366f1);
+		animation: pop-in 0.3s cubic-bezier(0.2, 1.8, 0.4, 1);
+	}
+	/* A line without word times: it lights up as a whole, and a bar runs to the next line. */
+	.now.whole {
+		color: #fff;
+		transition:
+			color 0.3s,
+			text-shadow 0.3s;
+	}
+	.now.whole.on {
+		color: #f9a8d4;
+		filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.9)) drop-shadow(0 0 10px rgba(236, 72, 153, 0.7));
+	}
+	.lineprog {
+		width: min(560px, 80%);
+		height: 4px;
+		margin: 2px auto 6px;
+		border-radius: 2px;
+		background: rgba(255, 255, 255, 0.15);
+		overflow: hidden;
+	}
+	.lineprog i {
+		display: block;
+		height: 100%;
+		background: linear-gradient(90deg, #f472b6, #fde047);
+		transition: width 0.1s linear;
+	}
 	/* The karaoke wipe: each word fills with colour as it's sung. */
 	.w {
 		/* Sung: bright pink; still to sing: white. */
@@ -2092,13 +2251,120 @@
 		background: rgba(255, 255, 255, 0.15);
 		font: 0.8rem ui-monospace, monospace;
 	}
+	.find,
+	.queue {
+		min-width: 0;
+	}
+	/* Phones: one column the width of the screen; everything shrinks to fit rather than spilling. */
 	@media (max-width: 720px) {
 		.menu {
-			padding: 14px;
-			overflow: auto;
+			padding: 12px;
+			gap: 10px;
+			overflow-y: auto;
+			overflow-x: hidden;
 		}
 		.cols {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: auto;
+			gap: 12px;
+		}
+		.find,
+		.queue {
+			padding: 10px;
+		}
+		.find .list,
+		.queue .list {
+			max-height: 46vh;
+		}
+		.sub {
+			font-size: 0.82rem;
+		}
+		/* The tabs scroll sideways if they don't fit. */
+		.tabs {
+			overflow-x: auto;
+			scrollbar-width: none;
+		}
+		.tabs button {
+			flex: none;
+			padding: 6px 10px;
+			font-size: 0.82rem;
+		}
+		.list li {
+			gap: 6px;
+			padding: 6px;
+		}
+		.list li:hover {
+			transform: none;
+		}
+		.list img {
+			width: 48px;
+			height: 36px;
+		}
+		.list li button.small {
+			padding: 4px 8px;
+		}
+		.row input {
+			min-width: 0;
+		}
+		/* Singing: the controls stay on one row and scroll sideways. */
+		.bar {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: none;
+			left: 6px;
+			right: 6px;
+			bottom: 6px;
+			padding: 6px;
+		}
+		.bar > * {
+			flex: none;
+		}
+		.bar .grow {
+			display: none;
+		}
+		.hud {
+			left: 6px;
+			right: 6px;
+			top: 6px;
+		}
+		.health.main {
+			padding: 6px 10px;
+			gap: 8px;
+		}
+		.health.main .htrack {
+			height: 22px;
+		}
+		.health.main .hlabel {
+			font-size: 0.72rem;
+			min-width: 58px;
+		}
+		.health.main .hpct {
+			font-size: 0.9rem;
+		}
+		.lyrics {
+			bottom: 56px;
+			padding: 0 10px;
+		}
+		.msg {
+			bottom: 150px;
+			font-size: 0.75rem;
+		}
+		.card,
+		.card.wide {
+			width: calc(100% - 24px);
+			padding: 16px;
+		}
+		.big-grade {
+			font-size: 4.5rem;
+		}
+		.warm {
+			padding: 0 16px;
+		}
+		.warm b {
+			font-size: 1.3rem;
+		}
+		.warm span:first-child {
+			font-size: 2.6rem;
 		}
 		.logo-ko {
 			font-size: 2rem;
@@ -2112,8 +2378,11 @@
 			transform: scale(0.8);
 		}
 		.lane {
-			top: 84px;
-			height: 26%;
+			left: 6px;
+			right: 6px;
+			width: calc(100% - 12px);
+			top: 92px;
+			height: 30%;
 		}
 		.you {
 			margin-left: 0;

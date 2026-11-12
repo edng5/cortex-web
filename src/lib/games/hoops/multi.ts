@@ -468,7 +468,8 @@ export class Multi {
 				this.onEnd(off, [...v.score] as [number, number]);
 				return;
 			}
-			v.ball = def;
+			// Make it, take it: the scorer keeps the ball.
+			v.ball = made ? off : def;
 			this.check(performance.now());
 		});
 	}

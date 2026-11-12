@@ -160,7 +160,7 @@ export const LADDER: Level[] = [
 	}
 ];
 export const TO = 11;
-const SHOT_CLOCK = 15_000;
+const SHOT_CLOCK = 24_000;
 const CHECK_MS = 2600;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -767,8 +767,8 @@ export class SoloGame {
 			this.onEnd(shooter, { ...this.score }, this.maxDown);
 			return;
 		}
-		// The other player's ball (after a make, a miss or a block).
-		this.ball = shooter == 'you' ? 'cpu' : 'you';
+		// Make it, take it: score and you keep the ball; miss (or get blocked) and it's theirs.
+		this.ball = made ? shooter : shooter == 'you' ? 'cpu' : 'you';
 		if (this.lastMotion) this.check(now + 600, this.lastMotion);
 	}
 

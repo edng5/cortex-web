@@ -26,6 +26,19 @@ export interface FoundLyrics {
 	duration: number;
 	/** How many versions of these lyrics were compared to choose this one. */
 	versions: number;
+	/** LRCLIB's id for this version. */
+	id?: number;
+	/** The versions to choose from (best first, this one included), for the singer to switch. */
+	options?: LyricsOption[];
+}
+export interface LyricsOption {
+	id: number;
+	artist: string;
+	track: string;
+	duration: number;
+	synced: string;
+	/** Timed word by word. */
+	words: boolean;
 }
 
 const UA = 'KeyboardKaraoke/0.1 (E.Ngine Games)';
@@ -350,7 +363,7 @@ export async function findLyrics(track: string, artist: string, seconds: number,
 			const ctx = (h: LrcLibHit) => new Set(words(`${h.artistName} ${h.albumName ?? ''}`).filter((w) => !words(topCore).includes(w)));
 			const topCtx = ctx(top);
 			const related = (h: LrcLibHit) => [...ctx(h)].some((w) => topCtx.has(w));
-			const same = synced.filter((h) => coverage(topCore, h.trackName) == 1 && Math.abs(h.duration - top.duration) <= 8 && related(h));
+			const same = synced.filter((h) => coverage(topCore, h.trackName) == 1 && (Math.abs(h.duration - top.duration) <= 8 || (seconds > 0 && Math.abs(h.duration - seconds) <= 5)) && related(h));
 			// One vote per distinct version: the same file sent in six times is still one opinion.
 			const uniq = new Map<string, LrcLibHit>();
 			for (const h of same) {
@@ -392,10 +405,12 @@ export async function findLyrics(track: string, artist: string, seconds: number,
 				});
 				return known.length / lines.length;
 			};
-			const votes = (a: (typeof info)[number]) => info.reduce((s, o) => s + (o == a ? 0 : agree(a, o)), 0) + opening(a) * 3 + fit(a.h) * 0.3 + (/<\d+:\d+/.test(a.h.syncedLyrics!) ? 0.5 : 0);
-			const best = info.reduce((a, b) => (votes(b) > votes(a) ? b : a));
-			const h = best.h;
-			lyrics = { synced: h.syncedLyrics, plain: h.plainLyrics, track: h.trackName, artist: h.artistName, duration: h.duration, versions: info.length };
+			const votes = (a: (typeof info)[number]) => info.reduce((s, o) => s + (o == a ? 0 : agree(a, o)), 0) + opening(a) * 3 + fit(a.h) * 0.3 + (/<\d+:\d+/.test(a.h.syncedLyrics!) ? 0.5 : 0) + (seconds > 0 ? Math.max(0, 1 - Math.abs(a.h.duration - seconds) / 5) * 2 : 0);
+			const ranked = [...info].sort((a, b) => votes(b) - votes(a));
+			const h = ranked[0].h;
+			// The others to choose from (distinct versions, best first).
+			const options: LyricsOption[] = ranked.slice(0, 6).map((i) => ({ id: i.h.id, artist: i.h.artistName, track: i.h.trackName, duration: Math.round(i.h.duration), synced: i.h.syncedLyrics!, words: /<\d+:\d+/.test(i.h.syncedLyrics!) }));
+			lyrics = { synced: h.syncedLyrics, plain: h.plainLyrics, track: h.trackName, artist: h.artistName, duration: h.duration, versions: info.length, id: h.id, options };
 		} else {
 			const plain = pool.filter((h) => h.plainLyrics);
 			if (plain.length) {

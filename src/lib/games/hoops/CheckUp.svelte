@@ -861,7 +861,7 @@
 	{:else if screen == 'ladder'}
 		<div class:sheetmax={sheet == 'max'} class:sheetmin={sheet == 'min'} class="panel ladder">
 			<header><h2>Street Ladder</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
-			<p class="hint">Beat each player to unlock the next. The crowd grows as you climb. First to {TO}, ones and twos.</p>
+			<p class="hint">Beat each player to unlock the next. The crowd grows as you climb. First to {TO}, ones and twos, make it take it.</p>
 			<ol>
 				{#each LADDER as l, i (l.name)}
 					<li>
@@ -1108,7 +1108,7 @@
 					<p class="hint">Log in to play online and keep a rating.</p>
 					<button onclick={() => (session.loginOpen = true)}>Log in</button>
 				{:else}
-					<p class="hint">First to {TO}, ones and twos, with a 24-second shot clock. Your rating goes up and down with wins and losses (only you see it). Your camera stays on your device: only your movements (a few numbers) are sent.</p>
+					<p class="hint">First to {TO}, ones and twos, make it take it, with a 24-second shot clock. Your rating goes up and down with wins and losses (only you see it). Your camera stays on your device: only your movements (a few numbers) are sent.</p>
 					<div class="statsrow"><span>Rating <b>{rating?.mmr ?? '…'}</b></span><span>W {rating?.wins ?? 0}</span><span>L {rating?.losses ?? 0}</span></div>
 					<button disabled={busy} onclick={createRoom}>Create a room</button>
 					<form class="join" onsubmit={joinRoom}>
@@ -1159,7 +1159,8 @@
 				<li><b>Layup:</b> near the rim, reach one hand high.</li>
 				<li><b>Shake him:</b> crossover, in-and-out or spin (hands low) when he's close. Triple threat first makes it quicker. Pump fake to make him jump.</li>
 				<li><b>Defend:</b> stay in front of him, and jump with his release to block. Swipe a hand across to go for the steal (miss and you're off balance).</li>
-				<li><b>Score:</b> ones inside the arc, twos from behind it. First to {TO}. Online games have a 24-second shot clock.</li>
+				<li><b>Score:</b> ones inside the arc, twos from behind it. First to {TO}, with a 24-second shot clock.</li>
+				<li><b>Make it, take it:</b> score and you keep the ball. Miss, get blocked or get stripped, and it's theirs.</li>
 				<li><b>Gear:</b> beat ladder opponents for their signature items, and earn the rest with achievements.</li>
 			</ul>
 		</div>
@@ -1359,64 +1360,89 @@
 		gap: 4px;
 	}
 	@media (min-width: 721px) {
+		/* The scoreboard's size, which the hand tag and the ticker below it follow. */
+		.board,
+		.handtag,
+		.ticker {
+			--pts: clamp(3.6rem, 7.5vw, 7.2rem);
+		}
 		.board {
 			top: 14px;
-			border-radius: 20px;
+			border-radius: 30px;
+			max-width: calc(100% - 240px);
 		}
 		.side {
-			padding: 10px 28px;
-			gap: 18px;
+			padding: 16px 48px;
+			gap: 30px;
+			min-width: 0;
 		}
 		.side.has::after {
-			width: 44px;
-			height: 4px;
-			margin-left: -22px;
-			bottom: 6px;
+			width: 80px;
+			height: 7px;
+			margin-left: -40px;
+			bottom: 10px;
+			border-radius: 4px;
 		}
 		.nm {
-			font-size: clamp(0.9rem, 1.6vw, 1.25rem);
-			max-width: min(260px, 20vw);
+			font-size: clamp(1.3rem, 2.6vw, 2.5rem);
+			max-width: min(420px, 20vw);
 		}
 		.pts {
-			font-size: clamp(2.4rem, 4.6vw, 3.6rem);
+			font-size: var(--pts);
 		}
 		.center {
-			padding: 6px 22px;
+			padding: 10px 36px;
 		}
 		.to {
-			font-size: 0.78rem;
+			font-size: clamp(0.8rem, 1.3vw, 1.4rem);
 		}
 		.clock {
-			font-size: 2rem;
+			font-size: clamp(2.2rem, 4vw, 4rem);
 		}
 		.handtag {
-			top: 112px;
-			font-size: 0.85rem;
+			top: calc(var(--pts) + 64px);
+			font-size: 1.2rem;
+			padding: 4px 16px;
 		}
 		.ticker {
-			top: 146px;
+			top: calc(var(--pts) + 104px);
 		}
 	}
 	@media (max-width: 720px) {
 		.board {
 			top: 8px;
+			border-radius: 20px;
+			max-width: calc(100vw - 16px);
 		}
 		.side {
-			padding: 4px 8px;
-			gap: 6px;
+			padding: 8px 12px;
+			gap: 8px;
+			min-width: 0;
 		}
 		.pts {
-			font-size: 1.5rem;
+			font-size: 2.8rem;
 		}
 		.nm {
-			max-width: 70px;
-			font-size: 0.65rem;
+			max-width: 84px;
+			font-size: 0.9rem;
+		}
+		.center {
+			padding: 4px 10px;
+		}
+		.clock {
+			font-size: 1.7rem;
+		}
+		.side.has::after {
+			width: 44px;
+			height: 5px;
+			margin-left: -22px;
+			bottom: 6px;
 		}
 		.handtag {
-			top: 56px;
+			top: 90px;
 		}
 		.ticker {
-			top: 78px;
+			top: 118px;
 			font-size: 0.7rem;
 			padding: 2px 10px;
 		}

@@ -377,7 +377,7 @@ copies you, against fifteen AI-pun legends or a friend online.
 
 ### How to play
 - **Practice:** record your own jump shot and layup, then drill them and your moves.
-- **Street Ladder:** fifteen games to 11 (ones and twos), from Spud Web 1.0 through Derrick
+- **Street Ladder:** fifteen games to 11 (ones and twos, make it take it, a 24-second shot clock), from Spud Web 1.0 through Derrick
   ROWS, A.I. and Kobe BYTEant to AI Jordan. Each win brings a bigger crowd and that player's
   reward, like AI Jordan's AI 1s, Shaq's shattered backboard or the King's crown.
 - **Online 1-on-1** with a friend's room code and a 24-second shot clock.
@@ -455,8 +455,12 @@ notes, and you're scored on pitch and timing. Sing solo or in a room with a frie
   Finish well for cheers and confetti; finish badly and the crowd boos and throws tomatoes. Nail a note and it pops: Good,
   Great!, Perfect!, or GOLDEN! on a golden note.
 - **Lenient on purpose:** within 1½ semitones counts, in any octave, and a little early or late is
-  fine, since videos and lyrics are rarely perfectly in step. Turn scoring off to just sing, restart
-  a song, or skip it any time.
+  fine, since videos and lyrics are rarely perfectly in step. Turn scoring off to just sing, jump
+  past a long intro, restart a song, or skip it any time. Songs without lyrics end on confetti, not a
+  grade.
+- **Lyrics versions:** when several versions of a song's lyrics are found, pick another from a
+  drop-down; your choice and your timing tweaks are remembered per song (the last 1,000 songs,
+  favourites kept longest).
 - **Favourites:** star up to 100 songs and they wait in your song book.
 - **Sing with a friend:** make a room and share the code. The host runs the queue, and you see
   each other's score and pitch live.
@@ -480,7 +484,10 @@ every frame to drive the lyrics, the pitch guide and the score. Search reads You
 server-side (no API key), and pasted links are resolved through YouTube's oEmbed endpoint.
 
 **Lyrics in sync.** The server looks up time-stamped lyrics in **LRCLIB**, an open database of
-synced lyrics in LRC format (a time per line, sometimes per word). It parses video titles into
+synced lyrics in LRC format (a time per line, sometimes per word). Where words have their own times
+they fill with colour as they're sung; where only lines do (most songs), the whole line lights up
+with a bar running to the next one. Guessing word times would be wrong whenever a singer holds a
+word. It parses video titles into
 artist and track: "Artist - Song (Official Video)", the K-pop style `aespa 에스파 'Switchblade (Feat.
 Ty Dolla $ign)' MV` (the song in quotes, a name written in two scripts, a featured artist) and the
 J-pop style 「…」, titles split into `|` sections, "Song By Artist", and "SONG - ARTIST" the
@@ -490,6 +497,10 @@ say "KPop Demon Hunters") matching something about the video. When a title doesn
 the video's own description and tags are read for it. No lyrics beats the wrong lyrics: when
 none can be trusted, the video plays with YouTube's own subtitles switched on, if it has any (drawn
 by YouTube's player; the song is then scored on pitch control).
+
+**The right timing for the right video.** The versions timed to the selected video's own length come
+first, so a music video gets lyrics timed to the music video (intro and all) and a lyric video gets
+the recording's. The other versions stay in a drop-down.
 
 **No waiting.** A song never starts before its lyrics are ready: a loading screen covers the lookup.
 Lookups start the moment a song is queued, and the next songs in the queue are looked up while the

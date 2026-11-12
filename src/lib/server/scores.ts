@@ -20,6 +20,8 @@ export const GAMES = {
 	ispy: { boards: [1], max: 20_000_000 },
 	// Check-up keeps its progress (look, stats, ladder, shot templates) in the account; no high scores.
 	checkup: { boards: [] as number[], max: 0 },
+	// Keyboard Karaoke keeps its song book (favourites, queue, best grades, lyric timings) in the account.
+	karaoke: { boards: [] as number[], max: 0 },
 	// Online games: ratings are kept separately (ratings.ts); listed so their themes save to accounts.
 	chess: { boards: [] as number[], max: 0 },
 	fourrow: { boards: [] as number[], max: 0 }

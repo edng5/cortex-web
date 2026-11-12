@@ -15,6 +15,12 @@ export interface Line {
 	end: number;
 	text: string;
 	parts: { t: number; end: number; text: string }[];
+	/**
+	 * Its words have real times (word-by-word LRC, or a note chart). Most lyrics only time each
+	 * line, and then nobody knows when each word comes (a held note mid-line throws any guess
+	 * off), so the line is shown as a whole rather than wiped word by word.
+	 */
+	timed: boolean;
 }
 /** A note to sing (seconds of the video, MIDI pitch: 60 = middle C). */
 export interface Note {
@@ -56,12 +62,14 @@ export function parseLRC(lrc: string): Line[] {
 		// How long the line takes to sing: about a quarter of a second a syllable (and never past the
 		// next line). Stretching it over the whole gap would drag the words through instrumental breaks.
 		const sung = 0.35 + syllables(r.text) * 0.26;
-		const end = Math.min(next - 0.05, start + Math.max(1, sung));
+		// With only the line's start known, it lasts until the next line (leaving room for held
+		// words), but not across a long instrumental break.
+		const end = r.words.length ? Math.min(next - 0.05, start + Math.max(1, sung)) : Math.min(next - 0.05, start + Math.max(2, sung * 1.8 + 1));
 		const parts = r.words.length
 			? r.words.map((w, k) => ({ t: w.t - offset, end: r.words[k + 1] ? r.words[k + 1].t - offset : Math.max(w.t - offset + 0.3, end), text: w.text }))
 			: // No word times: pace the words over the line by their syllables.
 				spread(r.text, start, end);
-		lines.push({ start, end, text: r.text, parts });
+		lines.push({ start, end, text: r.text, parts, timed: r.words.length > 0 });
 	});
 	return lines;
 }
@@ -126,6 +134,7 @@ export function parseUltraStar(txt: string): Chart & { title?: string; artist?: 
 	const flush = () => {
 		if (!cur.length) return;
 		lines.push({
+			timed: true,
 			start: cur[0].start,
 			end: cur[cur.length - 1].end,
 			text: cur.map((x) => x.text).join('').trim(),
