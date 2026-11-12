@@ -70,6 +70,8 @@ type BallMode =
 	| { kind: 'dribble'; who: 'you' | 'cpu' }
 	| { kind: 'flight'; from: Three; t0: number; dur: number; made: boolean; blocked: boolean; dunk?: boolean; soft?: boolean; done: () => void }
 	| { kind: 'loose'; at: Three; vel: Three; t0: number }
+	/** The check: a bounce pass from one player's hands to the other's. */
+	| { kind: 'pass'; from: 'you' | 'cpu'; to: 'you' | 'cpu'; t0: number; dur: number; bounced: boolean }
 	| { kind: 'hidden' };
 
 /** Cameras: the game's views, and cut-scene shots (a close-up of the opponent, the crowd, the city). */
@@ -105,6 +107,8 @@ export interface Court {
 	/** Shakes the camera a little (0..1). */
 	shake(amount: number): void;
 	ball(mode: 'hold' | 'dribble' | 'hidden', who?: 'you' | 'cpu'): void;
+	/** Checking the ball: a bounce pass from one player to the other (then they hold it). */
+	checkPass(from: 'you' | 'cpu', to: 'you' | 'cpu', dur?: number): void;
 	/** The ball flies at the rim from whoever has it; resolves when it's in (or off the rim / swatted). */
 	/** `soft`: a layup, kissed up off the hand (short and low) rather than an arcing jumper. */
 	shoot(made: boolean, blocked?: boolean, dunk?: boolean, soft?: boolean): Promise<void>;
@@ -913,16 +917,41 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 	function holderOf(who: 'you' | 'cpu') {
 		return who == 'you' ? you : cpu;
 	}
+	/** Where a player holds the ball: between their hands, a little in front. */
+	const held = new T.Vector3();
+	function holdPoint(who: 'you' | 'cpu', out: Three) {
+		const b = holderOf(who);
+		b.L.arm.hand.getWorldPosition(v1);
+		b.R.arm.hand.getWorldPosition(v2);
+		out.lerpVectors(v1, v2, 0.5);
+		out.x += Math.sin(b.root.rotation.y) * -0.35;
+		out.z += Math.cos(b.root.rotation.y) * -0.35;
+		return out;
+	}
+	const passTo = new T.Vector3();
 	function placeBall(now: number) {
 		ball.visible = mode.kind != 'hidden';
 		if (mode.kind == 'hold') {
-			const b = holderOf(mode.who);
-			b.L.arm.hand.getWorldPosition(v1);
-			b.R.arm.hand.getWorldPosition(v2);
-			ball.position.lerpVectors(v1, v2, 0.5);
-			// In front of them.
-			ball.position.x += Math.sin(b.root.rotation.y) * -0.35;
-			ball.position.z += Math.cos(b.root.rotation.y) * -0.35;
+			holdPoint(mode.who, ball.position);
+		} else if (mode.kind == 'pass') {
+			// A bounce pass: from the passer's hands down to the floor halfway, then up into the
+			// other player's hands (both followed as they move).
+			const p = mode;
+			const k = Math.min(1, (now - p.t0) / p.dur);
+			holdPoint(p.from, held);
+			holdPoint(p.to, passTo);
+			ball.position.lerpVectors(held, passTo, k);
+			const floor = 0.32;
+			const top = k < 0.5 ? held.y : passTo.y;
+			// (Straight down to the bounce, then up: like a ball off the floor.)
+			const u = Math.abs(1 - 2 * k);
+			ball.position.y = floor + (top - floor) * (1 - (1 - u) ** 2);
+			ball.rotation.x -= 0.25;
+			if (!p.bounced && k >= 0.5) {
+				p.bounced = true;
+				api.onBounce();
+			}
+			if (k >= 1) mode = { kind: 'hold', who: p.to };
 		} else if (mode.kind == 'dribble') {
 			const b = holderOf(mode.who);
 			const ds = mode.who == 'cpu' ? (otherJ ? { hand: otherHand, cross: null } : dribbleState(cpuAnim.name, cpuMs(now))) : { hand: youHand, cross: null };
@@ -1175,7 +1204,13 @@ export async function createCourt(canvas: HTMLCanvasElement): Promise<Court> {
 		},
 		ball(m, who = 'you') {
 			if (mode.kind == 'flight') return;
+			// (A check pass plays out; it ends in the receiver's hands.)
+			if (mode.kind == 'pass' && performance.now() - mode.t0 < mode.dur && m != 'hidden') return;
 			mode = m == 'hidden' ? { kind: 'hidden' } : { kind: m, who };
+		},
+		checkPass(from, to, dur = 560) {
+			if (mode.kind == 'flight') return;
+			mode = { kind: 'pass', from, to, t0: performance.now(), dur, bounced: false };
 		},
 		shoot(made, blocked = false, dunk = false, soft = false) {
 			const from = ball.position.clone();

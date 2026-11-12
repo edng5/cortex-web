@@ -12,6 +12,8 @@ import { leanMove, START_STATS, stepBackTo, TO, type Flash, type Stats } from '.
 
 export const SHOT_CLOCK_MS = 24_000;
 const CHECK_MS = 2600;
+/** When the check pass goes (ms into the check). */
+const CHECK_PASS_AT = 950;
 
 export interface PlayerInfo {
 	name: string;
@@ -70,6 +72,10 @@ export class Multi {
 	private pending: { seat: Seat; chance: number; at: number; kind: ShotKind; dunk: boolean } | null = null;
 	private ended = false;
 	private hostFlashAt = 0;
+	// The check pass (on each screen).
+	private lastPhase = '';
+	private checkAt = 0;
+	private checkPassed = true;
 	/** The hand with the ball, per player (crossovers swap it). */
 	hands: ['left' | 'right', 'left' | 'right'] = ['right', 'right'];
 	private burst: { seat: Seat; from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
@@ -203,9 +209,24 @@ export class Multi {
 		this.court.setOtherHand(this.hands[1 - this.seat]);
 		if (this.otherJ) this.court.setOther(this.otherJ, them.x, them.z, myBall ? { ...me } : rim);
 		else this.court.setCpu(them.x, them.z, myBall ? { ...me } : rim, 'stance', 0);
-		if (this.view.phase == 'live' || this.view.phase == 'check') {
+		// The check: the defender has the ball while both get set, then bounces it over.
+		const now = performance.now();
+		if (this.view.phase == 'check' && this.lastPhase != 'check') {
+			this.checkAt = now;
+			this.checkPassed = false;
+		}
+		this.lastPhase = this.view.phase;
+		if (this.view.phase == 'check') {
+			const offense = myBall ? 'you' : 'cpu';
+			const defense = myBall ? 'cpu' : 'you';
+			if (!this.checkPassed && now - this.checkAt > CHECK_PASS_AT) {
+				this.checkPassed = true;
+				this.court.checkPass(defense, offense);
+			}
+			this.court.ball('hold', this.checkPassed ? offense : defense);
+		} else if (this.view.phase == 'live') {
 			const holderSetting = this.inputs[this.view.ball].setting;
-			this.court.ball(holderSetting || this.view.phase == 'check' ? 'hold' : 'dribble', myBall ? 'you' : 'cpu');
+			this.court.ball(holderSetting ? 'hold' : 'dribble', myBall ? 'you' : 'cpu');
 		}
 	}
 
@@ -228,7 +249,7 @@ export class Multi {
 		this.pos[off] = { x: CHECK.x, z: CHECK.z };
 		this.pos[1 - off] = { x: CHECK.x, z: CHECK.z - 2.2 };
 		this.say(now, off == 0 ? `${this.me.name}'s ball` : `${this.other?.name ?? 'Guest'}'s ball`, 'Check-up!', '#fbbf24');
-		this.cue('check');
+		// (The check pass makes its own bounce.)
 		this.court.camera(off == this.seat ? 'offense' : 'defense');
 	}
 	private say(now: number, text: string, sub: string | undefined, color: string, extra: Partial<Flash> = {}) {

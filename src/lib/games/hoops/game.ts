@@ -162,6 +162,8 @@ export const LADDER: Level[] = [
 export const TO = 11;
 const SHOT_CLOCK = 24_000;
 const CHECK_MS = 2600;
+/** When the check pass goes (ms into the check), once both players are back in place. */
+const CHECK_PASS_AT = 950;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -234,6 +236,8 @@ export class SoloGame {
 	private beatenUntil = 0;
 	private lastJump = -9999;
 	private youAnim: AnimName | null = null;
+	private checkPassAt = 0;
+	private checkPassed = true;
 	private burst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 	/** Attacking off the dribble (0..1): pound the ball and you take off toward the rim. */
 	private drive = 0;
@@ -298,8 +302,10 @@ export class SoloGame {
 			this.you = { x: CHECK.x, z: CHECK.z - 2.2 };
 		}
 		this.say(now, this.ball == 'you' ? 'Your ball' : "CPU's ball", this.ball == 'you' ? 'Check-up!' : 'Check-up! Get in front of him', '#fbbf24');
-		this.sfx('check');
-		this.court.ball('hold', this.ball);
+		// The check: the defender has the ball while you both get set, then bounces it over.
+		this.court.ball('hold', this.ball == 'you' ? 'cpu' : 'you');
+		this.checkPassAt = now + CHECK_PASS_AT;
+		this.checkPassed = false;
 		this.court.camera(this.ball == 'you' ? 'offense' : 'defense');
 	}
 
@@ -313,6 +319,14 @@ export class SoloGame {
 			return;
 		}
 		if (this.phase == 'check') {
+			if (!this.checkPassed && now >= this.checkPassAt) {
+				this.checkPassed = true;
+				const from = this.ball == 'you' ? 'cpu' : 'you';
+				this.court.checkPass(from, this.ball);
+				// (The computer passes with a push of its arms; you pass however you like.)
+				if (from == 'cpu') this.setCpuAnim('pumpfake', now, true);
+				this.say(now, 'Check!', this.ball == 'you' ? 'Your ball: ready…' : 'Their ball: get in front', '#fbbf24');
+			}
 			if (now - this.phaseAt > CHECK_MS) {
 				this.phase = 'live';
 				this.phaseAt = this.shotClockAt = now;
