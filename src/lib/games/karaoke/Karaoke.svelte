@@ -238,11 +238,54 @@
 	const hostNow = () => (hostSync ? hostSync.t + (hostSync.playing ? (performance.now() - hostSync.at) / 1000 : 0) : 0);
 	/** The browser wouldn't start the song without a tap: show the "tap to sing along" button. */
 	let needsTap = $state(false);
-	function checkStarted(item: Item) {
+	function checkStarted() {
+		const mine = run;
 		setTimeout(() => {
-			if (song != item || screen != 'sing') return;
+			if (mine != run || screen != 'sing') return;
 			if ((synth && synth.blocked) || (video && video.state != 'playing' && hostSync?.playing !== false)) needsTap = true;
 		}, 1500);
+	}
+	// ── Starting together ──
+	/** The host has the song loaded and is waiting for the other singer's screen to be ready. */
+	let waitingFriend = $state(false);
+	/** The joiner is loaded and waiting for the host to start. */
+	let waitingHost = $state(false);
+	let waitTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Both singers in the room right now. */
+	const friendHere = () => !!roomView && roomView.players.filter((x) => x?.online).length >= 2;
+	/** The joiner said they're ready for this song (maybe before the host had it loaded). */
+	let friendReady = '';
+	/**
+	 * The song's loaded on this screen. Alone: it starts. The host: waits for the other singer (up to
+	 * 20 s, or until "Start now"). The joiner: tells the host, and starts when the host does.
+	 */
+	function ready(mine: number) {
+		if (mine != run) return;
+		if (!room) return go();
+		if (isHost) {
+			if (!friendHere()) return go();
+			waitingFriend = true;
+			// (They were ready first.)
+			if (song && friendReady == keyOf(song)) return startTogether();
+			waitTimer = setTimeout(() => waitingFriend && startTogether(), 20_000);
+		} else {
+			waitingHost = true;
+			send({ k: 'ready', run: song ? keyOf(song) : '' });
+		}
+	}
+	/** Start the song here. */
+	function go() {
+		if (synth) synth.play(0);
+		else video?.play();
+	}
+	/** The host: both ready (or not waiting any longer): start, and tell the other singer. */
+	function startTogether() {
+		if (!waitingFriend) return;
+		waitingFriend = false;
+		clearTimeout(waitTimer);
+		go();
+		send({ k: 'play', t: 0 });
+		checkStarted();
 	}
 	/** The tap: start the song (sound allowed now), in step with the host. */
 	function tapToSing() {
@@ -274,9 +317,21 @@
 	const confetti = Array.from({ length: 90 }, (_, i) => ({ x: Math.random() * 100, d: Math.random() * 1.2, t: 2.2 + Math.random() * 1.8, c: ['#f472b6', '#facc15', '#4ade80', '#38bdf8', '#a78bfa', '#fb923c', '#fff'][i % 7], r: Math.random() * 360, w: 6 + Math.random() * 6 }));
 	const tomatoes = Array.from({ length: 9 }, (_, i) => ({ from: i % 2 ? 110 : -10, x: 38 + Math.random() * 24, y: 34 + Math.random() * 32, d: 0.4 + i * 0.26, r: (Math.random() - 0.5) * 720 }));
 
+	/**
+	 * Which song is on, as a counter: each sing() is a new run, and anything still loading for an
+	 * older one stops. (The song object can't be compared: stored in state, Svelte wraps it, so a
+	 * song that came in from the other singer never equals itself.)
+	 */
+	let run = 0;
 	async function sing(item: Item) {
+		const mine = ++run;
 		screen = 'sing';
 		song = item;
+		waitingFriend = false;
+		waitingHost = false;
+		clearTimeout(waitTimer);
+		// (A ready from the other singer is for the song they're on: a new start clears it, unless it's this song.)
+		if (song && friendReady != keyOf(item)) friendReady = '';
 		result = null;
 		trail = [];
 		theirTrail = [];
@@ -303,9 +358,8 @@
 		live = scorer.live;
 		if (!item.id) {
 			synth = new Synth(chart.notes);
-			synth.play(room && !isHost ? hostNow() : 0);
 			vstate = 'playing';
-			if (room) checkStarted(item);
+			ready(mine);
 		} else {
 			vstate = 'loading';
 			// The lyrics first (usually ready already: they're looked up while the song before plays),
@@ -315,7 +369,7 @@
 				preparing = true;
 				found = await lyricsFor(item);
 				preparing = false;
-				if (song != item || screen != 'sing') return;
+				if (mine != run || screen != 'sing') return;
 			}
 			// Meanwhile, get the next songs ready.
 			prefetch(save.queue.filter((q) => keyOf(q) != keyOf(item)).slice(0, 2));
@@ -330,12 +384,9 @@
 			});
 			// No synced lyrics: YouTube's own subtitles, if the video has them.
 			await video.load(item.id, !!found && !found.lyrics?.synced && found.captions);
-			if (video.state == 'error' || song != item) return;
+			if (video.state == 'error' || mine != run) return;
 			if (found) useLyrics(item, found);
-			video.play();
-			// A friend's room: the song may have been started by the other singer, not by a tap
-			// here, and browsers won't start sound without one. If it hasn't started, ask for a tap.
-			if (room) checkStarted(item);
+			ready(mine);
 		}
 	}
 	// ── Lyrics: looked up before a song starts, and ahead of time for the songs queued next ──
@@ -831,6 +882,10 @@
 			persist();
 			shareQueue();
 			note = `${theirName} queued “${(m.item as Item).title}”`;
+		} else if (k == 'ready' && isHost) {
+			// The joiner's loaded: start together.
+			friendReady = String(m.run ?? '');
+			if (waitingFriend && song && m.run == keyOf(song)) startTogether();
 		} else if (k == 'req' && isHost && m.item) {
 			// The joiner wants to sing this: start it for both (or queue it, if a song is on).
 			const item = m.item as Item;
@@ -861,15 +916,20 @@
 			const playing = k == 'play' || (k == 'sync' && !!m.playing);
 			const stopped = k == 'pause' || (k == 'sync' && !m.playing);
 			hostSync = { t: ht, at: performance.now(), playing: !stopped };
-			// (Waiting for the tap: nothing to follow yet.)
-			if (needsTap) return;
+			// The host has started: off we go (and if the browser won't play it, a tap will).
+			if (waitingHost && playing) {
+				waitingHost = false;
+				checkStarted();
+			}
+			// (Still loading, or waiting for the tap: nothing to follow yet.)
+			if (waitingHost || needsTap) return;
 			if (video) {
 				if (stopped) video.pause();
 				else if (playing && video.state != 'playing') video.play();
 				if (Math.abs(video.time - ht) > 0.4) video.seek(ht + 0.15);
 			} else if (synth) {
 				if (stopped && !synth.paused) synth.pause();
-				else if (playing && (synth.paused || Math.abs(synth.time - ht) > 0.4)) synth.play(ht + 0.05);
+				else if (playing && (synth.paused || !synth.started || Math.abs(synth.time - ht) > 0.4)) synth.play(ht + 0.05);
 				if (synth.blocked) needsTap = true;
 			}
 		}
@@ -877,7 +937,7 @@
 	// The host's video clock, every couple of seconds.
 	$effect(() => {
 		if (!room || !isHost || screen != 'sing') return;
-		const iv = setInterval(() => (video || synth) && send({ k: 'sync', t: clock(), playing: !paused }), 2000);
+		const iv = setInterval(() => !waitingFriend && (video || synth) && send({ k: 'sync', t: clock(), playing: !paused }), 2000);
 		return () => clearInterval(iv);
 	});
 	function startInRoom(item: Item) {
@@ -1054,7 +1114,24 @@
 	{:else if screen == 'sing' && song}
 		<div class="stage" style="--lvl:{voiceLvl}; --hp:{save.scoring ? health / 100 : 1}">
 			<div class="video" class:hidden={!song.id} bind:this={videoEl}></div>
-			{#if needsTap && !preparing}
+			{#if waitingFriend && !preparing}
+				<div class="loading tap">
+					<div class="spin" aria-hidden="true">
+						{#each Array(5) as _, i (i)}<i style="animation-delay:{i * 0.12}s"></i>{/each}
+					</div>
+					<b>Waiting for {theirName}…</b>
+					<small>“{song.title}” starts for both of you as soon as they're ready.</small>
+					<button class="small ghost" onclick={startTogether}>Start now</button>
+				</div>
+			{:else if waitingHost && !preparing}
+				<div class="loading tap">
+					<div class="spin" aria-hidden="true">
+						{#each Array(5) as _, i (i)}<i style="animation-delay:{i * 0.12}s"></i>{/each}
+					</div>
+					<b>Ready!</b>
+					<small>Starting “{song.title}” with {theirName}…</small>
+				</div>
+			{:else if needsTap && !preparing}
 				<div class="loading tap">
 					<b>{theirName} started “{song.title}”</b>
 					<button class="tapbtn" onclick={tapToSing}>▶ Tap to sing along</button>

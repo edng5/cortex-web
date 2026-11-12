@@ -67,6 +67,10 @@ export class Synth {
 	get paused() {
 		return this.pausedAt != null;
 	}
+	/** It's been started (it has a clock running, or paused). */
+	get started() {
+		return !!this.ctx || this.pausedAt != null;
+	}
 	/**
 	 * The browser is holding its sound (it was started without a tap, e.g. by a friend's room):
 	 * its clock doesn't run until it's started again from a tap.
