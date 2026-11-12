@@ -149,8 +149,6 @@ export function animate(name: AnimName, ms: number): Joints {
 }
 
 const mixJ = mix;
-/** Blends pose a into pose b (k: 0 = a, 1 = b). */
-export const mixJoints = mix;
 /** Dribbling with one hand (side 1 = right): the arm pumps with the bounce, the other arm guards. */
 function dribblePose(side: 1 | -1, s: number): Joints {
 	const b = Math.sin(s * Math.PI * 2 * BOUNCE_HZ);

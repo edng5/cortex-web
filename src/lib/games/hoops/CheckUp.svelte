@@ -15,7 +15,7 @@
 	import { fromPose, type Joints } from './anim';
 	import { createCourt, BROWS, BUILDS, CHECK, EARRINGS, SHAPES, DEFAULT_LOOK, EYES, FACIAL, HAIRS, HAIR_COLORS, HOOP, JERSEYS, MOUTHS, SKINS, type Court, type Look } from './court';
 	import { judge, makeTemplate, shotWindow, type ShotKind, type ShotTake, type ShotTemplate } from './shot';
-	import { LADDER, aheadOf, handleStep, stepBackTo, SoloGame, type Handle, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
+	import { LADDER, leanMove, stepBackTo, SoloGame, START_STATS, STAT_INFO, TO, type Flash, type Stats, type TalkKind } from './game';
 	import { UNLOCK_AT, perfectWindow, shotRating } from './shot';
 	import { ANYONE, COMMON, INTERLUDES, LINES, MORE, PROLOGUE, type SceneLine } from './lore';
 	import { Speaker } from '$lib/voice/speech';
@@ -350,8 +350,8 @@
 		{ id: 'crossover', name: 'Crossover', how: 'Hands low (dribbling height): swing them across your body, from one side to the other. A quick swing is enough.' },
 		{ id: 'inout', name: 'In-and-out', how: 'Hands low on one side: push them in toward the middle and straight back out.' },
 		{ id: 'spin', name: 'Spin move', how: 'Turn all the way round, quickly, and face the camera again.' },
-		{ id: 'stepback', name: 'Step-back', how: 'Take a quick step back, away from the camera: a burst away from your defender to make room for a jumper. (Leaning back alone doesn\'t count.)' },
-		{ id: 'drive', name: 'Attack dribble', how: 'Dribble (one hand low, bouncing) to move; lean in while you dribble to speed up. Turn your body while dribbling to head that way; stop, or face forward again, and you turn back to the rim. Shoot while still turned away and it\'s a fadeaway: harder to guard, harder to make, and its green comes a little later.' },
+		{ id: 'stepback', name: 'Step-back', how: 'Lean back sharply, or hop back away from the camera: a quick burst away from your defender to make room for a jumper.' },
+		{ id: 'drive', name: 'Attack dribble', how: 'On offense, pound the ball: one hand low, bouncing hard and fast. You take off toward the rim, faster the longer you keep it up. Lean back to stop.' },
 		{ id: 'sprint', name: 'Sprint back', how: 'On defense, run in place: knees up, arms pumping. You sprint back in front of the ball handler, even after he has gone by you.' },
 		{ id: 'swipe', name: 'Steal', how: 'On defense, swipe one hand quickly across in front of you at waist or chest height. Close to him, it can strip the ball. Miss and you are off balance for a moment.' },
 
@@ -484,8 +484,7 @@
 	let practicePos = { x: 0, z: -2 };
 	/** The hand with the ball in practice. */
 	let pHand = $state<'left' | 'right'>('right');
-	/** Practice: your heading and speed off the dribble, like in a game. */
-	let pHandle: Handle = { yaw: 0, drive: 0 };
+	let pDrive = 0;
 	let pDriving = false;
 	let practiceBurst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 
@@ -710,17 +709,18 @@
 		} else if (screen == 'practice') {
 			const m = motion.state;
 			// Lean to move, toward your dribbling hand's side, like in a game.
-			const pounding = m.dribbling && !m.setting;
+			const pounding = m.dribbling && m.lean >= 0 && !m.setting;
 			if (pounding && !pDriving) bump('drive', 'Attack dribble');
 			pDriving = pounding;
-			// Dribble to move (the way you're turned), lean in to speed up, like in a game.
-			let p = handleStep(practicePos, m, pHandle, (6 + save.stats.speed * 0.05) / 60, pHand);
+			pDrive += ((pounding ? 1 : 0) - pDrive) * (pounding ? 0.05 : 0.1);
+			const lean = pDrive > 0.05 ? Math.max(m.lean, 0.35 + pDrive * 0.65) : m.lean;
+			let p = leanMove(practicePos, { ...m, lean, hand: pHand }, ((6 + save.stats.speed * 0.05) / 60) * (1 + pDrive * 0.9), -1);
 			if (practiceBurst && t - practiceBurst.at < 300) {
 				const k = 1 - (1 - (t - practiceBurst.at) / 300) ** 2;
 				p = { x: practiceBurst.from.x + (practiceBurst.to.x - practiceBurst.from.x) * k, z: practiceBurst.from.z + (practiceBurst.to.z - practiceBurst.from.z) * k };
 			}
 			practicePos = { x: Math.max(-11, Math.min(11, p.x)), z: Math.max(-12.5, Math.min(8, p.z)) };
-			court?.setYou(youJ, practicePos.x, practicePos.z, aheadOf(practicePos, pHandle.yaw));
+			court?.setYou(youJ, practicePos.x, practicePos.z, { x: HOOP.x, z: HOOP.z });
 			practiceEvents(events, t);
 		}
 	}
@@ -1045,7 +1045,7 @@
 				<p class="hint">Style the park: floor, paint, backboard, net, ball and half-court logo.</p>
 				{#each COURT_SLOTS as slot (slot)}{@render slotRow(slot)}{/each}
 			{:else}
-				<h3>Attributes <span class="pts">{left} skill point{left == 1 ? '' : 's'}{spent ? ` (${spent} to spend)` : ''}</span></h3>
+				<h3>Attributes <span class="skillpts">{left} skill point{left == 1 ? '' : 's'}{spent ? ` (${spent} to spend)` : ''}</span></h3>
 				{#each STAT_INFO as { key: k, name, what } (k)}
 					<div class="stat">
 						<span
@@ -1154,8 +1154,8 @@
 			<header><h2>How to play</h2>{@render sheetBtns()}<button class="ghost small" onclick={() => go('menu')}>‹ Back</button></header>
 			<ul>
 				<li><b>Set up:</b> stand 2–3 m from the camera so it sees you head to knees, in good light, with room to step around.</li>
-				<li><b>Move:</b> dribble (one hand low, bouncing) to move; lean in while you dribble to speed up, lean back to retreat. Turn your body while dribbling and you head that way; stop dribbling or face forward again and you turn back to the rim. Step back from the camera for a step-back. On defense, lean toward or away from your man and slide your feet sideways; run in place to sprint back in front of him.</li>
-				<li><b>Shoot:</b> both hands up together, then release over your head. Time it to your recorded release: the green zone on the shot bar. Shoot while turned away from the rim for a fadeaway: harder to contest, but less likely to go in, and its green comes a little later.</li>
+				<li><b>Move:</b> lean toward the camera to drive at the hoop, lean back to retreat. You go toward the side of the hand you're dribbling with (dribble right to go right). Pound the dribble (one hand bouncing hard) to explode toward the rim. On defense, lean toward or away from your man and slide your feet sideways; run in place to sprint back in front of him.</li>
+				<li><b>Shoot:</b> both hands up together, then release over your head. Time it to your recorded release: the green zone on the shot bar.</li>
 				<li><b>Layup:</b> near the rim, reach one hand high.</li>
 				<li><b>Shake him:</b> crossover, in-and-out or spin (hands low) when he's close. Triple threat first makes it quicker. Pump fake to make him jump.</li>
 				<li><b>Defend:</b> stay in front of him, and jump with his release to block. Swipe a hand across to go for the steal (miss and you're off balance).</li>
@@ -1245,6 +1245,8 @@
 		font: 900 2.1rem/1 Impact, sans-serif;
 		min-width: 1.4ch;
 		text-align: center;
+		/* (The score never shrinks; a long name is cut short instead.) */
+		flex: none;
 	}
 	.center {
 		display: grid;
@@ -1256,6 +1258,7 @@
 		font: 800 0.58rem system-ui, sans-serif;
 		letter-spacing: 0.12em;
 		color: #94a3b8;
+		white-space: nowrap;
 	}
 	.clock {
 		font: 800 1.1rem ui-monospace, monospace;
@@ -1364,48 +1367,49 @@
 		.board,
 		.handtag,
 		.ticker {
-			--pts: clamp(3.6rem, 7.5vw, 7.2rem);
+			--pts: clamp(2.8rem, 5.2vw, 5rem);
 		}
 		.board {
 			top: 14px;
-			border-radius: 30px;
-			max-width: calc(100% - 240px);
+			border-radius: 22px;
+			max-width: calc(100% - 200px);
 		}
 		.side {
-			padding: 16px 48px;
-			gap: 30px;
+			padding: 10px 32px;
+			gap: 20px;
 			min-width: 0;
 		}
 		.side.has::after {
-			width: 80px;
-			height: 7px;
-			margin-left: -40px;
-			bottom: 10px;
-			border-radius: 4px;
+			width: 56px;
+			height: 5px;
+			margin-left: -28px;
+			bottom: 7px;
+			border-radius: 3px;
 		}
 		.nm {
-			font-size: clamp(1.3rem, 2.6vw, 2.5rem);
-			max-width: min(420px, 20vw);
+			font-size: clamp(1rem, 1.9vw, 1.7rem);
+			max-width: min(300px, 18vw);
+			min-width: 0;
 		}
 		.pts {
 			font-size: var(--pts);
 		}
 		.center {
-			padding: 10px 36px;
+			padding: 6px 26px;
 		}
 		.to {
-			font-size: clamp(0.8rem, 1.3vw, 1.4rem);
+			font-size: clamp(0.7rem, 1vw, 0.95rem);
 		}
 		.clock {
-			font-size: clamp(2.2rem, 4vw, 4rem);
+			font-size: clamp(1.8rem, 3vw, 2.8rem);
 		}
 		.handtag {
-			top: calc(var(--pts) + 64px);
-			font-size: 1.2rem;
-			padding: 4px 16px;
+			top: calc(var(--pts) + 44px);
+			font-size: 0.95rem;
+			padding: 3px 14px;
 		}
 		.ticker {
-			top: calc(var(--pts) + 104px);
+			top: calc(var(--pts) + 78px);
 		}
 	}
 	@media (max-width: 720px) {
@@ -1420,11 +1424,12 @@
 			min-width: 0;
 		}
 		.pts {
-			font-size: 2.8rem;
+			font-size: 2.2rem;
 		}
 		.nm {
 			max-width: 84px;
-			font-size: 0.9rem;
+			min-width: 0;
+			font-size: 0.8rem;
 		}
 		.center {
 			padding: 4px 10px;
@@ -1439,10 +1444,10 @@
 			bottom: 6px;
 		}
 		.handtag {
-			top: 90px;
+			top: 76px;
 		}
 		.ticker {
-			top: 118px;
+			top: 104px;
 			font-size: 0.7rem;
 			padding: 2px 10px;
 		}
@@ -2356,7 +2361,8 @@
 		font: inherit;
 		font-weight: 800;
 	}
-	.pts {
+	/* (Its own name: a shared ".pts" shrank the scoreboard's scores to dots.) */
+	.skillpts {
 		float: right;
 		color: #facc15;
 		font-size: 0.85rem;

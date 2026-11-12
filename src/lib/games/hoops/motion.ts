@@ -48,8 +48,6 @@ export interface MotionState {
 	low: boolean;
 	/** Running in place: 0 still … 1 knees (or arms) pumping hard. */
 	run: number;
-	/** How far you're turned from facing the camera (radians, + = to your right; 0 when about square). */
-	yaw: number;
 	/** Pounding the ball: the low hand bouncing up and down quickly. */
 	dribbling: boolean;
 	/** The latest frame's numbers (for the practice read-outs). */
@@ -57,12 +55,10 @@ export interface MotionState {
 }
 
 export class Motion {
-	state: MotionState = { tracked: false, x: 0, depth: 0, lean: 0, hand: null, air: 0, crouch: 0, triple: false, setting: false, low: false, run: 0, dribbling: false, yaw: 0, f: Array(8).fill(0) };
-	private base: { cx: number; sw: number; legs: number; lean: number; yaw: number } | null = null;
-	private calib: { cx: number; sw: number; legs: number; lean: number; yaw: number }[] | null = null;
-	private yawEma = 0;
+	state: MotionState = { tracked: false, x: 0, depth: 0, lean: 0, hand: null, air: 0, crouch: 0, triple: false, setting: false, low: false, run: 0, dribbling: false, f: Array(8).fill(0) };
+	private base: { cx: number; sw: number; legs: number; lean: number } | null = null;
+	private calib: { cx: number; sw: number; legs: number; lean: number }[] | null = null;
 	private leanEma = 0;
-	/** The last moments' lean and torso length (for step-backs). */
 	private recent: { t: number; lean: number; sw: number }[] = [];
 	private stepCool = 0;
 	// Running, dribbling and swipes.
@@ -113,19 +109,14 @@ export class Motion {
 		s.f = f;
 		if (!s.tracked) return [];
 		if (this.calib) {
-			this.calib.push({ cx: b.cx, sw: b.sw, legs: f[6], lean: b.lean, yaw: b.yaw });
+			this.calib.push({ cx: b.cx, sw: b.sw, legs: f[6], lean: b.lean });
 			if (this.calib.length >= 30) {
-				const avg = (k: 'cx' | 'sw' | 'legs' | 'lean' | 'yaw') => this.calib!.reduce((a, c) => a + c[k], 0) / this.calib!.length;
-				this.base = { cx: avg('cx'), sw: avg('sw'), legs: avg('legs'), lean: avg('lean'), yaw: avg('yaw') };
+				const avg = (k: 'cx' | 'sw' | 'legs' | 'lean') => this.calib!.reduce((a, c) => a + c[k], 0) / this.calib!.length;
+				this.base = { cx: avg('cx'), sw: avg('sw'), legs: avg('legs'), lean: avg('lean') };
 				this.calib = null;
 			}
 		}
-		const base = this.base ?? { cx: 0.5, sw: b.sw, legs: f[6], lean: b.lean, yaw: 0 };
-		// Turned: smoothed, against how you stood at the start, with a dead zone (about 15°) so
-		// standing roughly square to the camera counts as facing forward.
-		this.yawEma += (b.yaw - base.yaw - this.yawEma) * 0.25;
-		const YAW_DEAD = 0.26;
-		s.yaw = Math.abs(this.yawEma) < YAW_DEAD ? 0 : this.yawEma - Math.sign(this.yawEma) * YAW_DEAD;
+		const base = this.base ?? { cx: 0.5, sw: b.sw, legs: f[6], lean: b.lean };
 
 		// Lean (smoothed; the depth estimate is noisy), with a dead zone so standing tall is still.
 		this.leanEma += (b.lean - base.lean - this.leanEma) * 0.18;
@@ -133,14 +124,14 @@ export class Motion {
 		if (Math.abs(lean) < 0.4) base.lean += (b.lean - base.lean) * 0.004;
 		const DEAD = 0.22;
 		s.lean = Math.abs(lean) < DEAD ? 0 : Math.max(-1, Math.min(1, (lean - Math.sign(lean) * DEAD) / 0.45));
-		// Step-back: a quick step away from the camera (you look smaller, fast). Measured on the
-		// torso's length, so turning doesn't count; leaning back doesn't either.
-		this.recent.push({ t, lean: s.lean, sw: b.torso });
-		while (this.recent.length && this.recent[0].t < t - 420) this.recent.shift();
+		// Step-back: a sudden lean back, or a quick hop away from the camera (you look smaller fast).
+		this.recent.push({ t, lean: s.lean, sw: b.sw });
+		while (this.recent.length && this.recent[0].t < t - 320) this.recent.shift();
 		if (t > this.stepCool && this.recent.length > 3) {
 			const first = this.recent[0];
-			const stepped = b.torso < first.sw * 0.88 && !this.spin;
-			if (stepped) {
+			const quickLean = first.lean > -0.1 && s.lean < -0.55;
+			const quickHop = b.sw < first.sw * 0.9 && !this.spin;
+			if (quickLean || quickHop) {
 				this.events.push({ type: 'stepback' });
 				this.stepCool = t + 900;
 			}
@@ -150,7 +141,7 @@ export class Motion {
 
 		// Turning (a spin) narrows the shoulders: hold position while side-on.
 		this.swEma = this.swEma == null ? b.sw : this.swEma + (b.sw - this.swEma) * 0.04;
-		const sideOn = b.sw < this.swEma * 0.45;
+		const sideOn = b.sw < this.swEma * 0.75;
 		if (!sideOn) {
 			s.x = (b.cx - base.cx) / base.sw;
 			s.depth = b.sw / base.sw - 1;
@@ -207,7 +198,7 @@ export class Motion {
 		const recent = this.hands.filter((h) => h.t > t - 550);
 		const minX = Math.min(...recent.map((h) => h.x));
 		const maxX = Math.max(...recent.map((h) => h.x));
-		// Crossover: from one side of the body to the other, fast.
+		// Crossover: from one side of the body to the other, fast (a smaller swing is enough).
 		if (minX < -0.3 && maxX > 0.3 && maxX - minX > 0.7) {
 			const iMin = recent.findIndex((h) => h.x == minX);
 			const iMax = recent.findIndex((h) => h.x == maxX);

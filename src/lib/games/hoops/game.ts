@@ -5,7 +5,7 @@
 // layups judged against your practice templates, and jumps to block. Where you guard matters: sag
 // off and he shoots it open; crowd him and he'll try to drive by. Seven ratings shape the odds.
 import { ARC, CHECK, HOOP, type Court, type Look } from './court';
-import { DURATION, RELEASE_AT, animate, mixJoints, type AnimName, type Joints } from './anim';
+import { DURATION, RELEASE_AT, animate, type AnimName, type Joints } from './anim';
 import type { MotionEvent, MotionState } from './motion';
 import { judge, shotWindow, zoneOf, shotRating, UNLOCK_AT, type Grade, type ShotKind, type ShotTemplate } from './shot';
 
@@ -199,65 +199,6 @@ export function leanMove(p: { x: number; z: number }, m: MotionState, speed: num
 	// Standing tall: stay where you are.
 	return { ...p };
 }
-/**
- * The way the ball handler is heading, on the floor. Facing forward: at the rim (turned a little by
- * `yaw`). Turned further: a fixed direction on the court, straight ahead turned by `yaw` (+ = to
- * the player's right), so dribbling while turned goes in a straight line rather than round the rim.
- * The two blend as you turn.
- */
-export function headingFrom(p: { x: number; z: number }, yaw: number) {
-	const tx = HOOP.x - p.x;
-	const tz = HOOP.z - p.z;
-	const d = Math.hypot(tx, tz) || 1;
-	const fx = tx / d;
-	const fz = tz / d;
-	const rim = { x: fx * Math.cos(yaw) - fz * Math.sin(yaw), z: fz * Math.cos(yaw) + fx * Math.sin(yaw) };
-	// Straight ahead on the court is toward the baseline the rim is on (-z).
-	const court = { x: Math.sin(yaw), z: -Math.cos(yaw) };
-	const w = clamp((Math.abs(yaw) - 0.15) / 0.35, 0, 1);
-	const x = rim.x * (1 - w) + court.x * w;
-	const z = rim.z * (1 - w) + court.z * w;
-	const n = Math.hypot(x, z) || 1;
-	return { x: x / n, z: z / n };
-}
-/** The ball handler's heading (turned from the rim) and drive (speed off the dribble). */
-export interface Handle {
-	yaw: number;
-	drive: number;
-}
-/** Turned this far from the rim, a jumper is a fadeaway. */
-export const FADE_AT = 0.6;
-/** A fadeaway's release comes this much later (ms): the shot bar's green moves along. */
-export const FADE_DELAY = 140;
-/**
- * The ball handler's move this frame.
- *  - Dribbling moves you, the way you're facing; leaning into it speeds you up (lean back to stop).
- *  - Turn your body while you dribble and the player heads that way; stop dribbling (or face
- *    forward again) and they turn back to the rim, smoothly.
- *  - Not dribbling: lean forward / back as before.
- */
-export function handleStep(p: { x: number; z: number }, m: MotionState, st: Handle, speed: number, hand: 'left' | 'right' | null) {
-	const dribbling = m.dribbling && !m.setting;
-	const want = dribbling ? clamp(m.yaw * 1.4, -2.0, 2.0) : 0;
-	st.yaw += (want - st.yaw) * (want ? 0.12 : 0.06);
-	const target = dribbling && m.lean > -0.2 ? 0.45 + Math.max(0, m.lean) * 0.55 : 0;
-	st.drive += (target - st.drive) * (target > st.drive ? 0.06 : 0.12);
-	if (st.drive > 0.05) {
-		const d = Math.hypot(HOOP.x - p.x, HOOP.z - p.z);
-		// Straight at the rim (a little toward the ball hand), or the way you've turned.
-		const side = Math.abs(st.yaw) < 0.3 ? (hand == 'right' ? 0.3 : hand == 'left' ? -0.3 : 0) : 0;
-		if (d < 1.4 && Math.abs(st.yaw) < 0.3) return { ...p };
-		const dir = headingFrom(p, st.yaw + side);
-		const step = speed * (0.4 + st.drive * 1.3);
-		return { x: p.x + dir.x * step, z: p.z + dir.z * step };
-	}
-	return leanMove(p, { ...m, hand }, speed, -1);
-}
-/** A point ahead of p, the way the ball handler is heading (for which way they face). */
-export const aheadOf = (p: { x: number; z: number }, yaw: number) => {
-	const d = headingFrom(p, yaw);
-	return { x: p.x + d.x * 6, z: p.z + d.z * 6 };
-};
 /** A step-back: this far straight away from the basket, over a moment. */
 export const STEPBACK = 2.8;
 export function stepBackTo(p: { x: number; z: number }) {
@@ -295,11 +236,8 @@ export class SoloGame {
 	private youAnim: AnimName | null = null;
 	private burst: { from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 	/** Attacking off the dribble (0..1): pound the ball and you take off toward the rim. */
-	/** Where the ball handler's heading (and how fast off the dribble). */
-	handle: Handle = { yaw: 0, drive: 0 };
+	private drive = 0;
 	private driveSaid = 0;
-	/** The jumper being set up while turned away: a fadeaway. */
-	private fadeSet = false;
 	/** Running to recover on defense (0..1). */
 	private sprint = 0;
 	private reachUntil = 0;
@@ -344,9 +282,7 @@ export class SoloGame {
 	private check(now: number, m: MotionState) {
 		this.ballHand = 'right';
 		this.court.setYouHand('right');
-		this.sprint = this.reachUntil = 0;
-		this.handle = { yaw: 0, drive: 0 };
-		this.fadeSet = false;
+		this.drive = this.sprint = this.reachUntil = 0;
 		this.layup = null;
 		this.phase = 'check';
 		this.phaseAt = now;
@@ -392,13 +328,17 @@ export class SoloGame {
 		// sideways with your feet (steps from where you stood at the check).
 		const off = this.ball == 'you';
 		if (this.phase == 'live') {
-			// The ball handler: dribble to move (the way you're turned), lean in to speed up.
-			let next = off ? handleStep(this.you, m, this.handle, (6 + this.stats.speed * 0.05) / 60, this.ballHand) : { ...this.you };
-			if (off && this.handle.drive > 0.8 && now - this.driveSaid > 4000) {
+			// Pounding the dribble: take off toward the rim, picking up speed (unless you're leaning back).
+			const pounding = off && m.dribbling && m.lean >= 0 && !m.setting;
+			this.drive += ((pounding ? 1 : 0) - this.drive) * (pounding ? 0.05 : 0.1);
+			if (off && this.drive > 0.55 && now - this.driveSaid > 4000) {
 				this.driveSaid = now;
-				this.say(now, 'Attacking!', 'Lean into the dribble to go faster', '#fb923c', { kind: 'move' });
+				this.say(now, 'Attacking!', 'Keep pounding it to the rim', '#fb923c', { kind: 'move' });
 				this.sfx('squeak');
 			}
+			const drv = off ? this.drive : 0;
+			const mm = { ...m, hand: this.ballHand, lean: drv > 0.05 ? Math.max(m.lean, 0.35 + drv * 0.65) : m.lean };
+			let next = off ? leanMove(this.you, mm, ((6 + this.stats.speed * 0.05) / 60) * (1 + drv * 0.9), -1) : { ...this.you };
 			// A step-back: a quick burst straight away from the basket (and your defender).
 			if (off && this.burst && now - this.burst.at < 300) {
 				const k = 1 - (1 - (now - this.burst.at) / 300) ** 2;
@@ -450,8 +390,8 @@ export class SoloGame {
 			this.you.z = clamp(next.z, -13, 9.5);
 		}
 		if (this.layup && this.phase == 'flight') {
-			const k = Math.min(1, (now - this.layup.at) / 640);
-			const e = k * k * (3 - 2 * k);
+			const k = Math.min(1, (now - this.layup.at) / 480);
+			const e = 1 - (1 - k) ** 3;
 			this.you.x = this.layup.from.x + (this.layup.to.x - this.layup.from.x) * e;
 			this.you.z = this.layup.from.z + (this.layup.to.z - this.layup.from.z) * e;
 		}
@@ -508,11 +448,7 @@ export class SoloGame {
 		this.court.ball(m.setting ? 'hold' : 'dribble', 'you');
 		const tpl = this.templates.jumpshot;
 		for (const e of events) {
-			if (e.type == 'set' && tpl) {
-				// Set up turned away from the rim: a fadeaway (its release comes later).
-				this.fadeSet = Math.abs(this.handle.yaw) > FADE_AT;
-				this.bar = { start: now, release: tpl.release + (this.fadeSet ? FADE_DELAY : 0), zone: shotWindow(tpl, shotRating(this.stats, 'jumpshot', toHoop(this.you))) };
-			}
+			if (e.type == 'set' && tpl) this.bar = { start: now, release: tpl.release, zone: shotWindow(tpl, shotRating(this.stats, 'jumpshot', toHoop(this.you))) };
 			else if (e.type == 'cancel') this.bar = null;
 			else if (e.type == 'triple') {
 				this.tripleAt = now;
@@ -589,25 +525,19 @@ export class SoloGame {
 		const d = toHoop(this.you);
 		// Finishing 70+: a layup at the rim while you jump is a dunk.
 		const dunk = kind == 'layup' && this.stats.finishing >= UNLOCK_AT && d < 2.8;
-		// A jumper while turned away from the rim: a fadeaway. Judged against a later release, it
-		// goes in less often but is much harder to contest.
-		const fade = kind == 'jumpshot' && (this.fadeSet || Math.abs(this.handle.yaw) > FADE_AT);
-		const tpl = this.templates[kind];
-		const r = judge(e.take, tpl && fade ? { ...tpl, release: tpl.release + FADE_DELAY } : (tpl ?? null), shotRating(this.stats, kind, d), d);
-		this.fadeSet = false;
+		const r = judge(e.take, this.templates[kind] ?? null, shotRating(this.stats, kind, d), d);
 		if (r.grade == 'perfect' && this.templates[kind]) this.track('perfects');
 		const near = dist(this.you, this.cpu);
 		const open = now < this.cpuStumble || now < this.cpuAir;
-		const contest = (open ? 0 : clamp(1 - (near - 1) / 2.2, 0, 1)) * (fade ? 0.5 : 1);
+		const contest = open ? 0 : clamp(1 - (near - 1) / 2.2, 0, 1);
 		const blocked = Math.random() < contest * (0.04 + this.cs.blocking * 0.0035) * (dunk ? 0.5 : kind == 'layup' ? 1.2 : 1);
-		// (A fadeaway goes in less often: even a perfect release is a 4-in-5 shot.)
-		const finalChance = (fade ? 0.8 : 1) * (r.grade == 'perfect' && kind == 'jumpshot' ? 1 : dunk ? Math.min(0.97, r.chance + 0.3) * (1 - 0.2 * contest) : r.chance * (1 - (kind == 'layup' ? 0.6 : 0.5) * contest));
+		const finalChance = r.grade == 'perfect' && kind == 'jumpshot' ? 1 : dunk ? Math.min(0.97, r.chance + 0.3) * (1 - 0.2 * contest) : r.chance * (1 - (kind == 'layup' ? 0.6 : 0.5) * contest);
 		const made = !blocked && Math.random() < finalChance;
 		if (contest > 0.3) this.setCpuAnim('block', now, true);
 		const pts = pointsFrom(this.you);
 		const label = { perfect: 'Perfect release', good: 'Good release', early: 'Early', late: 'Late' }[r.grade];
 		const zone = zoneOf(d);
-		const what = dunk ? 'SLAM!' : kind == 'layup' ? 'Layup' : fade ? 'Fadeaway' : zone == 'deep' ? (this.stats.three >= UNLOCK_AT ? 'Logo three!' : 'Heave from deep') : pts == 2 ? 'From deep' : zone == 'close' ? 'Short jumper' : 'Jumper';
+		const what = dunk ? 'SLAM!' : kind == 'layup' ? 'Layup' : zone == 'deep' ? (this.stats.three >= UNLOCK_AT ? 'Logo three!' : 'Heave from deep') : pts == 2 ? 'From deep' : zone == 'close' ? 'Short jumper' : 'Jumper';
 		this.say(now, what, `${label}${contest > 0.4 ? ' · contested' : open ? ' · wide open' : ''}`, '#e2e8f0', {
 			kind: 'shot',
 			pct: Math.round(finalChance * 100),
@@ -861,15 +791,13 @@ export class SoloGame {
 		// The computer faces the hoop with the ball, you without it (and the other way round).
 		// The ball handler faces the hoop; the defender keeps turning to face the ball handler.
 		const rim = { x: HOOP.x, z: HOOP.z };
-		// (The ball handler faces the way they're heading: the rim, unless turned while dribbling.)
-		const youFacing = offense ? aheadOf(this.you, this.handle.yaw) : { ...this.cpu };
+		const youFacing = offense ? rim : { ...this.cpu };
 		const cpuFacing = offense ? { ...this.you } : rim;
 		let j = youJ;
 		if (this.layup && this.phase == 'flight') {
 			const ms = now - this.layup.at;
 			const name = this.layup.dunk ? 'dunk' : 'layup';
-			// Eased in from your own pose over the first moment, so there's no snap.
-			if (ms < DURATION[name]!) j = youJ && ms < 180 ? mixJoints(youJ, animate(name, ms), ms / 180) : animate(name, ms);
+			if (ms < DURATION[name]!) j = animate(name, ms);
 		}
 		if (this.phase == 'over') j = animate(this.winner == 'you' ? 'celebrate' : 'sad', now - this.phaseAt);
 		if (this.phase == 'over') this.setCpuAnim(this.winner == 'cpu' ? 'celebrate' : 'sad', now);

@@ -8,7 +8,7 @@ import { CHECK, HOOP, ARC, type Court, type Look } from './court';
 import type { Joints } from './anim';
 import type { MotionEvent, MotionState } from './motion';
 import { judge, shotRating, zoneOf, UNLOCK_AT, type ShotKind, type ShotTemplate } from './shot';
-import { aheadOf, FADE_AT, FADE_DELAY, handleStep, START_STATS, stepBackTo, TO, type Flash, type Handle, type Stats } from './game';
+import { leanMove, START_STATS, stepBackTo, TO, type Flash, type Stats } from './game';
 
 export const SHOT_CLOCK_MS = 24_000;
 const CHECK_MS = 2600;
@@ -28,8 +28,6 @@ interface Input {
 	/** Running in place (0..1) and pounding the dribble. */
 	run?: number;
 	drib?: boolean;
-	/** How far they're turned (radians). */
-	yaw?: number;
 }
 type Seat = 0 | 1;
 
@@ -69,18 +67,14 @@ export class Multi {
 	private bit = [0, 0];
 	private lastJump = [-9999, -9999];
 	private fakeAt = [-9999, -9999];
-	private pending: { seat: Seat; chance: number; at: number; kind: ShotKind; dunk: boolean; fade?: boolean } | null = null;
+	private pending: { seat: Seat; chance: number; at: number; kind: ShotKind; dunk: boolean } | null = null;
 	private ended = false;
 	private hostFlashAt = 0;
 	/** The hand with the ball, per player (crossovers swap it). */
 	hands: ['left' | 'right', 'left' | 'right'] = ['right', 'right'];
 	private burst: { seat: Seat; from: { x: number; z: number }; to: { x: number; z: number }; at: number } | null = null;
 	/** Per player: attacking off the dribble, sprinting on defense, reached for the ball and missed. */
-	/** Per player: heading and speed off the dribble (the host's; the guest gets the headings). */
-	private handles: [Handle, Handle] = [
-		{ yaw: 0, drive: 0 },
-		{ yaw: 0, drive: 0 }
-	];
+	private drive = [0, 0];
 	private sprint = [0, 0];
 	private reach = [0, 0];
 
@@ -112,18 +106,17 @@ export class Multi {
 			if (!this.sentHi) this.hello();
 			if (this.host && this.view.phase == 'wait') this.startGame(performance.now());
 		} else if (k == 'in' && this.host) {
-			this.inputs[1] = { lean: +(msg.lean as number) || 0, hand: (msg.hand as Input['hand']) ?? null, x: +(msg.x as number) || 0, setting: !!msg.set, j: (msg.j as number[]) ?? null, run: clamp(+(msg.run as number) || 0, 0, 1), drib: !!msg.drib, yaw: clamp(+(msg.yaw as number) || 0, -2, 2) };
+			this.inputs[1] = { lean: +(msg.lean as number) || 0, hand: (msg.hand as Input['hand']) ?? null, x: +(msg.x as number) || 0, setting: !!msg.set, j: (msg.j as number[]) ?? null, run: clamp(+(msg.run as number) || 0, 0, 1), drib: !!msg.drib };
 			this.otherJ = unpackJ(this.inputs[1].j);
 		} else if (k == 'ev' && this.host) {
 			this.hostEvent(1, msg as unknown as MotionEvent, performance.now());
 		} else if (k == 'shot' && this.host) {
-			this.hostShot(1, msg.kind as ShotKind, clamp(+(msg.chance as number) || 0, 0, 0.97), performance.now(), !!msg.dunk, !!msg.fade);
+			this.hostShot(1, msg.kind as ShotKind, clamp(+(msg.chance as number) || 0, 0, 0.97), performance.now(), !!msg.dunk);
 		} else if (k == 'st' && !this.host) {
 			const p = msg.p as number[][];
 			this.pos = [{ x: p[0][0], z: p[0][1] }, { x: p[1][0], z: p[1][1] }];
 			this.otherJ = unpackJ(msg.j as number[] | null);
 			if (Array.isArray(msg.hands)) this.hands = msg.hands as Multi['hands'];
-			if (Array.isArray(msg.hy)) this.handles.forEach((h, i) => (h.yaw = +(msg.hy as number[])[i] || 0));
 			this.inputs[0].setting = !!msg.set0;
 			this.inputs[1].setting = !!msg.set1;
 			const v = msg.v as MultiView;
@@ -163,38 +156,36 @@ export class Multi {
 
 	/** Every frame: your body, your events; the host also runs the game. */
 	frame(now: number, m: MotionState, events: MotionEvent[], j: Joints | null) {
-		const mine: Input = { lean: m.lean, hand: m.hand, x: m.x, setting: m.setting, j: packJ(j), run: m.run, drib: m.dribbling, yaw: m.yaw };
+		const mine: Input = { lean: m.lean, hand: m.hand, x: m.x, setting: m.setting, j: packJ(j), run: m.run, drib: m.dribbling };
 		if (this.host) {
 			this.inputs[0] = mine;
 			for (const e of events) {
 				if (e.type == 'shot') {
-					const fade = e.take.kind == 'jumpshot' && Math.abs(this.handles[0].yaw) > FADE_AT;
-					const r = judge(e.take, this.template(e.take.kind, fade), shotRating(this.me.stats, e.take.kind, toHoop(this.pos[0])), toHoop(this.pos[0]));
+					const r = judge(e.take, this.templates[e.take.kind] ?? null, shotRating(this.me.stats, e.take.kind, toHoop(this.pos[0])), toHoop(this.pos[0]));
 					if (r.grade == 'perfect' && this.templates[e.take.kind]) this.track('perfects');
 					const dunk = this.canDunk(e.take.kind, this.pos[0], m);
-					this.hostShot(0, e.take.kind, (dunk ? Math.min(0.97, r.chance + 0.3) : r.chance) * (fade ? 0.8 : 1), now, dunk, fade);
+					this.hostShot(0, e.take.kind, dunk ? Math.min(0.97, r.chance + 0.3) : r.chance, now, dunk);
 				} else this.hostEvent(0, e, now);
 			}
 			this.hostStep(now);
 			if (now - this.lastSend > 80) {
 				this.lastSend = now;
 				const v = { ...this.view, flash: this.view.flash ? { ...this.view.flash } : null };
-				this.send({ k: 'st', p: this.pos.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100]), j: packJ(j), set0: m.setting, set1: this.inputs[1].setting, hands: this.hands, hy: this.handles.map((h) => Math.round(h.yaw * 100) / 100), v });
+				this.send({ k: 'st', p: this.pos.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100]), j: packJ(j), set0: m.setting, set1: this.inputs[1].setting, hands: this.hands, v });
 			}
 		} else {
 			if (now - this.lastSend > 66) {
 				this.lastSend = now;
-				this.send({ k: 'in', lean: Math.round(m.lean * 100) / 100, hand: m.hand, x: Math.round(m.x * 100) / 100, set: m.setting, j: mine.j, run: Math.round(m.run * 100) / 100, drib: m.dribbling, yaw: Math.round(m.yaw * 100) / 100 });
+				this.send({ k: 'in', lean: Math.round(m.lean * 100) / 100, hand: m.hand, x: Math.round(m.x * 100) / 100, set: m.setting, j: mine.j, run: Math.round(m.run * 100) / 100, drib: m.dribbling });
 			}
 			for (const e of events) {
 				// (Jumps count while a shot is up too: that's when blocks happen.)
 				if (this.view.phase != 'live' && !(this.view.phase == 'flight' && e.type == 'jump')) continue;
 				if (e.type == 'shot') {
-					const fade = e.take.kind == 'jumpshot' && Math.abs(this.handles[1].yaw) > FADE_AT;
-					const r = judge(e.take, this.template(e.take.kind, fade), shotRating(this.me.stats, e.take.kind, toHoop(this.pos[1])), toHoop(this.pos[1]));
+					const r = judge(e.take, this.templates[e.take.kind] ?? null, shotRating(this.me.stats, e.take.kind, toHoop(this.pos[1])), toHoop(this.pos[1]));
 					if (r.grade == 'perfect' && this.templates[e.take.kind]) this.track('perfects');
 					const dunk = this.canDunk(e.take.kind, this.pos[1], m);
-					this.send({ k: 'shot', kind: e.take.kind, chance: Math.round((dunk ? Math.min(0.97, r.chance + 0.3) : r.chance) * (fade ? 0.8 : 1) * 1000) / 1000, dunk, fade });
+					this.send({ k: 'shot', kind: e.take.kind, chance: Math.round((dunk ? Math.min(0.97, r.chance + 0.3) : r.chance) * 1000) / 1000, dunk });
 				} else if (e.type == 'move' || e.type == 'pumpfake' || e.type == 'jump' || e.type == 'triple' || e.type == 'stepback' || e.type == 'swipe') this.send({ k: 'ev', ...e });
 			}
 		}
@@ -207,13 +198,11 @@ export class Multi {
 		const myBall = this.view.ball == this.seat;
 		// The ball handler faces the hoop; the defender keeps turning to face the ball handler.
 		const rim = { x: HOOP.x, z: HOOP.z };
-		// (The ball handler faces the way they're heading: the rim, unless turned while dribbling.)
-		this.court.setYou(j, me.x, me.z, myBall ? aheadOf(me, this.handles[this.seat].yaw) : { ...them });
+		this.court.setYou(j, me.x, me.z, myBall ? rim : { ...them });
 		this.court.setYouHand(this.hands[this.seat]);
 		this.court.setOtherHand(this.hands[1 - this.seat]);
-		const theirWay = aheadOf(them, this.handles[1 - this.seat].yaw);
-		if (this.otherJ) this.court.setOther(this.otherJ, them.x, them.z, myBall ? { ...me } : theirWay);
-		else this.court.setCpu(them.x, them.z, myBall ? { ...me } : theirWay, 'stance', 0);
+		if (this.otherJ) this.court.setOther(this.otherJ, them.x, them.z, myBall ? { ...me } : rim);
+		else this.court.setCpu(them.x, them.z, myBall ? { ...me } : rim, 'stance', 0);
 		if (this.view.phase == 'live' || this.view.phase == 'check') {
 			const holderSetting = this.inputs[this.view.ball].setting;
 			this.court.ball(holderSetting || this.view.phase == 'check' ? 'hold' : 'dribble', myBall ? 'you' : 'cpu');
@@ -233,10 +222,7 @@ export class Multi {
 		this.stumble = [0, 0];
 		this.bit = [0, 0];
 		this.hands = ['right', 'right'];
-		this.handles = [
-			{ yaw: 0, drive: 0 },
-			{ yaw: 0, drive: 0 }
-		];
+		this.drive = [0, 0];
 		this.sprint = [0, 0];
 		this.reach = [0, 0];
 		this.pos[off] = { x: CHECK.x, z: CHECK.z };
@@ -283,10 +269,13 @@ export class Multi {
 		// The ball handler leans to attack (toward the dribbling hand); the defender leans and slides.
 		const so = this.statsOf(off);
 		const sd = this.statsOf(def);
-		// The ball handler: dribble to move (the way they're turned), lean in to speed up.
 		const io = this.inputs[off];
-		this.handles[def] = { yaw: 0, drive: 0 };
-		let o = handleStep(this.pos[off], { ...(io as unknown as MotionState), dribbling: !!io.drib, yaw: io.yaw ?? 0 }, this.handles[off], (6 + so.speed * 0.05) / 60, this.hands[off]);
+		const pounding = !!io.drib && io.lean >= 0 && !io.setting;
+		this.drive[off] += ((pounding ? 1 : 0) - this.drive[off]) * (pounding ? 0.05 : 0.1);
+		this.drive[def] = 0;
+		const drv = this.drive[off];
+		const lean = drv > 0.05 ? Math.max(io.lean, 0.35 + drv * 0.65) : io.lean;
+		let o = leanMove(this.pos[off], { ...(io as unknown as MotionState), lean, hand: this.hands[off] }, ((6 + so.speed * 0.05) / 60) * (1 + drv * 0.9), -1);
 		const b = this.burst;
 		if (b && b.seat == off && now - b.at < 300) {
 			const k = 1 - (1 - (now - b.at) / 300) ** 2;
@@ -421,20 +410,15 @@ export class Multi {
 		}
 	}
 
-	/** Your recorded shot (a fadeaway's release comes later). */
-	private template(kind: ShotKind, fade: boolean) {
-		const t = this.templates[kind];
-		return t && fade ? { ...t, release: t.release + FADE_DELAY } : (t ?? null);
-	}
-	private hostShot(seat: Seat, kind: ShotKind, chance: number, now: number, dunk = false, fade = false) {
+	private hostShot(seat: Seat, kind: ShotKind, chance: number, now: number, dunk = false) {
 		const v = this.view;
 		if (v.phase != 'live' || seat != v.ball) return;
 		v.phase = 'flight';
 		// Wait a moment for the defender's jump (block timing), then decide.
 		const window = 80 + this.statsOf((1 - seat) as Seat).blocking * 1.6;
-		this.pending = { seat, chance, at: now + window, kind, dunk, fade };
+		this.pending = { seat, chance, at: now + window, kind, dunk };
 		const d = toHoop(this.pos[seat]);
-		this.say(now, kind == 'layup' ? 'Layup' : fade ? 'Fadeaway' : d > ARC ? 'From deep…' : zoneOf(d) == 'close' ? 'Short jumper' : 'Jumper', undefined, '#e2e8f0');
+		this.say(now, kind == 'layup' ? 'Layup' : d > ARC ? 'From deep…' : zoneOf(d) == 'close' ? 'Short jumper' : 'Jumper', undefined, '#e2e8f0');
 		if (d > ARC && kind == 'jumpshot') this.crowdAll(seat, 'three');
 	}
 
@@ -445,8 +429,7 @@ export class Multi {
 		const def = (1 - off) as Seat;
 		const near = dist(this.pos[off], this.pos[def]);
 		const open = now < this.stumble[def] || now < this.bit[def];
-		// (A fadeaway is much harder to contest.)
-		const contest = (open ? 0 : clamp(1 - (near - 1) / 2.2, 0, 1)) * (p.fade ? 0.5 : 1);
+		const contest = open ? 0 : clamp(1 - (near - 1) / 2.2, 0, 1);
 		const window = 80 + this.statsOf(def).blocking * 1.6;
 		const timed = Math.abs(this.lastJump[def] - (p.at - window)) < window;
 		const blocked = !open && timed && near < 2.4 && Math.random() < (0.25 + this.statsOf(def).blocking * 0.006) * (p.dunk ? 0.45 : 1);

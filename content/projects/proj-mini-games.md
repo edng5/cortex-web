@@ -385,10 +385,7 @@ copies you, against fifteen AI-pun legends or a friend online.
 
 ### Controls
 No buttons, just your body:
-- Dribble to move; lean in while dribbling to speed up, lean back to retreat. Turn your body while
-  dribbling to head that way; stop, or face forward, and you turn back to the rim.
-- Step back from the camera for a step-back. Shoot while turned away for a fadeaway: harder to
-  guard, harder to make, with a later release.
+- Lean forward to drive, lean back to retreat; you go toward the hand you dribble with.
 - Both hands up together, then release over your head to shoot (time it to the green); reach one
   hand high at the rim for a layup (or a dunk, at Finishing 70).
 - Crossover, in-and-out or spin with your hands low to break ankles; pump fake to make him jump.
