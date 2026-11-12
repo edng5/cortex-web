@@ -8,6 +8,9 @@ const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 
 export class Synth {
 	private ctx: AudioContext | null = null;
+	private out: GainNode | null = null;
+	/** Volume, 0..1. */
+	private vol = 1;
 	private t0 = 0;
 	private pausedAt: number | null = null;
 	private nodes: AudioScheduledSourceNode[] = [];
@@ -23,8 +26,9 @@ export class Synth {
 		this.ctx = new AudioContext();
 		const ctx = this.ctx;
 		const out = ctx.createGain();
-		out.gain.value = 0.22;
+		out.gain.value = 0.22 * this.vol;
 		out.connect(ctx.destination);
+		this.out = out;
 		this.t0 = ctx.currentTime + 0.1 - from;
 		const tone = (f: number, at: number, dur: number, type: OscillatorType, level: number) => {
 			if (at + dur < ctx.currentTime) return;
@@ -63,6 +67,11 @@ export class Synth {
 	}
 	resume() {
 		if (this.pausedAt != null) this.play(this.pausedAt);
+	}
+	/** Volume, 0..1 (takes effect at once). */
+	setVolume(v: number) {
+		this.vol = Math.max(0, Math.min(1, v));
+		if (this.out && this.ctx) this.out.gain.setTargetAtTime(0.22 * this.vol, this.ctx.currentTime, 0.03);
 	}
 	get paused() {
 		return this.pausedAt != null;

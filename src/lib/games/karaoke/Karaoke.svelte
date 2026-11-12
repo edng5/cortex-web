@@ -41,8 +41,10 @@
 		scoring: boolean;
 		/** The lyrics version picked per song (LRCLIB id), when it isn't the best match. */
 		picks: Record<string, number>;
+		/** The song's volume (0..100). */
+		volume: number;
 	}
-	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {} });
+	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80 });
 	let save = $state<Save>(load());
 	function load(): Save {
 		try {
@@ -358,6 +360,7 @@
 		live = scorer.live;
 		if (!item.id) {
 			synth = new Synth(chart.notes);
+			synth.setVolume(save.volume / 100);
 			vstate = 'playing';
 			ready(mine);
 		} else {
@@ -377,11 +380,12 @@
 			if (!videoEl) return;
 			const holder = document.createElement('div');
 			videoEl.replaceChildren(holder);
-			video = new Video(holder, (s) => {
+			const v = new Video(holder, (s) => {
 				vstate = s;
 				if (s == 'ended') finish();
 				if (isHost && room) send({ k: s == 'paused' ? 'pause' : s == 'playing' ? 'play' : 'state', t: video?.time ?? 0 });
 			});
+			video = v;
 			// No synced lyrics: YouTube's own subtitles, if the video has them.
 			await video.load(item.id, !!found && !found.lyrics?.synced && found.captions);
 			if (video.state == 'error' || mine != run) return;
@@ -541,6 +545,21 @@
 		mic.stop();
 		screen = 'results';
 	}
+	// ── Volume ──
+	/** The volume before muting (to come back to). */
+	let lastVolume = 0;
+	function setVolume(v: number) {
+		if (save.volume) lastVolume = save.volume;
+		save.volume = Math.max(0, Math.min(100, Math.round(v)));
+		video?.setVolume(save.volume);
+		synth?.setVolume(save.volume / 100);
+		persist();
+	}
+	// The video's volume, once it's ready (and whenever the song changes).
+	$effect(() => {
+		if (vstate != 'loading' && video) video.setVolume(save.volume);
+	});
+
 	/** Skip the rest of this song: on to its results (graded on what you sang), then the next. */
 	function skipSong() {
 		finish(true);
@@ -1197,6 +1216,10 @@
 			</div>
 			<div class="bar">
 				<button class="small" onclick={() => (paused ? resumeSong() : pauseSong())} disabled={!!room && !isHost}>{paused ? '▶ Resume' : '❚❚ Pause'}</button>
+				<label class="vol" title="Song volume ({save.volume}%)">
+					<button class="small ghost" aria-label={save.volume ? 'Mute the song' : 'Unmute the song'} onclick={() => setVolume(save.volume ? 0 : lastVolume || 80)}>{save.volume == 0 ? '🔇' : save.volume < 40 ? '🔈' : save.volume < 75 ? '🔉' : '🔊'}</button>
+					<input type="range" min="0" max="100" step="1" value={save.volume} oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))} aria-label="Song volume" />
+				</label>
 				{#if song.id}
 					<span class="sync">
 						Lyrics {offset > 0 ? '+' : ''}{offset.toFixed(1)}s
@@ -2224,6 +2247,15 @@
 	}
 	.now.soon {
 		opacity: 0.75;
+	}
+	.vol {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.vol input {
+		width: 90px;
+		accent-color: #e879f9;
 	}
 	.pick select {
 		max-width: 220px;

@@ -87,6 +87,10 @@ export class Video {
 	play() {
 		this.p?.playVideo();
 	}
+	/** The video's volume, 0..100. */
+	setVolume(v: number) {
+		this.p?.setVolume(Math.round(Math.max(0, Math.min(100, v))));
+	}
 	pause() {
 		this.p?.pauseVideo();
 	}
