@@ -11,13 +11,15 @@
 //   POST /api/speakease/pronounce { word, locale, explainIn }           → { sounds, ipa, how }
 //   POST /api/speakease/dictionary { word, from, locale }               → { entries: [...] }
 //   POST /api/speakease/phonetics  { text, locale }                     → { romanization, words: [{ word, sounds, ipa }] }
+// Flash Cards (vocabulary by category):
+//   POST /api/speakease/vocab     { locale, category, level, known, explainIn } → { words: [...], decoys: [...] }
 // Friend chats are open to everyone (like the app), so it's rate limited per visitor; the games
 // (Phrase Quest, scenarios, the dictionary) need an account. Signed-in players are called by their
 // site nickname (looked up here, never taken from the page).
 import { error, json } from '@sveltejs/kit';
 import { rateLimit } from '$lib/server/ratelimit';
 import { LlmError } from '$lib/server/llm-error';
-import { assess, correct, lookUp, phonetics, phrases, pronounce, reply, speak, suggest, transcribe, translate, type Turn } from '$lib/server/speakease';
+import { assess, correct, lookUp, phonetics, phrases, pronounce, reply, speak, suggest, transcribe, translate, vocab, type Turn } from '$lib/server/speakease';
 import { getPlayerName } from '$lib/server/player-name';
 import { EASSO_VOICE, LANGUAGE_NAMES, TRANSLATE_OPTIONS, friendById, scenarioById } from '$lib/speakease/data';
 import type { RequestHandler } from './$types';
@@ -118,6 +120,15 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 				if (!Number.isInteger(level) || level < 1 || level > 99) error(400, 'Invalid level.');
 				const known = Array.isArray(body.known) ? body.known.filter((k: unknown) => typeof k === 'string' && k.length <= MAX_TARGET).slice(-80) : [];
 				return json({ phrases: await phrases(locale(body.locale), level, known, explainIn(body.explainIn)) });
+			}
+			case 'vocab': {
+				signedIn();
+				const level = Number(body.level);
+				if (!Number.isInteger(level) || level < 1 || level > 99) error(400, 'Invalid level.');
+				const category = typeof body.category === 'string' ? body.category.trim() : '';
+				if (!category || category.length > 40) error(400, 'Pick a category.');
+				const known = Array.isArray(body.known) ? body.known.filter((k: unknown) => typeof k === 'string' && k.length <= 60).slice(-120) : [];
+				return json(await vocab(locale(body.locale), category, level, known, explainIn(body.explainIn)));
 			}
 			case 'pronounce': {
 				const word = typeof body.word === 'string' ? body.word.trim() : '';

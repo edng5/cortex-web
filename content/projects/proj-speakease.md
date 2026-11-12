@@ -104,12 +104,21 @@ How to use it:
   at a restaurant and Small Talk; and new everyday and travel ones: a café, a pharmacy, clothes
   shopping, airport check-in, hotel check-in, asking for directions, a taxi ride and buying a train
   ticket.
+- Flash Cards: learn vocabulary in any of the 16 languages, by topic (food, animals, colours,
+  numbers, family, the body, clothes, the home, travel, weather, feelings, jobs, time, sports, school,
+  everyday actions). Rounds of 8 cards mix multiple choice both ways (what does this word mean?
+  which word means this?), matching four words to their meanings, and picking every word that
+  belongs to the topic. Every word has an audio button, its romanization for other scripts, a
+  sound-it-out spelling and IPA, and after each card every word on it shows its translation. Each
+  topic starts with the first words a beginner learns and levels up to harder ones (12 right answers
+  for the first level, more after), with earlier words coming back for review. Three hearts a
+  round, combos, XP, up to three stars per round and word badges make it a game.
 - Dictionary: look up a word in your own language and see it in the language you're learning, with
   how to say it, an example sentence and audio. Recent lookups are kept.
 - Today's goals: goals for your favourite languages (talk with them, or learn their phrases), or
   15 minutes of practice when you have no favourites, plus a daily streak.
 - Game: everything except the plain chats earns XP and player levels (Beginner, Explorer,
-  Conversationalist, Polyglot, Legend), with 16 badges, combo bonuses in Phrase Quest, up to three
-  stars per scenario and confetti for the big moments. Phrase attempts and scenario lines use energy
+  Conversationalist, Polyglot, Legend), with 20 badges, combo bonuses in Phrase Quest and Flash
+  Cards, up to three stars per scenario and confetti for the big moments. Phrase attempts and scenario lines use energy
   (20, refilling over time; finishing goals and levelling up refill it); chats are free.
 - Settings: light, dark or the system's theme, and the language messages are translated into.

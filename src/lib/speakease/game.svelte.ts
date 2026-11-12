@@ -29,6 +29,10 @@ export const BADGES: Badge[] = [
 	{ id: 'full-cast', name: 'Full Cast', about: 'Finish 6 different scenarios.', mark: '6★', color: '#d97706' },
 	{ id: 'globetrotter-trip', name: 'Ready to Travel', about: 'Finish every travel scenario.', mark: '✈', color: '#0284c7' },
 	{ id: 'word-seeker', name: 'Word Seeker', about: 'Look up 25 words in the dictionary.', mark: 'Aa', color: '#14b8a6' },
+	{ id: 'flash-first', name: 'Flash Start', about: 'Learn your first word in Flash Cards.', mark: 'Fc', color: '#0ea5e9' },
+	{ id: 'word-25', name: 'Word Collector', about: 'Learn 25 words in Flash Cards.', mark: '25w', color: '#8b5cf6' },
+	{ id: 'word-100', name: 'Walking Dictionary', about: 'Learn 100 words in Flash Cards.', mark: '100w', color: '#6d28d9' },
+	{ id: 'clean-sweep', name: 'Clean Sweep', about: 'Get every card right in a Flash Cards round.', mark: '✓', color: '#059669' },
 	{ id: 'goal-getter', name: 'Goal Getter', about: "Finish all of a day's goals.", mark: 'G', color: '#10b981' },
 	{ id: 'streak-3', name: 'Warming Up', about: 'Practise 3 days in a row.', mark: '3d', color: '#fb923c' },
 	{ id: 'streak-7', name: 'On Fire', about: 'Practise 7 days in a row.', mark: '7d', color: '#ef4444' },
@@ -229,6 +233,30 @@ class Game {
 
 	// ── What earns what ────────────────────────────────────────────────────────────
 	/** A word looked up in the dictionary (new to this visit). */
+	// ── Flash Cards ──
+	/** A card answered right (combo: right answers in a row). Returns the XP it earned. */
+	cardRight(combo: number, review = false): number {
+		const xp = (review ? 5 : 10) + (combo >= 2 ? Math.min(20, 4 * (combo - 1)) : 0);
+		this.award(xp, combo >= 3 ? `Combo x${combo}` : '');
+		return xp;
+	}
+	/** Words learned in Flash Cards (all languages): the word badges. */
+	wordsLearned(total: number) {
+		if (total >= 1) this.unlock('flash-first');
+		if (total >= 25) this.unlock('word-25');
+		if (total >= 100) this.unlock('word-100');
+	}
+	/** A Flash Cards round with every card right. */
+	perfectRound() {
+		this.award(30, 'Perfect round');
+		this.unlock('clean-sweep');
+		this.celebrate();
+	}
+	flashLevelUp(level: number, category: string) {
+		this.award(50, `${category} level ${level}`);
+		this.celebrate();
+	}
+
 	lookedUp() {
 		this.saved.lookups++;
 		this.save();

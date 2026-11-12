@@ -135,6 +135,7 @@ export const HOW_TO: { name: string; text: string }[] = [
 	{ name: 'Chat', text: ' with friends in 16 languages. Hold the mic and talk.' },
 	{ name: 'Phrase Quest', text: ': hear a phrase, say it, get scored word by word.' },
 	{ name: 'Scenarios', text: ': role-play ordering food, checking in, and more.' },
+	{ name: 'Flash Cards', text: ': learn words by topic, matching, picking and listening.' },
 	{ name: 'Dictionary', text: ": look up a word and hear how it's said." },
 	{ name: 'Tap a message', text: ' to translate it, or /ə/ to see how to pronounce it.' }
 ];

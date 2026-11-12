@@ -312,6 +312,106 @@ export async function phrases(locale: string, level: number, known: string[], ex
 		}));
 }
 
+// ── Flash Cards (vocabulary by category) ─────────────────────────────────────────────
+
+/** A word to learn, with how to say it. */
+export interface VocabWord {
+	word: string;
+	/** Latin-letter reading for languages in other scripts; empty otherwise. */
+	romanization: string;
+	/** An easy sound-it-out spelling for an English speaker, stressed syllable in CAPITALS. */
+	sounds: string;
+	ipa: string;
+	/** What it means, in the learner's language (a word or two). */
+	meaning: string;
+	/** One emoji for it, when one fits. */
+	emoji: string;
+}
+
+/** What each Flash Cards level asks for: the first words a beginner learns, then on from there. */
+const VOCAB_LEVELS = [
+	'the very first, most common and concrete words a beginner learns (short, everyday, easy to picture)',
+	'common everyday words, still simple',
+	'useful words that are a little less common',
+	'more specific and descriptive words',
+	'advanced, precise words a fluent speaker uses'
+];
+
+const WORD_PROPS = {
+	type: 'OBJECT',
+	properties: {
+		word: { type: 'STRING' },
+		romanization: { type: 'STRING' },
+		sounds: { type: 'STRING' },
+		ipa: { type: 'STRING' },
+		meaning: { type: 'STRING' },
+		emoji: { type: 'STRING' }
+	},
+	required: ['word', 'romanization', 'sounds', 'ipa', 'meaning', 'emoji']
+};
+const VOCAB_SCHEMA = {
+	type: 'OBJECT',
+	properties: {
+		words: { type: 'ARRAY', items: WORD_PROPS },
+		decoys: { type: 'ARRAY', items: WORD_PROPS }
+	},
+	required: ['words', 'decoys']
+};
+
+const wordOf = (w: Partial<VocabWord> | null | undefined): VocabWord | null =>
+	w && typeof w.word === 'string' && w.word.trim()
+		? {
+				word: w.word.trim(),
+				romanization: String(w.romanization ?? '').trim(),
+				sounds: String(w.sounds ?? '').trim(),
+				ipa: String(w.ipa ?? '').trim(),
+				meaning: String(w.meaning ?? '').trim(),
+				emoji: String(w.emoji ?? '').trim().slice(0, 8)
+			}
+		: null;
+
+/**
+ * New words in a category for a level (none the learner already has), and a few "decoys": common
+ * words from other categories, for "pick every word that's food" questions.
+ */
+export async function vocab(locale: string, category: string, level: number, known: string[], explainIn: string, count = 8): Promise<{ words: VocabWord[]; decoys: VocabWord[] }> {
+	const lang = languageOf(locale);
+	const explain = TRANSLATE_OPTIONS.find((o) => o.lang === explainIn)?.label ?? 'English';
+	const brief = VOCAB_LEVELS[Math.min(Math.max(level, 1), VOCAB_LEVELS.length) - 1];
+	const out = await text(
+		`You are a friendly ${lang} teacher making vocabulary flash cards.`,
+		[
+			{
+				role: 'user',
+				parts: [
+					{
+						text:
+							`Give ${count} ${lang} (${locale}) words in the category "${category}", for level ${level}: ${brief}. ` +
+							`Single words (or a short compound where that's how it's said), each with a clearly different meaning. ` +
+							`Write each as natives write it. Give: "romanization" (only for languages not written in Latin letters, else ""), ` +
+							`"sounds" (an easy sound-it-out spelling for an English speaker, syllables split with hyphens and the stressed ` +
+							`syllable in CAPITALS; mark tones for tonal languages), "ipa", "meaning" (in ${explain}, one to three words), and ` +
+							`"emoji" (one emoji that pictures it, or "" if none fits). ` +
+							`Also give 4 "decoys": common, easy ${lang} words that are clearly NOT in "${category}" (from other everyday ` +
+							`topics), in the same fields. ` +
+							(known.length ? `Don't repeat any of these words: ${known.slice(-120).join(' | ')}.` : '')
+					}
+				]
+			}
+		],
+		VOCAB_SCHEMA,
+		5000
+	);
+	const j = JSON.parse(out) as { words?: Partial<VocabWord>[]; decoys?: Partial<VocabWord>[] };
+	const seen = new Set<string>();
+	const clean = (list: Partial<VocabWord>[] | undefined) =>
+		(Array.isArray(list) ? list : [])
+			.map(wordOf)
+			.filter((w): w is VocabWord => !!w && !seen.has(w.word.toLowerCase()) && !!seen.add(w.word.toLowerCase()));
+	const words = clean(j.words).slice(0, count);
+	return { words, decoys: clean(j.decoys).slice(0, 4) };
+}
+
 const tipsOf = (v: unknown): Phrase['tips'] =>
 	(Array.isArray(v) ? v : []).slice(0, 3).map((t) => ({ word: String(t?.word ?? ''), soundsLike: String(t?.soundsLike ?? ''), how: String(t?.how ?? '') }));
 

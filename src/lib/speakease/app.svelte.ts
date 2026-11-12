@@ -25,7 +25,7 @@ export interface Phonetics {
 	words: { word: string; sounds: string; ipa: string }[];
 }
 
-export type Screen = 'home' | 'chat' | 'practice' | 'phrases' | 'dictionary';
+export type Screen = 'home' | 'chat' | 'practice' | 'phrases' | 'dictionary' | 'flash';
 export type ThemeSetting = 'system' | 'light' | 'dark';
 
 export interface Goal {
@@ -345,6 +345,12 @@ class SpeakEase {
 	openDictionary() {
 		this.reset();
 		this.screen = 'dictionary';
+		this.active();
+	}
+
+	openFlash() {
+		this.reset();
+		this.screen = 'flash';
 		this.active();
 	}
 

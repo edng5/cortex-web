@@ -8,6 +8,8 @@
 	import Chat from './Chat.svelte';
 	import Phrases from './Phrases.svelte';
 	import Dictionary from './Dictionary.svelte';
+	import Flashcards from './Flashcards.svelte';
+	import { flash } from './flash.svelte';
 	import Confetti from './Confetti.svelte';
 	import Avatar from './Avatar.svelte';
 	import { app, load } from './app.svelte';
@@ -29,7 +31,7 @@
 	const signedIn = $derived(!!account);
 	/** Asking to sign in before a game opens. */
 	let signInFor = $state<string | null>(null);
-	const GAME_NAMES = { practice: 'Scenarios', phrases: 'Phrase Quest', dictionary: 'the Dictionary' } as const;
+	const GAME_NAMES = { practice: 'Scenarios', phrases: 'Phrase Quest', dictionary: 'the Dictionary', flash: 'Flash Cards' } as const;
 	const googleHref = $derived(`/auth/google?next=${encodeURIComponent(page.url.pathname + page.url.search)}`);
 
 	// Drawn once this browser's settings are loaded (no flash of the wrong theme or favourites).
@@ -57,7 +59,7 @@
 		};
 	});
 
-	function open(screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) {
+	function open(screen: 'chat' | 'practice' | 'phrases' | 'dictionary' | 'flash', id: string) {
 		if (screen !== 'chat' && !signedIn) {
 			signInFor = GAME_NAMES[screen];
 			return;
@@ -67,6 +69,10 @@
 		if (screen === 'chat') app.openChat(id);
 		else if (screen === 'practice') app.openScenario(id);
 		else if (screen === 'dictionary') app.openDictionary();
+		else if (screen === 'flash') {
+			app.openFlash();
+			flash.open(id);
+		}
 		else {
 			app.openPhrases();
 			quest.open(id);
@@ -89,6 +95,8 @@
 		<Phrases onback={() => history.back()} />
 	{:else if app.screen === 'dictionary'}
 		<Dictionary onback={() => history.back()} />
+	{:else if app.screen === 'flash'}
+		<Flashcards onback={() => history.back()} />
 	{:else}
 		{#key app.botId}<Chat onback={() => history.back()} />{/key}
 	{/if}
@@ -100,7 +108,7 @@
 			<div class="grabber"></div>
 			<span class="lock" aria-hidden="true">🔒</span>
 			<h3>Sign in to play {signInFor}</h3>
-			<p>Phrase Quest, Scenarios and the Dictionary are for signed-in players, so your XP, levels and badges are saved to your account and follow you to every device.</p>
+			<p>Phrase Quest, Flash Cards, Scenarios and the Dictionary are for signed-in players, so your XP, levels and badges are saved to your account and follow you to every device.</p>
 			<p class="free">Chatting with your friends is free, no account needed.</p>
 			{#if session.auth.google}<a class="btn wide" href={googleHref}>Continue with Google</a>{/if}
 			<button

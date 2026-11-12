@@ -8,6 +8,7 @@
 	import { app, load, store, type ThemeSetting } from './app.svelte';
 	import { sideways } from './sideways';
 	import { quest } from './quest.svelte';
+	import { flash } from './flash.svelte';
 	import { BADGES, ENERGY_MAX, countdown, game, starsFor } from './game.svelte';
 	import { FRIENDS, HOW_TO, HOW_TO_NOTE, SCENARIOS, TRANSLATE_OPTIONS, type Friend } from './data';
 
@@ -16,10 +17,12 @@
 		onopen,
 		back = '/?node=proj-speakease',
 		signedIn = false
-	}: { onopen: (screen: 'chat' | 'practice' | 'phrases' | 'dictionary', id: string) => void; back?: string; signedIn?: boolean } = $props();
+	}: { onopen: (screen: 'chat' | 'practice' | 'phrases' | 'dictionary' | 'flash', id: string) => void; back?: string; signedIn?: boolean } = $props();
 
 	let settingsOpen = $state(false);
 	let questPicker = $state(false);
+	/** The Flash Cards language picker. */
+	let flashPicker = $state(false);
 	let badgesOpen = $state(false);
 	let scenePicker = $state(false);
 	let howOpen = $state(false);
@@ -156,6 +159,12 @@
 		{/if}
 	</button>
 
+	<button class="tile" onclick={() => (signedIn ? (flashPicker = true) : onopen('flash', ''))}>
+		<span class="tile-icon flash" aria-hidden="true">🃏</span>
+		<span class="quest-text"><strong>Flash Cards</strong><small>Learn words by topic: match, pick and listen</small></span>
+		{#if signedIn}<Icon name="next" size={18} />{:else}<span class="locked">🔒 Sign in</span>{/if}
+	</button>
+
 	<button class="tile" onclick={() => (signedIn ? (scenePicker = true) : onopen('practice', ''))}>
 		<span class="tile-icon scenes"><Icon name="play" size={22} color="#fff" /></span>
 		<span class="quest-text"><strong>Scenarios</strong><small>Role-play everyday life and travel · {sceneStars}/{SCENARIOS.length * 3} ★</small></span>
@@ -280,6 +289,23 @@
 				{/each}
 			</div>
 		{/each}
+	</div>
+{/if}
+
+{#if flashPicker}
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="overlay" onclick={() => (flashPicker = false)}></div>
+	<div class="sheet" role="dialog" aria-modal="true" aria-label="Choose a language for Flash Cards">
+		<div class="grabber"></div>
+		<h3>Which language's words would you like to learn?</h3>
+		<div class="grid">
+			{#each FRIENDS as f (f.id)}
+				<button class="lang-main pick" class:on={flash.locale === f.locale} onclick={() => ((flashPicker = false), onopen('flash', f.locale))}>
+					<LangIcon locale={f.locale} size={36} label={f.language} />
+					<span><b>{f.language}</b><small>with {f.name}</small></span>
+				</button>
+			{/each}
+		</div>
 	</div>
 {/if}
 
@@ -868,6 +894,10 @@
 		border-radius: 30%;
 		background: var(--se-surface-2);
 		font-size: 22px;
+	}
+	.tile-icon.flash {
+		background: linear-gradient(135deg, #0ea5e9, #6366f1);
+		font-size: 20px;
 	}
 	.tile-icon.scenes {
 		background: linear-gradient(135deg, #f59e0b, #ef4444);

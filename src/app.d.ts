@@ -8,7 +8,7 @@ declare global {
 		}
 		interface PageState {
 			/** SpeakEase AI: the open screen, so the browser's Back button returns home. */
-			speakease?: 'chat' | 'practice' | 'phrases' | 'dictionary';
+			speakease?: 'chat' | 'practice' | 'phrases' | 'dictionary' | 'flash';
 		}
 	}
 
