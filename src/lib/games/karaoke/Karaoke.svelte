@@ -331,6 +331,7 @@
 		song = item;
 		waitingFriend = false;
 		waitingHost = false;
+		optsOpen = false;
 		clearTimeout(waitTimer);
 		// (A ready from the other singer is for the song they're on: a new start clears it, unless it's this song.)
 		if (song && friendReady != keyOf(item)) friendReady = '';
@@ -497,15 +498,18 @@
 		persist();
 	}
 	const clock = () => (synth ? synth.time : (video?.time ?? 0));
-	function pauseSong() {
+	/** Pause (in a room, for everyone: either singer can). `remote`: the other singer paused it. */
+	function pauseSong(remote = false) {
 		if (synth) synth.pause();
 		else video?.pause();
 		paused = true;
+		if (room && !remote) send({ k: 'pausereq', paused: true, t: clock() });
 	}
-	function resumeSong() {
+	function resumeSong(remote = false) {
 		if (synth) synth.resume();
 		else video?.play();
 		paused = false;
+		if (room && !remote) send({ k: 'pausereq', paused: false, t: clock() });
 	}
 	function stopMedia() {
 		synth?.stop();
@@ -559,6 +563,14 @@
 	$effect(() => {
 		if (vstate != 'loading' && video) video.setVolume(save.volume);
 	});
+
+	/** Phones: the options sheet. */
+	let optsOpen = $state(false);
+	/** Picking an option closes the sheet (the volume and lyric nudges stay open, to keep adjusting). */
+	function closeAfter(e: MouseEvent) {
+		const b = (e.target as HTMLElement).closest('button');
+		if (b && !b.classList.contains('keep') && !b.closest('.sheet-head')) optsOpen = false;
+	}
 
 	/** Skip the rest of this song: on to its results (graded on what you sang), then the next. */
 	function skipSong() {
@@ -901,6 +913,15 @@
 			persist();
 			shareQueue();
 			note = `${theirName} queued “${(m.item as Item).title}”`;
+		} else if (k == 'pausereq' && screen == 'sing') {
+			// The other singer paused (or carried on): the same here.
+			if (m.paused && !paused) {
+				pauseSong(true);
+				note = `${theirName} paused`;
+			} else if (!m.paused && paused) {
+				resumeSong(true);
+				note = `${theirName} carried on`;
+			}
 		} else if (k == 'ready' && isHost) {
 			// The joiner's loaded: start together.
 			friendReady = String(m.run ?? '');
@@ -935,6 +956,7 @@
 			const playing = k == 'play' || (k == 'sync' && !!m.playing);
 			const stopped = k == 'pause' || (k == 'sync' && !m.playing);
 			hostSync = { t: ht, at: performance.now(), playing: !stopped };
+			if (!waitingHost && !needsTap) paused = stopped;
 			// The host has started: off we go (and if the browser won't play it, a tap will).
 			if (waitingHost && playing) {
 				waitingHost = false;
@@ -1215,16 +1237,22 @@
 				{/if}
 			</div>
 			<div class="bar">
-				<button class="small" onclick={() => (paused ? resumeSong() : pauseSong())} disabled={!!room && !isHost}>{paused ? '▶ Resume' : '❚❚ Pause'}</button>
+				<button class="small" onclick={() => (paused ? resumeSong() : pauseSong())} title={room ? 'Pauses (or carries on) for everyone' : undefined}>{paused ? '▶ Resume' : '❚❚ Pause'}</button>
+				<!-- Phones: the rest is in a sheet that pops up, and goes away after picking something. -->
+				<button class="small ghost optbtn" aria-expanded={optsOpen} onclick={() => (optsOpen = !optsOpen)}>☰ Options</button>
+				{#if optsOpen}<button class="shade" aria-label="Close the options" onclick={() => (optsOpen = false)}></button>{/if}
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+				<div class="opts-panel" class:open={optsOpen} onclick={closeAfter}>
+				<div class="sheet-head"><b>Options</b><button class="small ghost" aria-label="Close the options" onclick={() => (optsOpen = false)}>✕</button></div>
 				<label class="vol" title="Song volume ({save.volume}%)">
-					<button class="small ghost" aria-label={save.volume ? 'Mute the song' : 'Unmute the song'} onclick={() => setVolume(save.volume ? 0 : lastVolume || 80)}>{save.volume == 0 ? '🔇' : save.volume < 40 ? '🔈' : save.volume < 75 ? '🔉' : '🔊'}</button>
+					<button class="small ghost keep" aria-label={save.volume ? 'Mute the song' : 'Unmute the song'} onclick={() => setVolume(save.volume ? 0 : lastVolume || 80)}>{save.volume == 0 ? '🔇' : save.volume < 40 ? '🔈' : save.volume < 75 ? '🔉' : '🔊'}</button>
 					<input type="range" min="0" max="100" step="1" value={save.volume} oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))} aria-label="Song volume" />
 				</label>
 				{#if song.id}
 					<span class="sync">
 						Lyrics {offset > 0 ? '+' : ''}{offset.toFixed(1)}s
-						<button class="small ghost" aria-label="Lyrics earlier" onclick={() => nudge(-0.25)}>−</button>
-						<button class="small ghost" aria-label="Lyrics later" onclick={() => nudge(0.25)}>+</button>
+						<button class="small ghost keep" aria-label="Lyrics earlier" onclick={() => nudge(-0.25)}>−</button>
+						<button class="small ghost keep" aria-label="Lyrics later" onclick={() => nudge(0.25)}>+</button>
 						{#if chart.lines.length}<button class="small ghost" onclick={tapSync} title="Press when the first line starts (T)">Tap: first line now</button>{/if}
 					</span>
 					{#if lyricOptions.length > 1}
@@ -1249,6 +1277,7 @@
 					<button class="small ghost" onclick={() => finish()}>End song</button>
 				{/if}
 				<button class="small leave" onclick={leaveSong}>Leave</button>
+				</div>
 			</div>
 			{#if lyricsNote || micErr || vstate == 'error'}
 				<p class="msg">{vstate == 'error' ? video?.error : micErr || lyricsNote}</p>
@@ -2248,6 +2277,15 @@
 	.now.soon {
 		opacity: 0.75;
 	}
+	/* On a computer the options sit in the bar; the sheet's parts are for phones. */
+	.opts-panel {
+		display: contents;
+	}
+	.optbtn,
+	.sheet-head,
+	.shade {
+		display: none;
+	}
 	.vol {
 		display: flex;
 		align-items: center;
@@ -2490,11 +2528,9 @@
 		.row input {
 			min-width: 0;
 		}
-		/* Singing: the controls stay on one row and scroll sideways. */
+		/* Singing: Pause and Options in the bar; the rest in a sheet that pops up from the bottom. */
 		.bar {
 			flex-wrap: nowrap;
-			overflow-x: auto;
-			scrollbar-width: none;
 			left: 6px;
 			right: 6px;
 			bottom: 6px;
@@ -2503,8 +2539,71 @@
 		.bar > * {
 			flex: none;
 		}
-		.bar .grow {
+		.optbtn {
+			display: inline-block;
+			margin-left: auto;
+		}
+		.shade {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 29;
+			padding: 0;
+			border-radius: 0;
+			background: rgba(5, 3, 20, 0.55);
+			animation: fade-in 0.2s;
+		}
+		.opts-panel {
+			position: fixed;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			z-index: 30;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			max-height: 72%;
+			overflow-y: auto;
+			padding: 12px 16px 18px;
+			border-radius: 20px 20px 0 0;
+			background: #1a1240;
+			border-top: 1px solid rgba(232, 121, 249, 0.4);
+			box-shadow: 0 -18px 40px -10px rgba(0, 0, 0, 0.7);
+			transform: translateY(105%);
+			visibility: hidden;
+			transition:
+				transform 0.25s ease,
+				visibility 0.25s;
+		}
+		.opts-panel.open {
+			transform: none;
+			visibility: visible;
+		}
+		.sheet-head {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+		}
+		.opts-panel > *,
+		.opts-panel .sync,
+		.opts-panel .pick select {
+			width: 100%;
+			max-width: none;
+		}
+		.opts-panel .vol input {
+			flex: 1;
+			width: auto;
+		}
+		.opts-panel .sync {
+			display: flex;
+			flex-wrap: wrap;
+		}
+		.opts-panel .grow {
 			display: none;
+		}
+		.opts-panel > button {
+			padding: 10px 14px;
+			font-size: 0.9rem;
 		}
 		.hud {
 			left: 6px;
