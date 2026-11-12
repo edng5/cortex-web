@@ -67,6 +67,13 @@ export class Synth {
 	get paused() {
 		return this.pausedAt != null;
 	}
+	/**
+	 * The browser is holding its sound (it was started without a tap, e.g. by a friend's room):
+	 * its clock doesn't run until it's started again from a tap.
+	 */
+	get blocked() {
+		return this.ctx?.state === 'suspended';
+	}
 	get time() {
 		if (this.pausedAt != null) return this.pausedAt;
 		return this.ctx ? this.ctx.currentTime - this.t0 : 0;

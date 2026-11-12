@@ -231,6 +231,29 @@
 	let lyricsNote = $state('');
 	/** Looking up the lyrics before the song starts (the loading screen). */
 	let preparing = $state(false);
+	// ── Singing in a friend's room: following the host's song ──
+	/** The host's song time last heard, and when. */
+	let hostSync: { t: number; at: number; playing: boolean } | null = null;
+	/** Where the host's song is now (an estimate between their updates). */
+	const hostNow = () => (hostSync ? hostSync.t + (hostSync.playing ? (performance.now() - hostSync.at) / 1000 : 0) : 0);
+	/** The browser wouldn't start the song without a tap: show the "tap to sing along" button. */
+	let needsTap = $state(false);
+	function checkStarted(item: Item) {
+		setTimeout(() => {
+			if (song != item || screen != 'sing') return;
+			if ((synth && synth.blocked) || (video && video.state != 'playing' && hostSync?.playing !== false)) needsTap = true;
+		}, 1500);
+	}
+	/** The tap: start the song (sound allowed now), in step with the host. */
+	function tapToSing() {
+		needsTap = false;
+		const t = hostNow();
+		if (synth) synth.play(t);
+		else if (video) {
+			video.seek(t);
+			video.play();
+		}
+	}
 	let introHint = $state(0);
 	function useIntroHint() {
 		nudge(introHint - offset);
@@ -270,6 +293,7 @@
 		lyricOptions = [];
 		lyricPick = 0;
 		paused = false;
+		needsTap = false;
 		micErr = (await mic.start()) ?? '';
 		offset = save.offsets[keyOf(item)] ?? item.offset ?? 0;
 		// The chart: the song's own, one you've added, or lyrics found online.
@@ -279,8 +303,9 @@
 		live = scorer.live;
 		if (!item.id) {
 			synth = new Synth(chart.notes);
-			synth.play(0);
+			synth.play(room && !isHost ? hostNow() : 0);
 			vstate = 'playing';
+			if (room) checkStarted(item);
 		} else {
 			vstate = 'loading';
 			// The lyrics first (usually ready already: they're looked up while the song before plays),
@@ -307,7 +332,10 @@
 			await video.load(item.id, !!found && !found.lyrics?.synced && found.captions);
 			if (video.state == 'error' || song != item) return;
 			if (found) useLyrics(item, found);
-			if (!room || isHost) video.play();
+			video.play();
+			// A friend's room: the song may have been started by the other singer, not by a tap
+			// here, and browsers won't start sound without one. If it hasn't started, ask for a tap.
+			if (room) checkStarted(item);
 		}
 	}
 	// ── Lyrics: looked up before a song starts, and ahead of time for the songs queued next ──
@@ -498,8 +526,17 @@
 	function nextSong() {
 		const n = save.queue[0];
 		if (!n) return (screen = room ? 'room' : 'menu');
-		if (room && isHost) send({ k: 'start', item: n });
-		void sing(n);
+		playFor(n);
+	}
+	/**
+	 * Start a song: alone, just sing it; in a room, for both singers. (The host's game keeps the
+	 * song's clock, so a joiner asks the host's game to start it, and it starts on both screens.)
+	 */
+	function playFor(item: Item) {
+		if (!room) return void sing(item);
+		if (isHost) return startInRoom(item);
+		send({ k: 'req', item: $state.snapshot(item) });
+		note = `Starting “${item.title}” for both of you…`;
 	}
 
 	// ── The loop: the clock, the microphone, the score, the pitch lane ──
@@ -794,6 +831,15 @@
 			persist();
 			shareQueue();
 			note = `${theirName} queued “${(m.item as Item).title}”`;
+		} else if (k == 'req' && isHost && m.item) {
+			// The joiner wants to sing this: start it for both (or queue it, if a song is on).
+			const item = m.item as Item;
+			if (screen == 'sing') {
+				save.queue = [item, ...save.queue];
+				persist();
+				shareQueue();
+				note = `${theirName} wants to sing “${item.title}” next`;
+			} else startInRoom(item);
 		} else if (k == 'start' && !isHost && m.item) {
 			partner = { score: 0, h: 100, done: null };
 			void sing(m.item as Item);
@@ -809,19 +855,29 @@
 		} else if (k == 'done' && partner) {
 			partner.done = Number(m.score) || 0;
 			if (result) result.theirs = partner.done;
-		} else if (!isHost && video && (k == 'play' || k == 'pause' || k == 'state' || k == 'sync')) {
-			// Follow the host's video: play / pause with it, and catch up if we drift apart.
+		} else if (!isHost && (k == 'play' || k == 'pause' || k == 'state' || k == 'sync')) {
+			// Follow the host's song: play / pause with it, and catch up if we drift apart.
 			const ht = Number(m.t) || 0;
 			const playing = k == 'play' || (k == 'sync' && !!m.playing);
-			if (k == 'pause' || (k == 'sync' && !m.playing)) video.pause();
-			else if (playing && video.state != 'playing') video.play();
-			if (Math.abs(video.time - ht) > 0.4) video.seek(ht + 0.15);
+			const stopped = k == 'pause' || (k == 'sync' && !m.playing);
+			hostSync = { t: ht, at: performance.now(), playing: !stopped };
+			// (Waiting for the tap: nothing to follow yet.)
+			if (needsTap) return;
+			if (video) {
+				if (stopped) video.pause();
+				else if (playing && video.state != 'playing') video.play();
+				if (Math.abs(video.time - ht) > 0.4) video.seek(ht + 0.15);
+			} else if (synth) {
+				if (stopped && !synth.paused) synth.pause();
+				else if (playing && (synth.paused || Math.abs(synth.time - ht) > 0.4)) synth.play(ht + 0.05);
+				if (synth.blocked) needsTap = true;
+			}
 		}
 	}
 	// The host's video clock, every couple of seconds.
 	$effect(() => {
 		if (!room || !isHost || screen != 'sing') return;
-		const iv = setInterval(() => video && send({ k: 'sync', t: video.time, playing: !paused }), 2000);
+		const iv = setInterval(() => (video || synth) && send({ k: 'sync', t: clock(), playing: !paused }), 2000);
 		return () => clearInterval(iv);
 	});
 	function startInRoom(item: Item) {
@@ -910,7 +966,7 @@
 									<span class="t"><b>{s.title}</b><small>{s.artist}{s.chart ? ' · pitch guide' : ''}{save.best[keyOf(s)] ? ` · best ${gradeOf(save.best[keyOf(s)])}` : ''}</small></span>
 									{@render star(s)}
 									<button class="small ghost" onclick={() => enqueue(s)}>Queue</button>
-									<button class="small" onclick={() => (room && isHost ? startInRoom(s) : sing(s))}>Sing</button>
+									<button class="small" onclick={() => (playFor(s))}>Sing</button>
 								</li>
 							{/each}
 						</ul>
@@ -925,7 +981,7 @@
 										<span class="t"><b>{s.title}</b><small>{s.artist || s.channel || ''}{save.best[keyOf(s)] ? ` · best ${gradeOf(save.best[keyOf(s)])}` : ''}</small></span>
 										{@render star(s)}
 										<button class="small ghost" onclick={() => enqueue(s)}>Queue</button>
-										<button class="small" onclick={() => (room && isHost ? startInRoom(s) : sing(s))}>Sing</button>
+										<button class="small" onclick={() => (playFor(s))}>Sing</button>
 									</li>
 								{/each}
 							</ul>
@@ -974,7 +1030,7 @@
 								</li>
 							{/each}
 						</ol>
-						{#if !room || isHost}<button class="go" onclick={nextSong}>Sing the next song ▶</button>{:else}<p class="hint">The host starts the songs.</p>{/if}
+						<button class="go" onclick={nextSong}>Sing the next song ▶</button>
 					{/if}
 					<label class="toggle">
 						<input type="checkbox" bind:checked={save.scoring} onchange={persist} />
@@ -996,7 +1052,13 @@
 	{:else if screen == 'sing' && song}
 		<div class="stage" style="--lvl:{voiceLvl}; --hp:{save.scoring ? health / 100 : 1}">
 			<div class="video" class:hidden={!song.id} bind:this={videoEl}></div>
-			{#if preparing || (song.id && vstate == 'loading')}
+			{#if needsTap && !preparing}
+				<div class="loading tap">
+					<b>{theirName} started “{song.title}”</b>
+					<button class="tapbtn" onclick={tapToSing}>▶ Tap to sing along</button>
+					<small>Your browser needs a tap before it plays sound.</small>
+				</div>
+			{:else if preparing || (song.id && vstate == 'loading')}
 				<div class="loading" role="status">
 					<div class="spin" aria-hidden="true">
 						{#each Array(5) as _, i (i)}<i style="animation-delay:{i * 0.12}s"></i>{/each}
@@ -1129,7 +1191,7 @@
 			<p><button class="small ghost" onclick={() => result && toggleFav(result.song)}>{result && isFav(result.song) ? '★ In favourites' : '☆ Add to favourites'}</button></p>
 			{#if result.theirs != null}<p class="hint">{theirName}: {gradeOf(result.theirs)}</p>{:else if partner}<p class="hint">Waiting for {theirName}'s score…</p>{/if}
 			<div class="row">
-				{#if save.queue.length && (!room || isHost)}<button onclick={nextSong}>Next: {save.queue[0].title}</button>{/if}
+				{#if save.queue.length}<button onclick={nextSong}>Next: {save.queue[0].title}</button>{/if}
 				<button class="ghost" onclick={() => (screen = room ? 'room' : 'menu')}>{room ? 'Back to the room' : 'Song list'}</button>
 			</div>
 		</div>
@@ -1155,7 +1217,7 @@
 					{/each}
 				</ul>
 				{#if roomView?.phase == 'playing'}
-					<p class="hint">{isHost ? 'Queue songs and start one: it starts for both of you.' : 'Queue songs for the host; the song starts when they start it.'}</p>
+					<p class="hint">Either of you can queue songs and start one: it starts for both of you.</p>
 				{/if}
 				<div class="row">
 					<button class="ghost" onclick={() => (screen = 'menu')}>Songs and queue</button>
@@ -1778,6 +1840,17 @@
 	}
 	@keyframes flame {
 		to { transform: scale(1.25) rotate(-8deg); }
+	}
+	/* A friend started the song: one tap to let the browser play it. */
+	.loading.tap {
+		background: radial-gradient(600px 400px at 50% 45%, rgba(91, 33, 182, 0.92), rgba(11, 16, 38, 0.95));
+	}
+	.tapbtn {
+		font-size: 1.3rem;
+		padding: 14px 28px;
+		border-radius: 999px;
+		box-shadow: 0 0 30px rgba(232, 121, 249, 0.6);
+		animation: pop-in 0.4s cubic-bezier(0.2, 1.8, 0.4, 1);
 	}
 	/* Getting a song ready: a bouncing mic-level meter while the lyrics are found. */
 	.loading {
