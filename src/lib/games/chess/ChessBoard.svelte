@@ -1,5 +1,6 @@
 <!--
-  The chess board: pick one of your pieces to see where it can go, then pick a square. Shows the
+  The chess board: pick one of your pieces to see where it can go, then pick a square (or drag the
+  piece there: mouse or finger; it springs back if dropped anywhere it can't go). Shows the
   last move and a king in check; asks what a promoting pawn becomes. Turned round when you're Black.
 -->
 <script lang="ts">
@@ -53,6 +54,68 @@
 			ctx.sound('select');
 		} else picked = null;
 	}
+	// ── Dragging a piece ──
+	let boardEl = $state<HTMLDivElement>();
+	/** A piece being dragged: from where, where the pointer is (on the board), and the square under it. */
+	let drag = $state<{ from: number; id: number; x: number; y: number; over: number | null; moved: boolean; sx: number; sy: number; wasPicked: boolean } | null>(null);
+	/** The square under a point on the screen (or null, off the board). */
+	function squareAt(cx: number, cy: number): number | null {
+		const r = boardEl?.getBoundingClientRect();
+		if (!r) return null;
+		const col = Math.floor(((cx - r.left) / r.width) * 8);
+		const row = Math.floor(((cy - r.top) / r.height) * 8);
+		if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+		const i = row * 8 + col;
+		return flip ? 63 - i : i;
+	}
+	function down(e: PointerEvent, sq: number) {
+		if (!myTurn || promo || e.button > 0) return;
+		// Not one of yours: a tap (move the picked piece there, or nothing).
+		if (colorOf(c.board[sq]) != mine) return tap(sq);
+		e.preventDefault();
+		const r = boardEl!.getBoundingClientRect();
+		const wasPicked = picked == sq;
+		if (!wasPicked) {
+			picked = sq;
+			ctx.sound('select');
+		}
+		drag = { from: sq, id: e.pointerId, x: e.clientX - r.left, y: e.clientY - r.top, over: sq, moved: false, sx: e.clientX, sy: e.clientY, wasPicked };
+		try {
+			// (Keeps the moves coming while the pointer's off the board.)
+			boardEl!.setPointerCapture(e.pointerId);
+		} catch {
+			/* not a live pointer */
+		}
+	}
+	function move(e: PointerEvent) {
+		if (!drag || e.pointerId != drag.id) return;
+		const r = boardEl!.getBoundingClientRect();
+		drag.x = e.clientX - r.left;
+		drag.y = e.clientY - r.top;
+		drag.over = squareAt(e.clientX, e.clientY);
+		if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 5) drag.moved = true;
+	}
+	function up(e: PointerEvent) {
+		if (!drag || e.pointerId != drag.id) return;
+		const d = drag;
+		drag = null;
+		if (!d.moved) {
+			// A tap on a piece: it was picked on the way down; a second tap puts it back down.
+			if (d.wasPicked) picked = null;
+			return;
+		}
+		const to = squareAt(e.clientX, e.clientY);
+		const target = to == null ? null : moves.find((m) => m.to == to);
+		if (target) {
+			if (target.promo) promo = { from: target.from, to: target.to };
+			else void send({ from: target.from, to: target.to });
+		}
+		// (Anywhere else: it springs back, still picked.)
+	}
+	function cancelDrag() {
+		drag = null;
+	}
+
 	async function send(m: Move) {
 		promo = null;
 		picked = null;
@@ -63,7 +126,17 @@
 <p class="turn" class:mine={myTurn}>
 	{#if v.phase != 'playing'}&nbsp;{:else if myTurn}{c.check ? 'Check! ' : ''}Your move ({mine == 'w' ? 'White' : 'Black'}){:else}{c.check ? 'Check! ' : ''}Waiting for your opponent…{/if}
 </p>
-<div class="chess theme-{ctx.theme}">
+<div
+	class="chess theme-{ctx.theme}"
+	class:dragging={drag?.moved}
+	bind:this={boardEl}
+	role="group"
+	aria-label="Chess board"
+	onpointermove={move}
+	onpointerup={up}
+	onpointercancel={cancelDrag}
+	onlostpointercapture={cancelDrag}
+>
 	{#each order as sq (sq)}
 		{@const p = c.board[sq]}
 		{@const target = moves.find((m) => m.to == sq)}
@@ -75,14 +148,22 @@
 			class:check={sq == king}
 			class:target={!!target && p == '.'}
 			class:capture={!!target && p != '.'}
+			class:over={drag?.moved && drag.over == sq && !!target}
+			class:mine={myTurn && colorOf(p) == mine}
 			aria-label={squareName(sq) + (p != '.' ? ' ' + p : '')}
-			onclick={() => tap(sq)}
+			onpointerdown={(e) => down(e, sq)}
+			onclick={(e) => e.detail == 0 && tap(sq)}
 		>
-			{#if p != '.'}<span class="pc" class:white={p == p.toUpperCase()}>{GLYPH[p.toLowerCase()]}&#xFE0E;</span>{/if}
+			{#if p != '.'}<span class="pc" class:white={p == p.toUpperCase()} class:lifted={drag?.moved && drag.from == sq}>{GLYPH[p.toLowerCase()]}&#xFE0E;</span>{/if}
 			{#if (sq & 7) == (flip ? 7 : 0)}<i class="rank">{8 - (sq >> 3)}</i>{/if}
 			{#if sq >> 3 == (flip ? 0 : 7)}<i class="file">{'abcdefgh'[sq & 7]}</i>{/if}
 		</button>
 	{/each}
+	{#if drag?.moved}
+		<!-- The piece in hand, following the pointer. -->
+		{@const p = c.board[drag.from]}
+		<span class="ghost" style="left:{drag.x}px; top:{drag.y}px" aria-hidden="true"><span class="pc" class:white={p == p.toUpperCase()}>{GLYPH[p.toLowerCase()]}&#xFE0E;</span></span>
+	{/if}
 	{#if promo}
 		<div class="promo">
 			<p>Promote to</p>
@@ -159,6 +240,33 @@
 	}
 	.sq.picked {
 		box-shadow: inset 0 0 0 4px #4ade80;
+	}
+	/* Dragging: your pieces can be grabbed, the square under the piece lights up. */
+	.sq.mine {
+		cursor: grab;
+		touch-action: none;
+	}
+	.chess.dragging,
+	.chess.dragging .sq {
+		cursor: grabbing;
+	}
+	.sq.over {
+		box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.85);
+	}
+	.pc.lifted {
+		opacity: 0.3;
+	}
+	.ghost {
+		position: absolute;
+		width: 12.5%;
+		height: 12.5%;
+		display: grid;
+		place-items: center;
+		transform: translate(-50%, -55%) scale(1.15);
+		pointer-events: none;
+		z-index: 5;
+		container-type: size;
+		filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.45));
 	}
 	.sq.check {
 		background: radial-gradient(circle, #ff4d4d 0%, #c81e1e 45%, transparent 75%), var(--light);
