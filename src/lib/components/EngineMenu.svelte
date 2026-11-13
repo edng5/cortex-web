@@ -230,6 +230,7 @@
 		display: grid;
 		gap: 12px;
 	}
+	/* (Phones, even big ones or turned sideways, get the plain list instead: see the end.) */
 	@container (min-width: 500px) {
 		.picker {
 			/* Three equal columns: the list takes one, the preview two, and the rows below
@@ -242,7 +243,8 @@
 		.preview {
 			grid-column: span 2;
 		}
-		.row-games {
+		/* (The rows line up with the list and the preview above: three across.) */
+		.picker .row-games {
 			grid-template-columns: subgrid;
 		}
 	}
@@ -325,7 +327,8 @@
 	.row-games {
 		grid-column: 1 / -1;
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+		/* A list, one game per line (side by side only in the wide layout, lined up with the list above). */
+		grid-template-columns: minmax(0, 1fr);
 		gap: 8px 12px;
 		margin: 0;
 		padding: 0;
@@ -489,5 +492,18 @@
 	.err {
 		color: #fca5a5;
 		font-size: 0.85rem;
+	}
+	/* Phones, however they're held (a short screen, or a touch screen narrower than a tablet): always
+	   the plain list, one game per line, without the preview. */
+	@media (max-height: 520px), (pointer: coarse) and (max-width: 950px) {
+		.picker {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.preview {
+			display: none;
+		}
+		.picker .row-games {
+			grid-template-columns: minmax(0, 1fr);
+		}
 	}
 </style>
