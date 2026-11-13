@@ -397,7 +397,8 @@
 			video = v;
 			void readStills(item.id);
 			// No synced lyrics: YouTube's own subtitles, if the video has them.
-			await video.load(item.id, !!found && !found.lyrics?.synced && found.captions);
+			// (Lyrics found: the video's own subtitles off, so they don't cover or fight the game's.)
+			await video.load(item.id, !!found && !found.lyrics?.synced && found.captions ? 'show' : own || found?.lyrics?.synced ? 'hide' : 'auto');
 			if (video.state == 'error' || mine != run) return;
 			if (found) useLyrics(item, found);
 			ready(mine);
@@ -1466,7 +1467,7 @@
 					<button class="small ghost" onclick={() => (showChart = !showChart)}>{chart.notes.length ? 'Chart ✓' : 'Add a chart'}</button>
 				{/if}
 				{#if parts?.roles.length}
-					<button class="small ghost" aria-expanded={rolesOpen} onclick={() => (rolesOpen = !rolesOpen)} title="Who sings which part">🎭 Roles</button>
+					<button class="small ghost" aria-expanded={rolesOpen} onclick={() => (rolesOpen = !rolesOpen)} title="Who sings which part">Roles</button>
 				{/if}
 				<span class="grow"></span>
 				{#if !room || isHost}
@@ -1482,7 +1483,7 @@
 			</div>
 			{#if rolesOpen && parts?.roles.length}
 				<div class="roles" role="dialog" aria-label="Roles">
-					<div class="roles-head"><b>🎭 Who sings what</b><button class="small ghost" aria-label="Close the roles" onclick={() => (rolesOpen = false)}>✕</button></div>
+					<div class="roles-head"><b>Who sings what</b><button class="small ghost" aria-label="Close the roles" onclick={() => (rolesOpen = false)}>✕</button></div>
 					{#each parts.roles as r (r.key)}
 						<label class="role">
 							<span>{r.label}</span>

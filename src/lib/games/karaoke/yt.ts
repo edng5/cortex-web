@@ -12,6 +12,9 @@ interface YTPlayer {
 	getPlayerState(): number;
 	setVolume(v: number): void;
 	destroy(): void;
+	// (Not in YouTube's documented API, but long-standing: switching the subtitles off.)
+	unloadModule?(name: string): void;
+	setOption?(module: string, option: string, value: unknown): void;
 }
 interface YTApi {
 	Player: new (el: HTMLElement, opts: object) => YTPlayer;
@@ -54,8 +57,24 @@ export class Video {
 		private onState: (s: VideoState) => void
 	) {}
 
-	/** `captions`: show the video's own subtitles (YouTube's player draws them; the page can't read them). */
-	async load(id: string, captions = false) {
+	/** The video's own subtitles are switched off (the game has the lyrics). */
+	private noCaptions = false;
+	/** YouTube loads its subtitles when the video starts: unload them (and clear any chosen track). */
+	private hideCaptions() {
+		if (!this.noCaptions || !this.ready || !this.p) return;
+		try {
+			this.p.unloadModule?.('captions');
+			this.p.setOption?.('captions', 'track', {});
+		} catch {
+			// (Not every version of YouTube's player has these.)
+		}
+	}
+	/**
+	 * `captions`: 'show' the video's own subtitles (YouTube's player draws them; the page can't read
+	 * them), 'hide' them (the game has the lyrics), or leave them to YouTube ('auto').
+	 */
+	async load(id: string, captions: 'show' | 'hide' | 'auto' = 'auto') {
+		this.noCaptions = captions == 'hide';
 		await loadApi();
 		this.p?.destroy();
 		this.ready = false;
@@ -66,13 +85,16 @@ export class Video {
 				width: '100%',
 				height: '100%',
 				// No related videos at the end, plays inline on phones, keyboard off (the game's keys).
-				playerVars: { controls: 0, disablekb: 1, playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, fs: 0, ...(captions ? { cc_load_policy: 1 } : {}) },
+				playerVars: { controls: 0, disablekb: 1, playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, fs: 0, ...(captions == 'show' ? { cc_load_policy: 1 } : captions == 'hide' ? { cc_load_policy: 0 } : {}) },
 				events: {
 					onReady: () => {
 						this.ready = true;
+						this.hideCaptions();
 						resolve();
 					},
 					onStateChange: (e: { data: number }) => {
+						// (Buffering or playing: the subtitles module may just have loaded.)
+						if (e.data == 1 || e.data == 3) this.hideCaptions();
 						const s = e.data == 1 ? 'playing' : e.data == 2 ? 'paused' : e.data == 0 ? 'ended' : this.state;
 						if (s != this.state) {
 							this.state = s;
