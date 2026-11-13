@@ -38,6 +38,8 @@ export interface Verdict {
 	golden: boolean;
 	/** The note's pitch (with a chart), for where the pop-up appears. */
 	midi: number | null;
+	/** The keys: the note's lane (for where its verdict shows). */
+	lane?: number;
 }
 
 export const RANKS: [number, string][] = [
@@ -189,10 +191,13 @@ export class Scorer {
 		}
 	}
 
-	/** In the major (or relative minor) key that fits what you've sung so far best. */
-	private inKey(midi: number) {
+	/**
+	 * The major (or relative minor) key that fits what you've sung so far best: its first note
+	 * (0 = C) and the notes in it (pitch classes). Null until there's enough singing to tell.
+	 */
+	key(): { tonic: number; notes: number[] } | null {
 		const total = this.hist.reduce((a, b) => a + b, 0);
-		if (total < 4) return true; // too early to tell
+		if (total < 4) return null;
 		const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 		let best = 0;
 		let bestFit = -1;
@@ -200,7 +205,12 @@ export class Scorer {
 			const fit = MAJOR.reduce((s, d) => s + this.hist[(k + d) % 12], 0);
 			if (fit > bestFit) [best, bestFit] = [k, fit];
 		}
-		return MAJOR.includes((((midi - best) % 12) + 12) % 12);
+		return { tonic: best, notes: MAJOR.map((d) => (best + d) % 12) };
+	}
+	/** In the key you've been singing in (anything goes until it's known). */
+	private inKey(midi: number) {
+		const k = this.key();
+		return !k || k.notes.includes(((midi % 12) + 12) % 12);
 	}
 
 	/** The final score (the song's over). */

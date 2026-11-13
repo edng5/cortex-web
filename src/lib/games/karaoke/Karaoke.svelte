@@ -12,12 +12,14 @@
 	import { gameAudio } from '$lib/games/audio.svelte';
 	import { Room, type RoomEvent } from '$lib/games/net';
 	import { session } from '$lib/session.svelte';
-	import { Mic, noteName, type Heard } from './pitch';
+	import { Mic, NOTE_NAMES, noteName, type Heard } from './pitch';
 	import { linesAt, parseLRC, parseUltraStar, type Chart, type Line } from './chart';
 	import { Scorer, gradeColor, gradeOf, pitchGap, type Live, type Verdict } from './score';
 	import { Video, videoIdFrom, type VideoState } from './yt';
 	import { Synth } from './synth';
 	import { splitParts, type Assign, type Parts, type Who } from './parts';
+	import { KeysScorer, LANE_COLORS, LANE_KEYS, LANE_LABELS, drawHighway } from './keys';
+	import { VoiceLink } from './voice';
 	import { SONGS, type Song } from './songs';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
@@ -46,8 +48,10 @@
 		volume: number;
 		/** In a room: split songs into parts for the singers (the host's setting). */
 		partsOn: boolean;
+		/** Singing, or playing the keys (the last one picked: it's offered first). */
+		role: 'sing' | 'keys';
 	}
-	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80, partsOn: true });
+	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80, partsOn: true, role: 'sing' });
 	let save = $state<Save>(load());
 	function load(): Save {
 		try {
@@ -266,6 +270,10 @@
 	 */
 	function ready(mine: number) {
 		if (mine != run) return;
+		if (!rolePicked) {
+			pendingReady = mine;
+			return;
+		}
 		if (!room) return go();
 		if (isHost) {
 			if (!friendHere()) return go();
@@ -308,7 +316,126 @@
 		introHint = 0;
 	}
 	let offset = $state(0);
-	let scorer: Scorer | null = null;
+	let scorer: Scorer | KeysScorer | null = null;
+	// ── Your role: sing, or play the keys (chosen on the menu, under Up next) ──
+	type Role = 'sing' | 'keys';
+	let myRole = $state<Role>('sing');
+	/** Set for this song (the song waits until then). */
+	let rolePicked = $state(false);
+	/** The song finished loading while the role was being picked: start it once picked. */
+	let pendingReady = 0;
+	/** The other player's role (in a room). */
+	let theirRole = $state<Role>('sing');
+	/**
+	 * Hear yourself while singing (your microphone through your speakers / headphones). Chosen
+	 * before a song on the menu; not remembered, and nothing is recorded.
+	 */
+	let hearMe = $state(false);
+	/** The room echo on your voice (0..100). Not remembered either. */
+	let echo = $state(25);
+	/** In a room: hear each other (live, straight between the two browsers). Not remembered. */
+	let voiceOn = $state(false);
+	/** The other player has their voice on. */
+	let theirVoice = $state(false);
+	/** Their voice's volume (0..100). */
+	let voiceVol = $state(80);
+	let voice: VoiceLink | null = null;
+	/** The microphone on for this song: singing, or (in a room) to talk with voice on. */
+	async function micFor(r: Role) {
+		if (r == 'sing' || (room && voiceOn)) {
+			mic.monitor = hearMe && r == 'sing';
+			mic.echo = echo / 100;
+			micErr = (await mic.start()) ?? '';
+		} else mic.stop();
+		void voice?.send(voiceOn ? mic.sendTrack : null);
+		voice?.hear(voiceOn);
+	}
+	function micOff() {
+		mic.stop();
+		void voice?.send(null);
+	}
+	function toggleHearMe() {
+		hearMe = !hearMe;
+		mic.setMonitor(hearMe);
+	}
+	function setEcho(v: number) {
+		echo = Math.max(0, Math.min(100, Math.round(v)));
+		mic.setEcho(echo / 100);
+	}
+	function setVoiceVol(v: number) {
+		voiceVol = Math.max(0, Math.min(100, Math.round(v)));
+		voice?.setVolume(voiceVol / 100);
+	}
+	/** Voice on or off (before or during a song): your microphone to your friend, and theirs to you. */
+	async function toggleVoice() {
+		voiceOn = !voiceOn;
+		if (room) send({ k: 'voice', on: voiceOn });
+		if (screen == 'sing' && rolePicked) await micFor(myRole);
+		else voice?.hear(voiceOn);
+	}
+	/** The host connects the two browsers when both are in the room. */
+	function startLink() {
+		voice?.close();
+		voice = new VoiceLink((m) => send(m), true);
+		voice.setVolume(voiceVol / 100);
+		voice.hear(voiceOn);
+		if (voiceOn && mic.on) void voice.send(mic.sendTrack);
+		send({ k: 'voice', on: voiceOn });
+	}
+	function endLink() {
+		voice?.close();
+		voice = null;
+		theirVoice = false;
+	}
+	/** The menu's choice: the role for the songs from now on. */
+	function setRolePref(r: Role) {
+		save.role = r;
+		persist();
+	}
+	async function pickRole(r: Role) {
+		if (rolePicked) return;
+		myRole = r;
+		save.role = r;
+		persist();
+		rolePicked = true;
+		if (room && song) send({ k: 'role', role: r, run: keyOf(song) });
+		// (Someone on the keys: the singers share the whole song, no parts.)
+		splitNow();
+		scorer = makeScorer();
+		live = scorer.live;
+		// The microphone for singing (or talking, with voice on).
+		await micFor(r);
+		const p = pendingReady;
+		pendingReady = 0;
+		if (p) ready(p);
+	}
+	// The keys: the highway, the pads, the lanes lighting up when tapped.
+	let keyway = $state<HTMLCanvasElement>();
+	const keyFlash = [0, 0, 0, 0];
+	let keyPops: { at: number; lane: number; text: string; color: string }[] = [];
+	let padDown = $state([false, false, false, false]);
+	function pressLane(lane: number) {
+		keyFlash[lane] = performance.now();
+		if (!(scorer instanceof KeysScorer) || paused || vstate != 'playing') return;
+		scorer.press(lane, clock() - offset);
+		const now = performance.now();
+		for (const v of scorer.verdicts.splice(0)) popFor(v, now);
+	}
+	function drawKeys(t: number) {
+		const c = keyway;
+		if (!c || !(scorer instanceof KeysScorer)) return;
+		const w = c.clientWidth;
+		const h = c.clientHeight;
+		if (c.width != w * devicePixelRatio || c.height != h * devicePixelRatio) {
+			c.width = w * devicePixelRatio;
+			c.height = h * devicePixelRatio;
+		}
+		const g = c.getContext('2d')!;
+		g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+		const now = performance.now();
+		keyPops = keyPops.filter((p) => now - p.at < 700);
+		drawHighway(g, w, h, scorer.notes, t, keyFlash, keyPops);
+	}
 	let live = $state<Live>({ score: 0, sofar: null, pitch: 0, timing: 0, note: null, hit: false, combo: 0 });
 	let heard = $state<Heard>({ hz: 0, midi: 0, level: 0, clarity: 0 });
 	let songT = $state(0);
@@ -317,7 +444,7 @@
 	let trail: { t: number; midi: number; hit: boolean }[] = [];
 	let theirTrail: { t: number; midi: number }[] = [];
 	type Mood = 'great' | 'ok' | 'bad';
-	let result = $state<{ score: number; best: boolean; song: Item; theirs?: number; lost?: boolean; scored?: boolean; skipped?: boolean; mood: Mood } | null>(null);
+	let result = $state<{ score: number; bk: string; keys: boolean; best: boolean; song: Item; theirs?: number; lost?: boolean; scored?: boolean; skipped?: boolean; mood: Mood } | null>(null);
 	// Confetti and tomatoes for the results (random, made once per result).
 	const confetti = Array.from({ length: 90 }, (_, i) => ({ x: Math.random() * 100, d: Math.random() * 1.2, t: 2.2 + Math.random() * 1.8, c: ['#f472b6', '#facc15', '#4ade80', '#38bdf8', '#a78bfa', '#fb923c', '#fff'][i % 7], r: Math.random() * 360, w: 6 + Math.random() * 6 }));
 	const tomatoes = Array.from({ length: 9 }, (_, i) => ({ from: i % 2 ? 110 : -10, x: 38 + Math.random() * 24, y: 34 + Math.random() * 32, d: 0.4 + i * 0.26, r: (Math.random() - 0.5) * 720 }));
@@ -360,7 +487,11 @@
 		lyricPick = 0;
 		paused = false;
 		needsTap = false;
-		micErr = (await mic.start()) ?? '';
+		// Your role, from the menu (the microphone only for singing).
+		rolePicked = false;
+		pendingReady = 0;
+		keyPops = [];
+		await pickRole(save.role ?? 'sing');
 		offset = save.offsets[keyOf(item)] ?? item.offset ?? 0;
 		// The chart: the song's own, one you've added, or lyrics found online.
 		const own = item.chart ?? save.charts[keyOf(item)];
@@ -539,8 +670,10 @@
 		// Skipped: graded on the part you sang (and not counted as a best).
 		const score = skipped ? (live.sofar ?? 0) : scorer.final();
 		const k = keyOf(song);
-		const best = !skipped && save.scoring && (chart.lines.length > 0 || chart.notes.length > 0) && score > (save.best[k] ?? 0);
-		if (best) save.best[k] = score;
+		// (Bests on the keys are kept apart from singing ones.)
+		const bk = myRole == 'keys' ? `keys:${k}` : k;
+		const best = !skipped && save.scoring && (chart.lines.length > 0 || chart.notes.length > 0) && score > (save.best[bk] ?? 0);
+		if (best) save.best[bk] = score;
 		// Played: off the front of the queue.
 		if (save.queue[0] && keyOf(save.queue[0]) == k) save.queue = save.queue.slice(1);
 		persist();
@@ -552,7 +685,7 @@
 		const words = chart.lines.length > 0 || chart.notes.length > 0;
 		const scored = save.scoring && words;
 		const mood: Mood = !words ? 'great' : !save.scoring ? 'ok' : score >= 76 ? 'great' : score < 56 ? 'bad' : 'ok';
-		result = { score, best: best && words, song, theirs: partner?.done ?? undefined, lost: lostCrowd, scored, skipped, mood };
+		result = { score, bk, keys: myRole == 'keys', best: best && words, song, theirs: partner?.done ?? undefined, lost: lostCrowd, scored, skipped, mood };
 		// The crowd's verdict: cheers and applause, polite applause, or boos (and tomatoes).
 		if (mood == 'great') {
 			gameAudio.play('karaoke', 'cheer');
@@ -563,7 +696,7 @@
 		} else gameAudio.play('karaoke', 'applause');
 		if (best) setTimeout(() => gameAudio.play('karaoke', 'best'), 500);
 		stopMedia();
-		mic.stop();
+		micOff();
 		screen = 'results';
 	}
 	// ── Volume ──
@@ -600,7 +733,7 @@
 	}
 	function splitNow() {
 		const players = roomView?.players.filter(Boolean).length ?? 0;
-		if (!room || !partsOn || players < 2 || !baseLines.length) {
+		if (!room || !partsOn || players < 2 || !baseLines.length || myRole == 'keys' || theirRole == 'keys') {
 			parts = null;
 			return;
 		}
@@ -617,7 +750,7 @@
 		return { lines, notes };
 	}
 	function makeScorer() {
-		return new Scorer(myChart(), TOLERANCE);
+		return myRole == 'keys' ? new KeysScorer(chart) : new Scorer(myChart(), TOLERANCE);
 	}
 	/** Hand a role to a player (a seat, or -1: everyone), for everyone in the room. (No key: just split again.) */
 	function setRole(key: string, seat: number, remote = false) {
@@ -772,12 +905,12 @@
 	}
 	function leaveSong() {
 		stopMedia();
-		mic.stop();
-		screen = room ? 'room' : 'menu';
+		micOff();
+		screen = 'menu';
 	}
 	function nextSong() {
 		const n = save.queue[0];
-		if (!n) return (screen = room ? 'room' : 'menu');
+		if (!n) return (screen = 'menu');
 		playFor(n);
 	}
 	/**
@@ -811,7 +944,7 @@
 				beatIdx = i;
 			}
 			voiceLvl = Math.round(Math.min(1, voiceLvl * 0.8 + Math.min(1, heard.level * 9) * 0.2) * 100) / 100;
-			if (save.scoring && live.hit && now - lastSpark > 70) {
+			if (save.scoring && live.hit && myRole == 'sing' && now - lastSpark > 70) {
 				lastSpark = now;
 				sparks.push({ at: now, vx: -40 - Math.random() * 60, vy: (Math.random() - 0.5) * 80, golden: !!live.note?.golden });
 			}
@@ -823,7 +956,8 @@
 			lastLive = now;
 			send({ k: 'live', h: Math.round(health), score: live.sofar ?? 0, t: Math.round(t * 100) / 100, m: heard.midi ? Math.round(heard.midi * 10) / 10 : 0 });
 		}
-		draw(t);
+		if (myRole == 'keys') drawKeys(t);
+		else draw(t);
 	}
 	// Pop-ups: a word when a note (or line) is sung well, and sparkles while you're on pitch.
 	let pops: { at: number; text: string; color: string; midi: number | null }[] = [];
@@ -840,6 +974,17 @@
 	const onsets = $derived((chart.notes.length ? chart.notes.map((n) => n.start) : chart.lines.flatMap((l) => l.parts.map((p) => p.t))).sort((a, b) => a - b));
 	let lostCrowd = $state(false);
 	function popFor(v: Verdict, now: number) {
+		// The keys: a verdict per note, over its lane.
+		if (v.lane != null) {
+			const [text, color] = v.frac >= 1 ? [v.golden ? 'GOLDEN!' : 'Perfect!', v.golden ? '#fde047' : '#4ade80'] : v.frac >= 0.7 ? ['Great!', '#86efac'] : v.frac > 0 ? ['Good', '#a5b4fc'] : ['Miss', '#f87171'];
+			keyPops.push({ at: now, lane: v.lane, text, color });
+			if (!save.scoring) return;
+			const change = v.frac >= 1 ? (v.golden ? 5 : 3) : v.frac >= 0.7 ? 2 : v.frac > 0 ? 1 : -5;
+			health = Math.max(0, Math.min(100, health + change));
+			healthFx = { kind: change >= 0 ? 'up' : 'down', at: now };
+			if (health <= 0) lostCrowd = true;
+			return;
+		}
 		if (!save.scoring) return;
 		// Lines (lyrics only) are fewer and longer than notes, so each counts for more.
 		const k = v.midi == null ? 2 : 1;
@@ -901,6 +1046,33 @@
 		// Your voice is drawn in the octave nearest the song (so any voice can follow the guide).
 		const fold = (m: number, target: number) => m + 12 * Math.round((target - m) / 12);
 		const ref = live.note?.midi ?? notes.find((n) => n.start > t)?.midi ?? mid;
+		// With lyrics only, there's no melody to show (YouTube's sound can't be read), so a key guide:
+		// once the key you're singing in is known, its notes are faint lanes (its first note a little
+		// brighter), and the one you're on glows green while you hold it steady.
+		if (!chart.notes.length && scorer instanceof Scorer) {
+			const key = scorer.key();
+			const band = (h - 28) / (hi - lo);
+			g.font = '700 11px system-ui, sans-serif';
+			if (key) {
+				const onNote = heard.midi && live.hit ? Math.round(fold(heard.midi, ref)) : null;
+				for (let m = Math.ceil(lo); m <= hi; m++) {
+					const pc = ((m % 12) + 12) % 12;
+					if (!key.notes.includes(pc)) continue;
+					const on = onNote == m;
+					g.fillStyle = on ? 'rgba(74,222,128,0.38)' : pc == key.tonic ? 'rgba(232,121,249,0.18)' : 'rgba(165,180,252,0.09)';
+					g.beginPath();
+					g.roundRect(0, y(m) - band / 2 + 1, w, Math.max(2, band - 2), 3);
+					g.fill();
+					g.fillStyle = on ? '#bbf7d0' : pc == key.tonic ? 'rgba(245,208,254,0.85)' : 'rgba(255,255,255,0.45)';
+					g.fillText(NOTE_NAMES[pc], w - 24, y(m) + 4);
+				}
+				g.fillStyle = 'rgba(255,255,255,0.65)';
+				g.fillText(`Your key: ${NOTE_NAMES[key.tonic]} major / ${NOTE_NAMES[(key.tonic + 9) % 12]} minor`, 8, 15);
+			} else {
+				g.fillStyle = 'rgba(255,255,255,0.55)';
+				g.fillText('Sing a few lines: the notes of your key will show here', 8, 15);
+			}
+		}
 		// With lyrics only: the words along the bottom, where they're sung (a timing guide; a note
 		// chart adds the pitches).
 		if (!chart.notes.length) {
@@ -1056,19 +1228,27 @@
 		room = null;
 		roomView = null;
 		partner = null;
+		endLink();
 		if (screen == 'sing') leaveSong();
 		screen = 'menu';
 	}
 	function onRoom(e: RoomEvent) {
 		if (e.t == 'room') {
 			const was = roomView?.phase;
+			const wereBoth = friendHere();
 			roomView = e as unknown as NonNullable<typeof roomView>;
 			if (roomView.phase == 'playing' && was != 'playing') {
 				partner = { score: 0, h: 100, done: null };
 				shareQueue();
 			}
+			// Both here (again): the host connects the voices.
+			if (isHost && friendHere() && !wereBoth) startLink();
+			else if (!friendHere() && wereBoth) endLink();
 		} else if (e.t == 'relay') onRelay(e.msg as Record<string, unknown>);
-		else if (e.t == 'left') roomErr = `${theirName} left the room.`;
+		else if (e.t == 'left') {
+			roomErr = `${theirName} left the room.`;
+			endLink();
+		}
 		else if (e.t == 'closed') {
 			room = null;
 			roomView = null;
@@ -1109,6 +1289,7 @@
 			partSeed = Number(m.seed) || 0;
 			partsOn = m.parts !== false;
 			assign = {};
+			theirRole = 'sing';
 			partner = { score: 0, h: 100, done: null };
 			void sing(m.item as Item);
 		} else if (k == 'roles' && song && m.run == keyOf(song) && m.assign && typeof m.assign == 'object') {
@@ -1122,6 +1303,24 @@
 			// The other singer lined the lyrics up: the same here.
 			setOffset(Number(m.o), true);
 			note = `${theirName} lined the lyrics up (${offset > 0 ? '+' : ''}${offset.toFixed(1)}s)`;
+		} else if (k == 'role' && song && m.run == keyOf(song)) {
+			// The other player picked singing or the keys.
+			theirRole = m.role == 'keys' ? 'keys' : 'sing';
+			splitNow();
+			scorer?.setChart(myChart());
+		} else if (k == 'rtc') {
+			// Connecting the voices: the host's offer starts the joiner's side.
+			if (!isHost && (m.sdp as { type?: string } | undefined)?.type == 'offer') {
+				voice?.close();
+				voice = new VoiceLink((x) => send(x), false);
+				voice.setVolume(voiceVol / 100);
+				voice.hear(voiceOn);
+				if (voiceOn && mic.on) void voice.send(mic.sendTrack);
+				send({ k: 'voice', on: voiceOn });
+			}
+			voice?.handle(m);
+		} else if (k == 'voice') {
+			theirVoice = !!m.on;
 		} else if (k == 'live' && partner) {
 			partner.score = Number(m.score) || 0;
 			partner.h = Math.max(0, Math.min(100, Number(m.h ?? 100)));
@@ -1140,6 +1339,8 @@
 			const playing = k == 'play' || (k == 'sync' && !!m.playing);
 			const stopped = k == 'pause' || (k == 'sync' && !m.playing);
 			hostSync = { t: ht, at: performance.now(), playing: !stopped };
+			// (Still picking a role: the song waits here; it catches up once picked.)
+			if (!rolePicked) return;
 			if (!waitingHost && !needsTap) paused = stopped;
 			// The host has started: off we go (and if the browser won't play it, a tap will).
 			if (waitingHost && playing) {
@@ -1168,6 +1369,7 @@
 	function startInRoom(item: Item) {
 		partSeed = Math.floor(Math.random() * 2 ** 31);
 		assign = {};
+		theirRole = 'sing';
 		partsOn = save.partsOn;
 		send({ k: 'start', item, seed: partSeed, parts: partsOn });
 		void sing(item);
@@ -1179,6 +1381,20 @@
 		if (songsOpen) {
 			if (e.code == 'Escape') songsOpen = false;
 			return;
+		}
+		// (Picking a role: the song hasn't started.)
+		if (!rolePicked) return;
+		// The keys: D F J K are the lanes (before the other shortcuts: J is a lane here).
+		if (myRole == 'keys') {
+			const lane = LANE_KEYS.indexOf(e.code);
+			if (lane >= 0) {
+				e.preventDefault();
+				if (!e.repeat) {
+					padDown[lane] = true;
+					pressLane(lane);
+				}
+				return;
+			}
 		}
 		if (e.code == 'Space') {
 			e.preventDefault();
@@ -1211,12 +1427,19 @@
 	onMount(() => {
 		raf = requestAnimationFrame(frame);
 		addEventListener('keydown', onKey);
+		addEventListener('keyup', onKeyUp);
 	});
+	function onKeyUp(e: KeyboardEvent) {
+		const lane = LANE_KEYS.indexOf(e.code);
+		if (lane >= 0) padDown[lane] = false;
+	}
 	onDestroy(() => {
 		cancelAnimationFrame(raf);
 		removeEventListener('keydown', onKey);
+		removeEventListener('keyup', onKeyUp);
 		stopMedia();
 		mic.stop();
+		endLink();
 		room?.leave();
 	});
 	const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -1336,6 +1559,25 @@
 				</section>
 				<section class="queue">
 					<h2>Up next {#if room}<small>· room {roomView?.code}</small>{/if}</h2>
+					<div class="myrole" role="radiogroup" aria-label="Your role">
+						<span>You'll</span>
+						<button role="radio" aria-checked={save.role != 'keys'} class:on={save.role != 'keys'} onclick={() => setRolePref('sing')}>🎤 Sing</button>
+						<button role="radio" aria-checked={save.role == 'keys'} class:on={save.role == 'keys'} onclick={() => setRolePref('keys')}>🎹 Play the keys</button>
+					</div>
+					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : 'Into your microphone, scored on pitch and timing.'}</p>
+					{#if save.role != 'keys'}
+						<label class="toggle">
+							<input type="checkbox" bind:checked={hearMe} />
+							<span>Hear yourself: your voice through your headphones, with some echo{hearMe ? ' (use headphones, or speakers will squeal)' : ''}</span>
+						</label>
+					{/if}
+					{#if room}
+						<label class="toggle">
+							<input type="checkbox" checked={voiceOn} onchange={toggleVoice} />
+							<span>Voice: hear each other{voiceOn ? `, live (${theirVoice ? `${theirName}'s is on` : `${theirName}'s is off`})` : ''}</span>
+						</label>
+					{/if}
+					{#if hearMe || voiceOn}<p class="hint small rolehint">Live only: your voice is never recorded or saved. You can turn these off during the song.</p>{/if}
 					{@render upNext(false)}
 					<label class="toggle">
 						<input type="checkbox" bind:checked={save.scoring} onchange={persist} />
@@ -1418,15 +1660,41 @@
 					</div>
 					{#if partner}
 						<div class="health them" class:danger={partner.h < 25}>
-							<span class="hlabel">{theirName.slice(0, 10)}</span>
+							<span class="hlabel">{theirRole == 'keys' ? '🎹 ' : ''}{theirVoice && voiceOn ? '🗣️ ' : ''}{theirName.slice(0, 10)}</span>
 							<span class="htrack"><i style="width:{partner.h}%"></i></span>
 						</div>
 					{/if}
 				{/if}
-				<div class="you">{heard.midi ? noteName(heard.midi) : '—'}{#if live.note}<small> → {noteName(live.note.midi)}{pitchGap(heard.midi, live.note.midi) <= 0.5 && heard.midi ? ' ✓' : ''}</small>{/if}</div>
-				{#if save.scoring && live.combo >= 3}{#key live.combo}<div class="combo"><span>🔥</span> {live.combo}s on it!</div>{/key}{/if}
+				{#if myRole == 'sing'}<div class="you">{heard.midi ? noteName(heard.midi) : '—'}{#if live.note}<small> → {noteName(live.note.midi)}{pitchGap(heard.midi, live.note.midi) <= 0.5 && heard.midi ? ' ✓' : ''}</small>{/if}</div>{/if}
+				{#if save.scoring && live.combo >= 3}{#key live.combo}<div class="combo"><span>🔥</span> {myRole == 'keys' ? `${live.combo} in a row!` : `${live.combo}s on it!`}</div>{/key}{/if}
 			</div>
-			<canvas class="lane" bind:this={lane}></canvas>
+			{#if myRole == 'sing'}
+				<canvas class="lane" bind:this={lane}></canvas>
+			{:else if rolePicked}
+				<!-- The keys: notes fall to the line; tap their lane (D F J K, or the pads). -->
+				<div class="keyway">
+					<canvas bind:this={keyway} aria-label="The keys: four lanes"></canvas>
+					<div class="pads">
+						{#each LANE_LABELS as k, i (i)}
+							<button
+								class="pad"
+								class:down={padDown[i]}
+								style="--c:{LANE_COLORS[i]}"
+								aria-label="Lane {i + 1} ({k})"
+								onpointerdown={(e) => {
+									e.preventDefault();
+									padDown[i] = true;
+									pressLane(i);
+								}}
+								onpointerup={() => (padDown[i] = false)}
+								onpointerleave={() => (padDown[i] = false)}
+								onpointercancel={() => (padDown[i] = false)}
+								oncontextmenu={(e) => e.preventDefault()}>{k}</button
+							>
+						{/each}
+					</div>
+				</div>
+			{/if}
 			<div class="lyrics" style={lyricPal ? `--ink:${lyricPal.ink}; --sung:${lyricPal.sung}; --ol:${lyricPal.ol}; --glow:${lyricPal.glow}` : undefined}>
 				{#if lyric.now}
 					{@const w = whoOf(lyric.now)}
@@ -1463,10 +1731,23 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div class="opts-panel" class:open={optsOpen} onclick={closeAfter}>
 				<div class="sheet-head"><b>Options</b><button class="small ghost" aria-label="Close the options" onclick={() => (optsOpen = false)}>✕</button></div>
-				<label class="vol" title="Song volume ({save.volume}%)">
-					<button class="small ghost keep" aria-label={save.volume ? 'Mute the song' : 'Unmute the song'} onclick={() => setVolume(save.volume ? 0 : lastVolume || 80)}>{save.volume == 0 ? '🔇' : save.volume < 40 ? '🔈' : save.volume < 75 ? '🔉' : '🔊'}</button>
+				<div class="vol" title="Song volume ({save.volume}%)">
+					<button class="small ghost keep" aria-label={save.volume ? 'Mute the song' : 'Unmute the song'} onclick={() => setVolume(save.volume ? 0 : lastVolume || 80)}>{save.volume == 0 ? '🔇' : save.volume < 40 ? '🔈' : save.volume < 75 ? '🔉' : '🔊'}<span class="vlabel">Song</span></button>
 					<input type="range" min="0" max="100" step="1" value={save.volume} oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))} aria-label="Song volume" />
-				</label>
+				</div>
+				{#if myRole == 'sing'}
+					<div class="vol" title="Hear yourself, and the echo on your voice ({echo}%)">
+						<button class="small ghost keep" class:lit={hearMe} aria-pressed={hearMe} aria-label={hearMe ? 'Stop hearing yourself' : 'Hear yourself'} onclick={toggleHearMe}>🎧<span class="vlabel">{hearMe ? 'Hearing you' : 'Hear me'}</span></button>
+						<input type="range" min="0" max="100" step="1" value={echo} oninput={(e) => setEcho(Number((e.currentTarget as HTMLInputElement).value))} aria-label="Echo on your voice" />
+						<span class="vnum" aria-hidden="true">Echo {echo}%</span>
+					</div>
+				{/if}
+				{#if room}
+					<div class="vol" title="Voice: hear each other ({theirName}'s voice {voiceVol}%)">
+						<button class="small ghost keep" class:lit={voiceOn} aria-pressed={voiceOn} aria-label={voiceOn ? 'Turn voice off' : 'Turn voice on'} onclick={toggleVoice}>{voiceOn ? '🗣️' : '🔕'}<span class="vlabel">{voiceOn ? 'Voice on' : 'Voice off'}</span></button>
+						<input type="range" min="0" max="100" step="1" value={voiceVol} disabled={!voiceOn} oninput={(e) => setVoiceVol(Number((e.currentTarget as HTMLInputElement).value))} aria-label="{theirName}'s voice volume" />
+					</div>
+				{/if}
 				{#if song.id}
 					<span class="sync">
 						Lyrics {offset > 0 ? '+' : ''}{offset.toFixed(1)}s
@@ -1569,15 +1850,15 @@
 				{@const g = gradeOf(result.score)}
 				<p class="big-grade" style="--g:{gradeColor(g)}">{g}</p>
 				{#if result.skipped}<p class="hint">Skipped: graded on the part you sang.</p>{/if}
-				<p class="rank">{[result.best ? 'New best!' : save.best[keyOf(result.song)] ? `Best: ${gradeOf(save.best[keyOf(result.song)])}` : '', result.lost ? 'you lost the crowd for a bit' : ''].filter(Boolean).join(' · ')}</p>
+				<p class="rank">{[result.best ? 'New best!' : save.best[result.bk] ? `Best: ${gradeOf(save.best[result.bk])}` : '', result.lost ? 'you lost the crowd for a bit' : ''].filter(Boolean).join(' · ')}</p>
 			{:else}
-				<p class="rank">Nice singing! 🎤</p>
+				<p class="rank">{result.keys ? 'Nice playing! 🎹' : 'Nice singing! 🎤'}</p>
 			{/if}
 			<p><button class="small ghost" onclick={() => result && toggleFav(result.song)}>{result && isFav(result.song) ? '★ In favourites' : '☆ Add to favourites'}</button></p>
 			{#if result.theirs != null}<p class="hint">{theirName}: {gradeOf(result.theirs)}</p>{:else if partner}<p class="hint">Waiting for {theirName}'s score…</p>{/if}
 			<div class="row">
 				{#if save.queue.length}<button onclick={nextSong}>Next: {save.queue[0].title}</button>{/if}
-				<button class="ghost" onclick={() => (screen = room ? 'room' : 'menu')}>{room ? 'Back to the room' : 'Song list'}</button>
+				<button class="ghost" onclick={() => (screen = 'menu')}>Pick songs</button>
 			</div>
 		</div>
 	{:else if screen == 'room'}
@@ -1631,6 +1912,7 @@
 				<li><b>Lenient on purpose</b>: within 1½ semitones counts, in any octave, and a little early or late is fine (videos and lyrics are rarely perfectly in step).</li>
 				<li><b>How it's judged</b>: With a note chart: every moment you're on the right note at the right time (golden notes double). With lyrics only: singing while lines are up, and holding steady notes in key.</li>
 				<li><b>Lyrics</b> are found and timed automatically. Music videos often have intros: nudge the lyrics with − / + (or ← / →), or press <kbd>T</kbd> when the first line starts.</li>
+				<li><b>Rather not sing?</b> Under <b>Up next</b>, pick <b>Play the keys</b>: the song's notes fall down four lanes (low notes on the left, high on the right). Tap a lane as its note reaches the line: <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd> on a keyboard, or the four pads on a phone. No microphone needed.</li>
 				<li><b>Keys</b>: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> nudge lyrics, <kbd>T</kbd> tap to sync, <kbd>J</kbd> jump past the intro, <kbd>R</kbd> restart, <kbd>N</kbd> skip.</li>
 			</ul>
 		</div>
@@ -2504,6 +2786,92 @@
 		65% { opacity: 0.8; transform: scale(1) translateY(6px); }
 		100% { opacity: 0; transform: scale(1) translateY(14px); }
 	}
+	/* The keys: the highway down the middle, the pads under it. */
+	/* Your role, under Up next. */
+	.myrole {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.myrole span {
+		font-weight: 700;
+		color: var(--muted);
+		margin-right: 2px;
+	}
+	.myrole button {
+		background: rgba(255, 255, 255, 0.06);
+		color: var(--ink);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+	}
+	.myrole button.on {
+		background: linear-gradient(135deg, #e879f9, #8b5cf6);
+		border-color: transparent;
+	}
+	.rolehint {
+		margin: -4px 0 0;
+	}
+	.keyway {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		top: 110px;
+		bottom: 172px;
+		width: min(440px, calc(100% - 24px));
+		display: flex;
+		flex-direction: column;
+		border-radius: 14px;
+		overflow: hidden;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+		backdrop-filter: blur(3px);
+	}
+	.keyway canvas {
+		flex: 1;
+		min-height: 0;
+		width: 100%;
+		display: block;
+	}
+	.pads {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 5px;
+		padding: 5px;
+		background: rgba(10, 8, 30, 0.9);
+	}
+	.keyway .pad {
+		height: 54px;
+		padding: 0;
+		border-radius: 10px;
+		border: 2px solid var(--c);
+		background: color-mix(in srgb, var(--c) 16%, transparent);
+		color: #fff;
+		font: 900 1.05rem system-ui, sans-serif;
+		touch-action: none;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-tap-highlight-color: transparent;
+		box-shadow: none;
+		transition: background 0.06s, transform 0.06s;
+	}
+	.keyway .pad:not(:disabled):hover {
+		transform: none;
+		filter: none;
+		box-shadow: none;
+	}
+	.keyway .pad.down,
+	.keyway .pad:not(:disabled):active {
+		background: var(--c);
+		color: #111;
+		transform: scale(0.97);
+		box-shadow: 0 0 18px var(--c);
+	}
+	@media (pointer: coarse) {
+		.keyway .pad {
+			height: 78px;
+			font-size: 0.9rem;
+		}
+	}
 	.lane {
 		position: absolute;
 		left: 12px;
@@ -2561,8 +2929,42 @@
 		gap: 4px;
 	}
 	.vol input {
-		width: 90px;
+		width: 0;
+		min-width: 0;
+		margin: 0 0 0 -4px;
+		padding: 0;
+		border: 0;
+		opacity: 0;
 		accent-color: #e879f9;
+		transition:
+			width 0.2s ease,
+			opacity 0.2s ease;
+	}
+	.vol:hover input,
+	.vol:focus-within input {
+		width: 96px;
+		margin-left: 0;
+		opacity: 1;
+	}
+	.vol input:disabled {
+		opacity: 0.35;
+	}
+	/* Touch screens with no hover (tablets): the sliders stay open. */
+	@media (hover: none) {
+		.vol input {
+			width: 110px;
+			height: 28px;
+			margin-left: 0;
+			opacity: 1;
+		}
+	}
+	.vlabel,
+	.vnum {
+		display: none;
+	}
+	.vol button.lit {
+		background: rgba(232, 121, 249, 0.28);
+		border-color: #e879f9;
 	}
 	.pick select {
 		max-width: 220px;
@@ -3021,9 +3423,37 @@
 			width: 100%;
 			max-width: none;
 		}
+		/* Phones: in the sheet, every slider open, with big thumbs to drag, and names on the buttons. */
+		.opts-panel .vol {
+			gap: 10px;
+			flex-wrap: wrap;
+		}
 		.opts-panel .vol input {
 			flex: 1;
 			width: auto;
+			margin: 0;
+			min-width: 140px;
+			height: 32px;
+			opacity: 1;
+		}
+		.opts-panel .vol input:disabled {
+			opacity: 0.35;
+		}
+		.opts-panel .vol button {
+			min-width: 132px;
+			min-height: 40px;
+			text-align: left;
+		}
+		.opts-panel .vlabel {
+			display: inline;
+			margin-left: 6px;
+		}
+		.opts-panel .vnum {
+			display: block;
+			flex-basis: 100%;
+			margin-top: -6px;
+			font-size: 0.75rem;
+			color: var(--muted);
 		}
 		.opts-panel .sync {
 			display: flex;
@@ -3097,6 +3527,11 @@
 			width: calc(100% - 12px);
 			top: 92px;
 			height: 30%;
+		}
+		.keyway {
+			top: 92px;
+			bottom: 150px;
+			width: calc(100% - 12px);
 		}
 		.you {
 			margin-left: 0;

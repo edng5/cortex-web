@@ -66,6 +66,17 @@ export class Mic {
 	private analyser: AnalyserNode | null = null;
 	private buf = new Float32Array(2048);
 	private smooth = 0;
+	/**
+	 * Hear yourself: the microphone goes straight out to the speakers / headphones as you sing (with
+	 * some room echo, like a karaoke bar). Live only: nothing is recorded or kept. (Set before
+	 * start() it also opens the microphone without echo cancellation, which would fight it.)
+	 */
+	monitor = false;
+	/** How much room echo on your voice, 0..1 (what you hear, and what a friend hears). */
+	echo = 0.25;
+	private monitorGain: GainNode | null = null;
+	private wet: GainNode | null = null;
+	private out: MediaStreamAudioDestinationNode | null = null;
 
 	get on() {
 		return !!this.stream;
@@ -75,8 +86,9 @@ export class Mic {
 	async start(): Promise<string | null> {
 		if (this.stream) return null;
 		try {
-			// Echo cancellation helps when the song plays from speakers, but headphones are best.
-			this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+			// Echo cancellation helps when the song plays from speakers, but headphones are best. (Not
+			// while hearing yourself: it would try to cancel your own voice coming back out.)
+			this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: !this.monitor, noiseSuppression: true, autoGainControl: true } });
 		} catch {
 			return 'No microphone: allow it in your browser to be scored.';
 		}
@@ -86,6 +98,30 @@ export class Mic {
 		this.analyser.fftSize = 2048;
 		src.connect(this.analyser);
 		this.buf = new Float32Array(this.analyser.fftSize);
+		// Your voice: as it is, plus the room's echo (a short burst of fading noise as the room),
+		// out to your ears (when hearing yourself) and to a friend (in a room, with voice on).
+		const ctx = this.ctx;
+		const voice = ctx.createGain();
+		src.connect(voice);
+		const len = Math.floor(ctx.sampleRate * 1.4);
+		const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+		for (let ch = 0; ch < 2; ch++) {
+			const d = ir.getChannelData(ch);
+			for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+		}
+		const room = ctx.createConvolver();
+		room.buffer = ir;
+		this.wet = ctx.createGain();
+		this.wet.gain.value = this.echo;
+		const bus = ctx.createGain();
+		voice.connect(bus);
+		src.connect(room).connect(this.wet).connect(bus);
+		this.monitorGain = ctx.createGain();
+		this.monitorGain.gain.value = this.monitor ? 0.9 : 0;
+		bus.connect(this.monitorGain).connect(ctx.destination);
+		this.out = ctx.createMediaStreamDestination();
+		bus.connect(this.out);
+		void ctx.resume();
 		return null;
 	}
 
@@ -95,6 +131,24 @@ export class Mic {
 		void this.ctx?.close();
 		this.ctx = null;
 		this.analyser = null;
+		this.monitorGain = this.wet = null;
+		this.out = null;
+	}
+	/** Hear yourself, or not (mid-song too). */
+	setMonitor(on: boolean) {
+		this.monitor = on;
+		if (this.monitorGain && this.ctx) this.monitorGain.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.03);
+		// (Echo cancellation would try to cancel your own voice coming back out: off while hearing yourself.)
+		void this.stream?.getAudioTracks()[0]?.applyConstraints({ echoCancellation: !on }).catch(() => {});
+	}
+	/** The room echo on your voice, 0..1. */
+	setEcho(v: number) {
+		this.echo = Math.max(0, Math.min(1, v));
+		if (this.wet && this.ctx) this.wet.gain.setTargetAtTime(this.echo, this.ctx.currentTime, 0.03);
+	}
+	/** Your voice (with its echo) to send to a friend, while the microphone's on. */
+	get sendTrack(): MediaStreamTrack | null {
+		return this.out?.stream.getAudioTracks()[0] ?? null;
 	}
 
 	/** What the microphone hears right now. */
