@@ -336,6 +336,7 @@
 		waitingHost = false;
 		optsOpen = false;
 		rolesOpen = false;
+		songsOpen = false;
 		lyricPal = null;
 		looks = [];
 		if (!room) partsOn = false;
@@ -731,6 +732,10 @@
 
 	/** Phones: the options sheet. */
 	let optsOpen = $state(false);
+	/** The drawer for queueing songs while one plays. */
+	let songsOpen = $state(false);
+	/** The song on now (it stays at the front of the queue until it ends). */
+	const nowSinging = (q: Item, i: number, inSong: boolean) => inSong && i == 0 && !!song && keyOf(q) == keyOf(song);
 	/** Picking an option closes the sheet (the volume and lyric nudges stay open, to keep adjusting). */
 	function closeAfter(e: MouseEvent) {
 		const b = (e.target as HTMLElement).closest('button');
@@ -1170,6 +1175,11 @@
 
 	function onKey(e: KeyboardEvent) {
 		if (screen != 'sing' || (e.target as HTMLElement)?.tagName == 'INPUT') return;
+		// (Choosing songs: the song's keys are off; Escape goes back to it.)
+		if (songsOpen) {
+			if (e.code == 'Escape') songsOpen = false;
+			return;
+		}
 		if (e.code == 'Space') {
 			e.preventDefault();
 			if (paused) resumeSong();
@@ -1216,28 +1226,8 @@
 	<button class="small ghost star" class:on={isFav(s)} aria-label={isFav(s) ? `Remove ${s.title} from favourites` : `Add ${s.title} to favourites`} aria-pressed={isFav(s)} onclick={() => toggleFav(s)}>{isFav(s) ? '★' : '☆'}</button>
 {/snippet}
 
-<div class="kk">
-	{#if note}<div class="toast">{note}</div>{/if}
-	{#if screen == 'menu'}
-		<div class="menu-fx" aria-hidden="true">
-			<div class="lights"><i></i><i></i></div>
-			{#each ['♪', '♫', '♩', '♬', '♪', '♫', '♬', '♩', '♪', '♫'] as n, i (i)}<span class="float" style="left:{6 + i * 9.5}%; animation-delay:{(i * 1.37) % 9}s; animation-duration:{9 + (i % 4) * 2}s">{n}</span>{/each}
-			<div class="eq floor">{#each Array(48) as _, i (i)}<i style="animation-delay:{((i * 7) % 11) * 0.09}s"></i>{/each}</div>
-		</div>
-		<div class="menu">
-			<header class="top">
-				<h1 class="logo" aria-label="Keyboard Karaoke">
-					<span class="logo-mic" aria-hidden="true"><i></i></span>
-					<span class="logo-words" aria-hidden="true">
-						<span class="logo-kb">KEYBOARD</span>
-						<span class="logo-ko">Karaoke</span>
-						<span class="logo-keys"></span>
-					</span>
-				</h1>
-				<p class="sub">Queue songs from YouTube and sing. Your pitch and timing are scored live.</p>
-			</header>
-			<div class="cols">
-				<section class="find">
+<!-- Finding songs (the song book, YouTube, a link): on the menu, and in the drawer while a song plays. -->
+{#snippet finder(inSong: boolean)}
 					<div class="tabs" role="tablist">
 						<button role="tab" aria-selected={tab == 'book'} class:on={tab == 'book'} onclick={() => (tab = 'book')}>Song book</button>
 						<button role="tab" aria-selected={tab == 'search'} class:on={tab == 'search'} onclick={() => (tab = 'search')}>Search YouTube</button>
@@ -1251,7 +1241,7 @@
 									<span class="t"><b>{s.title}</b><small>{s.artist}{s.chart ? ' · pitch guide' : ''}{save.best[keyOf(s)] ? ` · best ${gradeOf(save.best[keyOf(s)])}` : ''}</small></span>
 									{@render star(s)}
 									<button class="small ghost" onclick={() => enqueue(s)}>Queue</button>
-									<button class="small" onclick={() => (playFor(s))}>Sing</button>
+									{#if !inSong}<button class="small" onclick={() => (playFor(s))}>Sing</button>{/if}
 								</li>
 							{/each}
 						</ul>
@@ -1267,7 +1257,7 @@
 										<span class="t"><b>{s.title}</b><small>{s.artist || s.channel || ''}{save.best[keyOf(s)] ? ` · best ${gradeOf(save.best[keyOf(s)])}` : ''}</small></span>
 										{@render star(s)}
 										<button class="small ghost" onclick={() => enqueue(s)}>Queue</button>
-										<button class="small" onclick={() => (playFor(s))}>Sing</button>
+										{#if !inSong}<button class="small" onclick={() => (playFor(s))}>Sing</button>{/if}
 									</li>
 								{/each}
 							</ul>
@@ -1298,26 +1288,55 @@
 							{/each}
 						</ul>
 					{/if}
-				</section>
-				<section class="queue">
-					<h2>Up next {#if room}<small>· room {roomView?.code}</small>{/if}</h2>
+{/snippet}
+<!-- The queue. -->
+{#snippet upNext(inSong: boolean)}
 					{#if !save.queue.length}
 						<p class="hint">Nothing queued yet.</p>
 					{:else}
 						<ol class="list">
 							{#each save.queue as q, i (i + q.id + q.title)}
 								<li>
-									<span class="t"><b>{q.title}</b><small>{q.artist || q.channel || ''}{q.by ? ` · ${q.by}` : ''}</small></span>
+									<span class="t"><b>{q.title}</b><small>{nowSinging(q, i, inSong) ? 'Now singing · ' : ''}{q.artist || q.channel || ''}{q.by ? ` · ${q.by}` : ''}</small></span>
 									{@render star(q)}
-									{#if !room || isHost}
+									{#if (!room || isHost) && !nowSinging(q, i, inSong)}
 										<button class="small ghost" aria-label="Move up" disabled={i == 0} onclick={() => moveUp(i)}>↑</button>
 										<button class="small ghost" aria-label="Remove" onclick={() => unqueue(i)}>✕</button>
 									{/if}
 								</li>
 							{/each}
 						</ol>
-						<button class="go" onclick={nextSong}>Sing the next song ▶</button>
+						{#if !inSong}<button class="go" onclick={nextSong}>Sing the next song ▶</button>{/if}
 					{/if}
+{/snippet}
+
+<div class="kk">
+	{#if note}<div class="toast">{note}</div>{/if}
+	{#if screen == 'menu'}
+		<div class="menu-fx" aria-hidden="true">
+			<div class="lights"><i></i><i></i></div>
+			{#each ['♪', '♫', '♩', '♬', '♪', '♫', '♬', '♩', '♪', '♫'] as n, i (i)}<span class="float" style="left:{6 + i * 9.5}%; animation-delay:{(i * 1.37) % 9}s; animation-duration:{9 + (i % 4) * 2}s">{n}</span>{/each}
+			<div class="eq floor">{#each Array(48) as _, i (i)}<i style="animation-delay:{((i * 7) % 11) * 0.09}s"></i>{/each}</div>
+		</div>
+		<div class="menu">
+			<header class="top">
+				<h1 class="logo" aria-label="Keyboard Karaoke">
+					<span class="logo-mic" aria-hidden="true"><i></i></span>
+					<span class="logo-words" aria-hidden="true">
+						<span class="logo-kb">KEYBOARD</span>
+						<span class="logo-ko">Karaoke</span>
+						<span class="logo-keys"></span>
+					</span>
+				</h1>
+				<p class="sub">Queue songs from YouTube and sing. Your pitch and timing are scored live.</p>
+			</header>
+			<div class="cols">
+				<section class="find">
+					{@render finder(false)}
+				</section>
+				<section class="queue">
+					<h2>Up next {#if room}<small>· room {roomView?.code}</small>{/if}</h2>
+					{@render upNext(false)}
 					<label class="toggle">
 						<input type="checkbox" bind:checked={save.scoring} onchange={persist} />
 						<span>Scoring {save.scoring ? 'on: grades, health and pop-ups' : 'off: just sing'}</span>
@@ -1437,6 +1456,7 @@
 			</div>
 			<div class="bar">
 				<button class="small" onclick={() => (paused ? resumeSong() : pauseSong())} title={room ? 'Pauses (or carries on) for everyone' : undefined}>{paused ? '▶ Resume' : '❚❚ Pause'}</button>
+				<button class="small ghost" aria-expanded={songsOpen} onclick={() => (songsOpen = true)} title="Queue more songs (the song keeps playing)">+ Songs</button>
 				<!-- Phones: the rest is in a sheet that pops up, and goes away after picking something. -->
 				<button class="small ghost optbtn" aria-expanded={optsOpen} onclick={() => (optsOpen = !optsOpen)}>☰ Options</button>
 				{#if optsOpen}<button class="shade" aria-label="Close the options" onclick={() => (optsOpen = false)}></button>{/if}
@@ -1481,6 +1501,21 @@
 				<button class="small leave" onclick={leaveSong}>Leave</button>
 				</div>
 			</div>
+			{#if songsOpen}
+				<!-- Queue songs without leaving this one: it plays on behind. -->
+				<button class="drawer-shade" aria-label="Back to the song" onclick={() => (songsOpen = false)}></button>
+				<div class="songs-drawer" role="dialog" aria-label="Add songs">
+					<div class="drawer-head">
+						<b>Add songs</b>
+						<button class="small" onclick={() => (songsOpen = false)}>Back to the song</button>
+					</div>
+					<section class="find">{@render finder(true)}</section>
+					<section class="queue">
+						<h2>Up next {#if room}<small>· {isHost ? 'your queue' : `${theirName}'s queue`}</small>{/if}</h2>
+						{@render upNext(true)}
+					</section>
+				</div>
+			{/if}
 			{#if rolesOpen && parts?.roles.length}
 				<div class="roles" role="dialog" aria-label="Roles">
 					<div class="roles-head"><b>Who sings what</b><button class="small ghost" aria-label="Close the roles" onclick={() => (rolesOpen = false)}>✕</button></div>
@@ -2572,6 +2607,96 @@
 	}
 	@keyframes turn-pulse {
 		50% { transform: scale(1.06); }
+	}
+	/* Queueing songs mid-song: a panel down the right (computers), a sheet from the bottom (phones). */
+	.drawer-shade {
+		position: absolute;
+		inset: 0;
+		z-index: 7;
+		border: 0;
+		border-radius: 0;
+		padding: 0;
+		background: rgba(5, 3, 20, 0.45);
+		box-shadow: none !important;
+		transform: none !important;
+		cursor: default;
+	}
+	.songs-drawer {
+		position: absolute;
+		z-index: 8;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: min(460px, 100%);
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 12px;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		background: linear-gradient(160deg, #1e1240, #0b1026);
+		border-left: 1px solid rgba(255, 255, 255, 0.12);
+		box-shadow: -12px 0 40px rgba(0, 0, 0, 0.5);
+		animation: drawer-in 0.22s ease-out;
+	}
+	@keyframes drawer-in {
+		from { transform: translateX(40px); opacity: 0; }
+	}
+	.drawer-head {
+		position: sticky;
+		top: -12px;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin: -12px -12px 0;
+		padding: 12px;
+		background: #1c1140;
+		font-size: 1.05rem;
+	}
+	.songs-drawer .find,
+	.songs-drawer .queue {
+		flex: none;
+		padding: 10px;
+	}
+	/* (The drawer scrolls as a whole.) */
+	.songs-drawer .find .list,
+	.songs-drawer .queue .list {
+		max-height: none;
+		overflow: visible;
+	}
+	.songs-drawer .list li:hover {
+		transform: none;
+	}
+	@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+		.songs-drawer {
+			top: auto;
+			left: 0;
+			width: auto;
+			max-height: min(88%, 88dvh);
+			border-left: 0;
+			border-top: 1px solid rgba(255, 255, 255, 0.15);
+			border-radius: 18px 18px 0 0;
+			padding-bottom: calc(12px + env(safe-area-inset-bottom));
+			animation-name: sheet-in;
+		}
+		@keyframes sheet-in {
+			from { transform: translateY(60px); opacity: 0; }
+		}
+		.drawer-head {
+			border-radius: 18px 18px 0 0;
+		}
+	}
+	/* Short landscape phones: a full-height side panel still fits best. */
+	@media (pointer: coarse) and (max-height: 520px) and (min-width: 721px) {
+		.songs-drawer {
+			top: 0;
+			left: auto;
+			width: min(460px, 70%);
+			max-height: none;
+			border-radius: 0;
+		}
 	}
 	.roles {
 		position: absolute;
