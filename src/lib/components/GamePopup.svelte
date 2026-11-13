@@ -12,7 +12,7 @@
 <script lang="ts">
 	import ArcadeGame from './ArcadeGame.svelte';
 	import EngineMenu from './EngineMenu.svelte';
-	import { GAMES, gameById } from '$lib/games/registry';
+	import { GAMES, BOARD_ROOM, gameById, rememberBoardGame, type GameId } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
 	import { ambient } from '$lib/ambient.svelte';
 	import { gameAudio } from '$lib/games/audio.svelte';
@@ -31,6 +31,14 @@
 		started = id ? [id] : [];
 	});
 
+	/** Board Room: Chess or Four in a Row (the one open now is the one it opens on next time). */
+	const inBoardRoom = $derived(!!current && BOARD_ROOM.games.includes(current.id));
+	$effect(() => {
+		if (current && inBoardRoom) rememberBoardGame(current.id);
+	});
+	function switchBoard(id: GameId) {
+		if (current?.id != id) session.gameId = id;
+	}
 	function askClose() {
 		if (!current) return close();
 		confirming = true;
@@ -131,6 +139,15 @@
 				{/if}
 			</svg>
 		</button>
+		{#if current && inBoardRoom}
+			<!-- Board Room: switch between its two games. -->
+			<div class="switch" role="group" aria-label="Board Room: pick a game">
+				<span class="sw-name">{BOARD_ROOM.title}</span>
+				{#each BOARD_ROOM.games as id (id)}
+					<button class:on={current.id == id} aria-pressed={current.id == id} onclick={() => switchBoard(id)}>{BOARD_ROOM.labels[id]}</button>
+				{/each}
+			</div>
+		{/if}
 		{#if !current}
 			<div class="menu-wrap" class:guard={menuGuard}>
 				<EngineMenu onpick={(id) => (session.gameId = id)} onlogin={login} />
@@ -209,6 +226,57 @@
 	}
 	.game[hidden] {
 		display: none;
+	}
+	/* Board Room's switch: top left, across from the ✕. */
+	.switch {
+		position: absolute;
+		top: 8px;
+		left: 10px;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		height: 34px;
+		padding: 3px;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		background: rgba(10, 14, 26, 0.95);
+		max-width: calc(100% - 110px);
+	}
+	.sw-name {
+		padding: 0 8px 0 8px;
+		font: 800 12px system-ui, sans-serif;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: #a5b4fc;
+		white-space: nowrap;
+	}
+	.switch button {
+		height: 100%;
+		padding: 0 12px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: #cbd5e1;
+		font: 700 13px system-ui, sans-serif;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.switch button:hover:not(.on) {
+		background: rgba(255, 255, 255, 0.08);
+	}
+	.switch button.on {
+		background: linear-gradient(135deg, #e0b46b, #facc15);
+		color: #1a1206;
+	}
+	@media (max-width: 480px) {
+		.sw-name {
+			display: none;
+		}
+		.switch button {
+			padding: 0 10px;
+			font-size: 12px;
+		}
 	}
 	.close {
 		position: absolute;

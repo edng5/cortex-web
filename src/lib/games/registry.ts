@@ -68,6 +68,39 @@ export interface GameSpec {
 
 const MOUSE = { keys: ['Mouse'], label: 'menus' };
 
+/**
+ * Board Room: Chess and Four in a Row share one place on the menu, with a switch between them in
+ * the game window. (They stay two games underneath: their own saves, ratings, music and links.)
+ */
+export const BOARD_ROOM = {
+	title: 'Board Room',
+	tagline: 'Chess or Four in a Row',
+	/** Both games: the two icons together, and a preview split between the two boards. */
+	icon: '/games/icons/boardroom.png',
+	preview: '/games/previews/boardroom.jpg',
+	blurb: 'Chess and Four in a Row, online against a friend: make a room, share its code. Switch between the two at the top. Every game moves your rating.',
+	games: ['chess', 'fourrow'] as GameId[],
+	labels: { chess: 'Chess', fourrow: 'Four in a Row' } as Partial<Record<GameId, string>>
+};
+const LAST_BOARD = 'boardroom-last';
+/** The Board Room game played last (it opens on that one). */
+export function lastBoardGame(): GameId {
+	try {
+		const v = localStorage.getItem(LAST_BOARD);
+		if (v && BOARD_ROOM.games.includes(v as GameId)) return v as GameId;
+	} catch {
+		/* no storage */
+	}
+	return 'chess';
+}
+export function rememberBoardGame(id: GameId) {
+	try {
+		localStorage.setItem(LAST_BOARD, id);
+	} catch {
+		/* no storage */
+	}
+}
+
 export const GAMES: GameSpec[] = [
 	{
 		id: 'topgun',
@@ -76,7 +109,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Fly three missions against waves of fighter jets, ships and an army base.',
 		icon: '/games/icons/topgun.png',
 		preview: '/games/previews/topgun.jpg',
-		tagline: '3 missions · upgrades',
+		tagline: '3 missions',
 		accent: '#38bdf8',
 		w: 600,
 		h: 536,
@@ -107,7 +140,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Eat smaller fish to grow, dodge the bigger ones, sharks and hooks. 2P local too.',
 		icon: '/games/icons/fishy.png',
 		preview: '/games/previews/fishy.jpg',
-		tagline: 'Eat or be eaten · 2P local',
+		tagline: 'Eat or be eaten',
 		accent: '#22d3ee',
 		w: 900,
 		h: 662,
@@ -157,7 +190,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Timed lily-pad runs or an endless hop. Coins unlock new characters.',
 		icon: '/games/icons/frogger.png',
 		preview: '/games/previews/frogger.jpg',
-		tagline: 'Classic or Endless · 10 friends',
+		tagline: 'Classic or Endless',
 		accent: '#4ade80',
 		w: 520,
 		h: 560,
@@ -206,7 +239,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'I spy with my little eye… something red! Find what I spy in busy scenes before time runs out, or stump the computer.',
 		icon: '/games/icons/ispy.png',
 		preview: '/games/previews/ispy.jpg',
-		tagline: 'Seek & find · stump the computer',
+		tagline: 'Seek & find',
 		accent: '#14b8a6',
 		w: 900,
 		h: 640,
@@ -223,7 +256,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Run a fish store with 800+ real species, then fish, breed and trade.',
 		icon: '/games/icons/ifish.png',
 		preview: '/games/previews/ifish.jpg',
-		tagline: 'Fish store sim · global showcase',
+		tagline: 'Fish store sim',
 		accent: '#2ab0e8',
 		row: 1,
 		w: 1040,
@@ -242,7 +275,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Play chess online against a friend: make a room, share its code. Your rating rises and falls with every game.',
 		icon: '/games/icons/chess.png',
 		preview: '/games/previews/chess.jpg',
-		tagline: 'Online · room codes',
+		tagline: 'Online',
 		accent: '#e0b46b',
 		row: 1,
 		w: 640,
@@ -261,7 +294,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Drop discs, line up four before your friend does. Online with room codes, with a rating for every player.',
 		icon: '/games/icons/fourrow.png',
 		preview: '/games/previews/fourrow.jpg',
-		tagline: 'Online · room codes',
+		tagline: 'Online',
 		accent: '#facc15',
 		row: 1,
 		w: 640,
@@ -280,9 +313,9 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Falling-block puzzles: turn and slide the shapes to fill rows. Every 10 rows the level goes up and they fall faster.',
 		icon: '/games/icons/blockdrop.png',
 		preview: '/games/previews/blockdrop.jpg',
-		tagline: 'Clear rows · climb levels',
+		tagline: 'Clear rows',
 		accent: '#c46bff',
-		row: 2,
+		row: 1,
 		w: 480,
 		h: 600,
 		tickMs: 16,
@@ -308,7 +341,7 @@ export const GAMES: GameSpec[] = [
 		blurb: '1-on-1 street ball played with your body: the camera tracks you. Practice your shot, then climb the Street Ladder.',
 		icon: '/games/icons/checkup.png',
 		preview: '/games/previews/checkup.jpg',
-		tagline: 'Motion-controlled street ball',
+		tagline: '1-on-1 ball',
 		accent: '#f97316',
 		row: 2,
 		w: 1600,
@@ -327,7 +360,7 @@ export const GAMES: GameSpec[] = [
 		blurb: 'Queue songs from YouTube and sing: live pitch and timing scoring, synced lyrics, and rooms to sing with a friend.',
 		icon: '/games/icons/karaoke.png',
 		preview: '/games/previews/karaoke.jpg',
-		tagline: 'Sing along, scored on pitch',
+		tagline: 'Sing along',
 		accent: '#e879f9',
 		row: 2,
 		w: 1600,

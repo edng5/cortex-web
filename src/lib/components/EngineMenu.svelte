@@ -4,15 +4,22 @@
   logo) where players log in for the leaderboards and online play, and choose the name shown. Used on the left of the E.Ngine Games node (desktop) and in the games pop-up.
 -->
 <script lang="ts">
-	import { GAMES, type GameId } from '$lib/games/registry';
+	import { GAMES, BOARD_ROOM, lastBoardGame, type GameId } from '$lib/games/registry';
 	import { session } from '$lib/session.svelte';
 	import MonthlyBoard from './MonthlyBoard.svelte';
 
 	let { onpick, onlogin }: { onpick: (id: GameId) => void; onlogin: () => void } = $props();
 
+	/** The menu's buttons: the games, with Chess and Four in a Row as one, Board Room. */
+	const TILES = GAMES.filter((g) => !BOARD_ROOM.games.includes(g.id) || g.id == BOARD_ROOM.games[0]).map((g) =>
+		g.id == BOARD_ROOM.games[0] ? { ...g, title: BOARD_ROOM.title, tagline: BOARD_ROOM.tagline, blurb: BOARD_ROOM.blurb, icon: BOARD_ROOM.icon, preview: BOARD_ROOM.preview } : g
+	);
+	/** Open a game (Board Room: the one played last). */
+	const open = (id: GameId) => onpick(BOARD_ROOM.games.includes(id) ? lastBoardGame() : id);
+
 	/** The game previewed (pointed at or focused). */
-	let shown = $state<GameId>(GAMES[0].id);
-	const preview = $derived(GAMES.find((g) => g.id === shown)!);
+	let shown = $state<GameId>(TILES[0].id);
+	const preview = $derived(TILES.find((g) => g.id === shown)!);
 
 	let editing = $state(false);
 	let draft = $state('');
@@ -81,7 +88,7 @@
 
 	<div class="picker">
 		<ul class="stack">
-			{#each GAMES.filter((g) => !g.row) as g (g.id)}
+			{#each TILES.filter((g) => !g.row) as g (g.id)}
 				<li>
 					<button
 						class="game"
@@ -89,7 +96,7 @@
 						style="--accent: {g.accent}"
 						onpointerenter={() => (shown = g.id)}
 						onfocus={() => (shown = g.id)}
-						onclick={() => onpick(g.id)}
+						onclick={() => open(g.id)}
 					>
 						<img src={g.icon} alt="" width="44" height="44" />
 						<span class="text">
@@ -106,11 +113,11 @@
 				<img src={preview.preview} alt="{preview.title} gameplay" width="480" height="360" />
 			{/key}
 			<p class="blurb"><strong>{preview.title}.</strong> {preview.blurb}</p>
-			<button class="play" onclick={() => onpick(preview.id)}>Play {preview.title}</button>
+			<button class="play" onclick={() => open(preview.id)}>Play {preview.title}</button>
 		</div>
 		{#each [1, 2] as r (r)}
 			<ul class="row-games">
-				{#each GAMES.filter((g) => g.row == r) as g (g.id)}
+				{#each TILES.filter((g) => g.row == r) as g (g.id)}
 					<li>
 						<button
 							class="game"
@@ -118,7 +125,7 @@
 							style="--accent: {g.accent}"
 							onpointerenter={() => (shown = g.id)}
 							onfocus={() => (shown = g.id)}
-							onclick={() => onpick(g.id)}
+							onclick={() => open(g.id)}
 						>
 							<img src={g.icon} alt="" width="44" height="44" />
 							<span class="text">
@@ -130,13 +137,12 @@
 				{/each}
 				{#if r == 2}
 					<!-- Placeholders for the next games. -->
-					{#each Array.from({ length: Math.max(0, 3 - GAMES.filter((g) => g.row == 2).length) }, (_, i) => i) as n (n)}
+					{#each Array.from({ length: Math.max(0, 3 - TILES.filter((g) => g.row == 2).length) }, (_, i) => i) as n (n)}
 						<li>
 							<div class="game soon" aria-label="Coming soon">
 								<span class="mystery" aria-hidden="true">?</span>
 								<span class="text">
-									<span class="title">Coming soon</span>
-									<span class="line">A new game is on the way</span>
+									<span class="title">Coming soon...</span>
 								</span>
 							</div>
 						</li>
