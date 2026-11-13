@@ -45,6 +45,8 @@ export type VideoState = 'loading' | 'playing' | 'paused' | 'ended' | 'error';
 export class Video {
 	private p: YTPlayer | null = null;
 	state: VideoState = 'loading';
+	/** YouTube's player is ready (its methods exist). */
+	private ready = false;
 	error = '';
 
 	constructor(
@@ -56,6 +58,7 @@ export class Video {
 	async load(id: string, captions = false) {
 		await loadApi();
 		this.p?.destroy();
+		this.ready = false;
 		this.state = 'loading';
 		await new Promise<void>((resolve) => {
 			this.p = new (w().YT as YTApi).Player(this.el, {
@@ -65,7 +68,10 @@ export class Video {
 				// No related videos at the end, plays inline on phones, keyboard off (the game's keys).
 				playerVars: { controls: 0, disablekb: 1, playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, fs: 0, ...(captions ? { cc_load_policy: 1 } : {}) },
 				events: {
-					onReady: () => resolve(),
+					onReady: () => {
+						this.ready = true;
+						resolve();
+					},
 					onStateChange: (e: { data: number }) => {
 						const s = e.data == 1 ? 'playing' : e.data == 2 ? 'paused' : e.data == 0 ? 'ended' : this.state;
 						if (s != this.state) {
@@ -85,24 +91,25 @@ export class Video {
 		});
 	}
 	play() {
-		this.p?.playVideo();
+		if (this.ready) this.p?.playVideo();
 	}
 	/** The video's volume, 0..100. */
 	setVolume(v: number) {
-		this.p?.setVolume(Math.round(Math.max(0, Math.min(100, v))));
+		if (this.ready) this.p?.setVolume(Math.round(Math.max(0, Math.min(100, v))));
 	}
 	pause() {
-		this.p?.pauseVideo();
+		if (this.ready) this.p?.pauseVideo();
 	}
 	seek(s: number) {
-		this.p?.seekTo(Math.max(0, s), true);
+		if (this.ready) this.p?.seekTo(Math.max(0, s), true);
 	}
 	// YouTube's player only reports its time a few times a second, so read on its own the lyrics
 	// would move in steps (and lag). Between reports, while it's playing, the clock runs on.
 	private reported = -1;
 	private reportedAt = 0;
 	get time() {
-		if (!this.p) return 0;
+		// (Until YouTube's player says it's ready, it has none of its methods yet.)
+		if (!this.p || !this.ready) return 0;
 		const t = this.p.getCurrentTime() ?? 0;
 		const now = performance.now();
 		if (t != this.reported) {
@@ -113,11 +120,12 @@ export class Video {
 		return this.state == 'playing' ? t + Math.min(0.6, (now - this.reportedAt) / 1000) : t;
 	}
 	get duration() {
-		return this.p?.getDuration() ?? 0;
+		return this.ready ? (this.p?.getDuration() ?? 0) : 0;
 	}
 	destroy() {
 		this.p?.destroy();
 		this.p = null;
+		this.ready = false;
 	}
 }
 

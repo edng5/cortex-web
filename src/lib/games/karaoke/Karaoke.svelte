@@ -17,6 +17,7 @@
 	import { Scorer, gradeColor, gradeOf, pitchGap, type Live, type Verdict } from './score';
 	import { Video, videoIdFrom, type VideoState } from './yt';
 	import { Synth } from './synth';
+	import { splitParts, type Parts, type Who } from './parts';
 	import { SONGS, type Song } from './songs';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
@@ -43,8 +44,10 @@
 		picks: Record<string, number>;
 		/** The song's volume (0..100). */
 		volume: number;
+		/** In a room: split songs into parts for the singers (the host's setting). */
+		partsOn: boolean;
 	}
-	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80 });
+	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80, partsOn: true });
 	let save = $state<Save>(load());
 	function load(): Save {
 		try {
@@ -332,6 +335,7 @@
 		waitingFriend = false;
 		waitingHost = false;
 		optsOpen = false;
+		if (!room) partsOn = false;
 		clearTimeout(waitTimer);
 		// (A ready from the other singer is for the song they're on: a new start clears it, unless it's this song.)
 		if (song && friendReady != keyOf(item)) friendReady = '';
@@ -357,7 +361,8 @@
 		// The chart: the song's own, one you've added, or lyrics found online.
 		const own = item.chart ?? save.charts[keyOf(item)];
 		chart = own ? parseUltraStar(own) : { lines: [], notes: [] };
-		scorer = new Scorer(chart, TOLERANCE);
+		applyParts();
+		scorer = makeScorer();
 		live = scorer.live;
 		if (!item.id) {
 			synth = new Synth(chart.notes);
@@ -445,7 +450,8 @@
 		lyricPick = picked?.id ?? l?.id ?? 0;
 		if (l?.synced) {
 			chart = { lines: parseLRC(picked?.synced ?? l.synced), notes: [] };
-			scorer = new Scorer(chart, TOLERANCE);
+			applyParts();
+			scorer = makeScorer();
 			live = scorer.live;
 			lyricsNote = `Lyrics: ${l.artist} – ${l.track}${l.versions > 1 ? ` (checked against ${l.versions} versions)` : ''}. Out of time? Nudge them, or tap when the first line starts.`;
 			// A music video often has an intro the recording doesn't: offer to shift the lyrics by
@@ -467,7 +473,8 @@
 		if (!o || !song) return;
 		lyricPick = id;
 		chart = { lines: parseLRC(o.synced), notes: [] };
-		scorer = new Scorer(chart, TOLERANCE);
+		applyParts();
+		scorer = makeScorer();
 		live = scorer.live;
 		beatIdx = -1;
 		save.picks = remember(save.picks, keyOf(song), id);
@@ -564,6 +571,36 @@
 		if (vstate != 'loading' && video) video.setVolume(save.volume);
 	});
 
+	// ── Parts: who sings which lines (in a room) ──
+	let parts = $state<Parts | null>(null);
+	/** This song's split: the host's random seed and setting (sent with the song). */
+	let partSeed = 0;
+	let partsOn = true;
+	const mySeat = () => roomView?.you ?? 0;
+	const seatName = (seat: number) => (seat == mySeat() ? 'You' : (roomView?.players[seat]?.name ?? 'your friend'));
+	/** Split the lyrics between the singers (in a room with the setting on), else everyone sings it all. */
+	function applyParts() {
+		const players = roomView?.players.filter(Boolean).length ?? 0;
+		if (!room || !partsOn || players < 2 || !chart.lines.length) {
+			parts = null;
+			return;
+		}
+		const p = splitParts(chart.lines, players, partSeed);
+		chart = { lines: p.lines, notes: chart.notes };
+		parts = p;
+	}
+	/** The scorer: for your own lines (and the ones everyone sings), when the song's in parts. */
+	function makeScorer() {
+		if (!parts) return new Scorer(chart, TOLERANCE);
+		const me = mySeat();
+		return new Scorer({ lines: chart.lines.filter((_, i) => parts!.who[i] == 'all' || parts!.who[i] == me), notes: chart.notes }, TOLERANCE);
+	}
+	/** Whose a line is (for the label over it). */
+	const whoOf = (l: Line | null): Who | null => (parts && l ? (parts.who[chart.lines.indexOf(l)] ?? null) : null);
+	const singerOf = (l: Line | null) => (parts && l ? (parts.singer[chart.lines.indexOf(l)] ?? '') : '');
+	/** Your singers (when the lyrics name them). */
+	const myCast = $derived(parts ? parts.cast[mySeat()] ?? [] : []);
+
 	/** Phones: the options sheet. */
 	let optsOpen = $state(false);
 	/** Picking an option closes the sheet (the volume and lyric nudges stay open, to keep adjusting). */
@@ -589,7 +626,7 @@
 		lostCrowd = false;
 		beatIdx = -1;
 		beatAt = 0;
-		scorer = new Scorer(chart, TOLERANCE);
+		scorer = makeScorer();
 		live = scorer.live;
 		paused = false;
 		if (synth) synth.play(0);
@@ -936,6 +973,8 @@
 				note = `${theirName} wants to sing “${item.title}” next`;
 			} else startInRoom(item);
 		} else if (k == 'start' && !isHost && m.item) {
+			partSeed = Number(m.seed) || 0;
+			partsOn = m.parts !== false;
 			partner = { score: 0, h: 100, done: null };
 			void sing(m.item as Item);
 		} else if (k == 'live' && partner) {
@@ -982,7 +1021,9 @@
 		return () => clearInterval(iv);
 	});
 	function startInRoom(item: Item) {
-		send({ k: 'start', item });
+		partSeed = Math.floor(Math.random() * 2 ** 31);
+		partsOn = save.partsOn;
+		send({ k: 'start', item, seed: partSeed, parts: partsOn });
 		void sing(item);
 	}
 
@@ -1010,7 +1051,8 @@
 		save.charts[keyOf(song)] = chartText;
 		persist();
 		chart = c;
-		scorer = new Scorer(chart, TOLERANCE);
+		applyParts();
+		scorer = makeScorer();
 		showChart = false;
 		lyricsNote = 'Chart added: the pitch guide is on, and this song now has full scoring.';
 	}
@@ -1139,6 +1181,12 @@
 						<input type="checkbox" bind:checked={save.scoring} onchange={persist} />
 						<span>Scoring {save.scoring ? 'on: grades, health and pop-ups' : 'off: just sing'}</span>
 					</label>
+					{#if room && isHost}
+						<label class="toggle">
+							<input type="checkbox" bind:checked={save.partsOn} onchange={persist} />
+							<span>Parts {save.partsOn ? 'on: you each get your own lines' : 'off: you both sing everything'}</span>
+						</label>
+					{/if}
 					<div class="foot">
 						{#if room}
 							<button class="ghost small" onclick={() => (screen = 'room')}>Room</button>
@@ -1162,6 +1210,7 @@
 					</div>
 					<b>Waiting for {theirName}…</b>
 					<small>“{song.title}” starts for both of you as soon as they're ready.</small>
+					{#if myCast.length}<small class="cast">You're singing {myCast.join(', ')}</small>{:else if parts}<small class="cast">You'll take turns: your lines are marked</small>{/if}
 					<button class="small ghost" onclick={startTogether}>Start now</button>
 				</div>
 			{:else if waitingHost && !preparing}
@@ -1171,6 +1220,7 @@
 					</div>
 					<b>Ready!</b>
 					<small>Starting “{song.title}” with {theirName}…</small>
+					{#if myCast.length}<small class="cast">You're singing {myCast.join(', ')}</small>{:else if parts}<small class="cast">You'll take turns: your lines are marked</small>{/if}
 				</div>
 			{:else if needsTap && !preparing}
 				<div class="loading tap">
@@ -1219,19 +1269,27 @@
 			<canvas class="lane" bind:this={lane}></canvas>
 			<div class="lyrics">
 				{#if lyric.now}
+					{@const w = whoOf(lyric.now)}
+					{#if w != null}
+						<!-- Whose line it is (in parts). -->
+						<p class="part" class:mine={w == mySeat()} class:all={w == 'all'}>🎤 {w == 'all' ? 'Together' : w == mySeat() ? 'Your part' : seatName(w)}{singerOf(lyric.now) && w != 'all' ? ` · ${singerOf(lyric.now)}` : ''}</p>
+					{/if}
 					{#key beatAt}
 						{#if lyric.now.timed}
-							<p class="now" class:soon={songT < lyric.now.start} class:beat={beatAt > 0}>
+							<p class="now" class:soon={songT < lyric.now.start} class:theirs={w != null && w != 'all' && w != mySeat()} class:beat={beatAt > 0}>
 								{#each lyric.now.parts as p, i (i)}<span class="w" style="--k:{wipe(lyric.now, i)}">{p.text}</span>{/each}
 							</p>
 						{:else}
-							<p class="now whole" class:soon={songT < lyric.now.start} class:on={songT >= lyric.now.start} class:beat={beatAt > 0}>{lyric.now.text}</p>
+							<p class="now whole" class:soon={songT < lyric.now.start} class:theirs={w != null && w != 'all' && w != mySeat()} class:on={songT >= lyric.now.start} class:beat={beatAt > 0}>{lyric.now.text}</p>
 						{/if}
 					{/key}
 					{#if !lyric.now.timed && songT >= lyric.now.start}
 						<div class="lineprog" aria-hidden="true"><i style="width:{Math.min(100, ((songT - lyric.now.start) / Math.max(0.5, lyric.now.end - lyric.now.start)) * 100)}%"></i></div>
 					{/if}
-					{#if lyric.next}<p class="next">{lyric.next.text}</p>{/if}
+					{#if lyric.next}
+						{@const nw = whoOf(lyric.next)}
+						<p class="next">{#if nw != null && nw != w}<span class="nextpart">{nw == 'all' ? 'Together' : nw == mySeat() ? 'You' : seatName(nw)}:</span> {/if}{lyric.next.text}</p>
+					{/if}
 				{:else if chart.lines.length && songT < chart.lines[0].start}
 					<p class="next">♪ {Math.max(0, Math.ceil(chart.lines[0].start - songT))}…</p>
 				{/if}
@@ -1349,6 +1407,14 @@
 				</ul>
 				{#if roomView?.phase == 'playing'}
 					<p class="hint">Either of you can queue songs and start one: it starts for both of you.</p>
+				{#if isHost}
+					<label class="toggle">
+						<input type="checkbox" bind:checked={save.partsOn} onchange={persist} />
+						<span>Split songs into parts: {save.partsOn ? 'each of you gets your own lines (and singers, when the lyrics name them)' : 'you both sing everything'}</span>
+					</label>
+				{:else}
+					<p class="hint small">Parts are the host's choice.</p>
+				{/if}
 				{/if}
 				<div class="row">
 					<button class="ghost" onclick={() => (screen = 'menu')}>Songs and queue</button>
@@ -2317,6 +2383,41 @@
 	.jump {
 		background: linear-gradient(135deg, #22d3ee, #6366f1);
 		animation: pop-in 0.3s cubic-bezier(0.2, 1.8, 0.4, 1);
+	}
+	/* Parts: whose line it is. */
+	.part {
+		display: inline-block;
+		margin: 0 0 4px !important;
+		padding: 3px 12px;
+		border-radius: 999px;
+		font: 800 0.8rem system-ui, sans-serif;
+		background: rgba(56, 189, 248, 0.25);
+		border: 1px solid rgba(56, 189, 248, 0.7);
+		color: #bae6fd;
+		text-shadow: none;
+	}
+	.part.mine {
+		background: rgba(244, 114, 182, 0.3);
+		border-color: #f472b6;
+		color: #fce7f3;
+		box-shadow: 0 0 14px rgba(244, 114, 182, 0.5);
+	}
+	.part.all {
+		background: rgba(250, 204, 21, 0.25);
+		border-color: #facc15;
+		color: #fef9c3;
+	}
+	/* Your friend's line: dimmed (sing along quietly, or rest). */
+	.now.theirs {
+		opacity: 0.45;
+	}
+	.nextpart {
+		font-weight: 800;
+		color: #f9a8d4;
+	}
+	.cast {
+		color: #f9a8d4 !important;
+		font-weight: 700;
 	}
 	/* A line without word times: it lights up as a whole, and a bar runs to the next line. */
 	.now.whole {
