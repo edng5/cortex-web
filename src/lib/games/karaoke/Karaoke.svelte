@@ -17,7 +17,7 @@
 	import { Scorer, gradeColor, gradeOf, pitchGap, type Live, type Verdict } from './score';
 	import { Video, videoIdFrom, type VideoState } from './yt';
 	import { Synth } from './synth';
-	import { splitParts, type Parts, type Who } from './parts';
+	import { splitParts, type Assign, type Parts, type Who } from './parts';
 	import { SONGS, type Song } from './songs';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
@@ -335,6 +335,9 @@
 		waitingFriend = false;
 		waitingHost = false;
 		optsOpen = false;
+		rolesOpen = false;
+		lyricPal = null;
+		looks = [];
 		if (!room) partsOn = false;
 		clearTimeout(waitTimer);
 		// (A ready from the other singer is for the song they're on: a new start clears it, unless it's this song.)
@@ -392,6 +395,7 @@
 				if (isHost && room) send({ k: s == 'paused' ? 'pause' : s == 'playing' ? 'play' : 'state', t: video?.time ?? 0 });
 			});
 			video = v;
+			void readStills(item.id);
 			// No synced lyrics: YouTube's own subtitles, if the video has them.
 			await video.load(item.id, !!found && !found.lyrics?.synced && found.captions);
 			if (video.state == 'error' || mine != run) return;
@@ -492,17 +496,21 @@
 		note = 'Get ready…';
 	}
 	function nudge(d: number) {
-		offset = Math.round((offset + d) * 100) / 100;
-		if (song) save.offsets = remember(save.offsets, keyOf(song), offset);
-		persist();
+		setOffset(offset + d);
 	}
-	/** "The first line starts now": lines the lyrics up with the video. */
+	/** "The first line starts now": lines the lyrics up with the video (for everyone in the room). */
 	function tapSync() {
 		const first = chart.lines[0];
 		if (!first || !song) return;
-		offset = Math.round((clock() - first.start) * 100) / 100;
+		setOffset(clock() - first.start);
+	}
+	/** Where the lyrics sit against the video; in a room, the same for everyone (the videos play in step). */
+	function setOffset(o: number, remote = false) {
+		offset = Math.round(o * 100) / 100;
+		if (!song) return;
 		save.offsets = remember(save.offsets, keyOf(song), offset);
 		persist();
+		if (room && !remote) send({ k: 'offset', o: offset, run: keyOf(song) });
 	}
 	const clock = () => (synth ? synth.time : (video?.time ?? 0));
 	/** Pause (in a room, for everyone: either singer can). `remote`: the other singer paused it. */
@@ -579,27 +587,146 @@
 	const mySeat = () => roomView?.you ?? 0;
 	const seatName = (seat: number) => (seat == mySeat() ? 'You' : (roomView?.players[seat]?.name ?? 'your friend'));
 	/** Split the lyrics between the singers (in a room with the setting on), else everyone sings it all. */
+	/** The song's lines before the split (with the singers' names), to split again when roles change. */
+	let baseLines: Line[] = [];
+	/** Who has which role (the players' own picks, shared in the room). */
+	let assign = $state<Assign>({});
+	let rolesOpen = $state(false);
 	function applyParts() {
+		baseLines = chart.lines;
+		splitNow();
+	}
+	function splitNow() {
 		const players = roomView?.players.filter(Boolean).length ?? 0;
-		if (!room || !partsOn || players < 2 || !chart.lines.length) {
+		if (!room || !partsOn || players < 2 || !baseLines.length) {
 			parts = null;
 			return;
 		}
-		const p = splitParts(chart.lines, players, partSeed);
+		const p = splitParts(baseLines, players, partSeed, $state.snapshot(assign));
 		chart = { lines: p.lines, notes: chart.notes };
 		parts = p;
 	}
-	/** The scorer: for your own lines (and the ones everyone sings), when the song's in parts. */
-	function makeScorer() {
-		if (!parts) return new Scorer(chart, TOLERANCE);
+	/** Your lines (and the ones everyone sings) and their notes: what you're scored on, and what the crowd reacts to. */
+	function myChart() {
+		if (!parts) return chart;
 		const me = mySeat();
-		return new Scorer({ lines: chart.lines.filter((_, i) => parts!.who[i] == 'all' || parts!.who[i] == me), notes: chart.notes }, TOLERANCE);
+		const lines = chart.lines.filter((_, i) => parts!.who[i] == 'all' || parts!.who[i] == me);
+		const notes = chart.notes.filter((n) => lines.some((l) => n.start >= l.start - 0.05 && n.start < l.end + 0.05));
+		return { lines, notes };
 	}
+	function makeScorer() {
+		return new Scorer(myChart(), TOLERANCE);
+	}
+	/** Hand a role to a player (a seat, or -1: everyone), for everyone in the room. (No key: just split again.) */
+	function setRole(key: string, seat: number, remote = false) {
+		if (key) assign = { ...assign, [key]: seat };
+		splitNow();
+		scorer?.setChart(myChart());
+		if (room && !remote && song) send({ k: 'roles', assign: $state.snapshot(assign), run: keyOf(song) });
+	}
+	/** The song's really in parts (not everyone singing everything). */
+	const split = $derived(!!parts && parts.who.some((w) => w != 'all'));
 	/** Whose a line is (for the label over it). */
-	const whoOf = (l: Line | null): Who | null => (parts && l ? (parts.who[chart.lines.indexOf(l)] ?? null) : null);
+	const whoOf = (l: Line | null): Who | null => (split && parts && l ? (parts.who[chart.lines.indexOf(l)] ?? null) : null);
 	const singerOf = (l: Line | null) => (parts && l ? (parts.singer[chart.lines.indexOf(l)] ?? '') : '');
 	/** Your singers (when the lyrics name them). */
 	const myCast = $derived(parts ? parts.cast[mySeat()] ?? [] : []);
+
+	// -- Lyric colours: picked to stand out from the video behind them --
+	// The video plays in YouTube's own frame, so the page can't see its pixels; but YouTube publishes
+	// a few stills from every video (a quarter, half and three quarters of the way in), and those can
+	// be read. The band where the lyrics sit is sampled in each, and the lyrics take colours that
+	// contrast with the still nearest to now. (A faint outline keeps them readable regardless.)
+	type Look = { r: number; g: number; b: number; lum: number; bright: number };
+	type Pal = { ink: string; sung: string; ol: string; glow: string };
+	let lyricPal = $state<Pal | null>(null);
+	let looks = $state.raw<(Look | null)[]>([]);
+	const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+	const lumOf = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+	const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+	const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+	function sampleStill(url: string): Promise<Look | null> {
+		return new Promise((res) => {
+			const img = new Image();
+			img.crossOrigin = 'anonymous';
+			img.onload = () => {
+				try {
+					// (A missing still comes back as YouTube's small grey placeholder.)
+					if (img.naturalWidth < 200) return res(null);
+					const W = 64;
+					const H = 36;
+					const c = document.createElement('canvas');
+					c.width = W;
+					c.height = H;
+					const g = c.getContext('2d', { willReadFrequently: true })!;
+					g.drawImage(img, 0, 0, W, H);
+					// The lyrics' band: the lower middle of the picture.
+					const d = g.getImageData(Math.round(W * 0.1), Math.round(H * 0.5), Math.round(W * 0.8), Math.round(H * 0.42)).data;
+					let r = 0;
+					let gg = 0;
+					let b = 0;
+					let lum = 0;
+					let bright = 0;
+					const n = d.length / 4;
+					for (let i = 0; i < d.length; i += 4) {
+						r += d[i];
+						gg += d[i + 1];
+						b += d[i + 2];
+						const l = lumOf(d[i], d[i + 1], d[i + 2]);
+						lum += l;
+						if (l > 0.45) bright++;
+					}
+					res({ r: r / n, g: gg / n, b: b / n, lum: lum / n, bright: bright / n });
+				} catch {
+					res(null);
+				}
+			};
+			img.onerror = () => res(null);
+			img.src = url;
+		});
+	}
+	async function readStills(id: string) {
+		const got = await Promise.all(['mqdefault', 'mq1', 'mq2', 'mq3'].map((f) => sampleStill(`https://i.ytimg.com/vi/${id}/${f}.jpg`)));
+		if (song?.id != id) return;
+		stillAt = -1;
+		looks = got;
+	}
+	/** Colours for the lyrics over a background like this one. */
+	function paletteFor(L: Look): Pal {
+		const bg = L.lum;
+		// Mostly bright behind the words: dark lyrics with a light edge; otherwise light lyrics.
+		const dark = bg > 0.42 || L.bright > 0.55;
+		const ink = dark ? '#1a1033' : '#ffffff';
+		const options = dark ? ['#be185d', '#6d28d9', '#1d4ed8', '#047857'] : ['#f472b6', '#fde047', '#22d3ee', '#a3e635'];
+		// The sung colour: one that stands out from the background, in brightness and in colour
+		// (the usual pink, unless the video's pinkish there).
+		let best = options[0];
+		let bestScore = -1;
+		options.forEach((o, i) => {
+			const [r, g, b] = hex(o);
+			const dist = Math.hypot(r - L.r, g - L.g, b - L.b) / 441;
+			const score = contrast(lumOf(r, g, b), bg) * (0.4 + dist) * (i == 0 ? 1.25 : 1);
+			if (score > bestScore) [best, bestScore] = [o, score];
+		});
+		return dark
+			? { ink, sung: best, ol: 'rgba(255, 255, 255, 0.55)', glow: 'rgba(255, 255, 255, 0.7)' }
+			: { ink, sung: best, ol: 'rgba(0, 0, 0, 0.55)', glow: 'rgba(0, 0, 0, 0.85)' };
+	}
+	/** Which still is nearest to now (1 to 3: a quarter, half, three quarters in; 0: the thumbnail). */
+	let stillAt = -1;
+	const stillWant = $derived.by(() => {
+		const dur = video?.duration ?? 0;
+		const f = dur > 0 ? (songT + offset) / dur : 0;
+		return f < 0.375 ? 1 : f < 0.625 ? 2 : 3;
+	});
+	$effect(() => {
+		if (screen != 'sing' || !looks.length) return;
+		const want = stillWant;
+		const i = looks[want] ? want : looks[0] ? 0 : looks.findIndex(Boolean);
+		if (i < 0 || i == stillAt) return;
+		stillAt = i;
+		lyricPal = paletteFor(looks[i]!);
+	});
 
 	/** Phones: the options sheet. */
 	let optsOpen = $state(false);
@@ -975,8 +1102,20 @@
 		} else if (k == 'start' && !isHost && m.item) {
 			partSeed = Number(m.seed) || 0;
 			partsOn = m.parts !== false;
+			assign = {};
 			partner = { score: 0, h: 100, done: null };
 			void sing(m.item as Item);
+		} else if (k == 'roles' && song && m.run == keyOf(song) && m.assign && typeof m.assign == 'object') {
+			// The other singer handed a role round.
+			const a: Assign = {};
+			for (const [key, v] of Object.entries(m.assign as Record<string, unknown>)) if (typeof v == 'number') a[key] = v;
+			assign = a;
+			setRole('', 0, true);
+			note = `${theirName} changed the roles`;
+		} else if (k == 'offset' && song && m.run == keyOf(song) && Number.isFinite(Number(m.o))) {
+			// The other singer lined the lyrics up: the same here.
+			setOffset(Number(m.o), true);
+			note = `${theirName} lined the lyrics up (${offset > 0 ? '+' : ''}${offset.toFixed(1)}s)`;
 		} else if (k == 'live' && partner) {
 			partner.score = Number(m.score) || 0;
 			partner.h = Math.max(0, Math.min(100, Number(m.h ?? 100)));
@@ -1022,6 +1161,7 @@
 	});
 	function startInRoom(item: Item) {
 		partSeed = Math.floor(Math.random() * 2 ** 31);
+		assign = {};
 		partsOn = save.partsOn;
 		send({ k: 'start', item, seed: partSeed, parts: partsOn });
 		void sing(item);
@@ -1267,12 +1407,12 @@
 				{#if save.scoring && live.combo >= 3}{#key live.combo}<div class="combo"><span>🔥</span> {live.combo}s on it!</div>{/key}{/if}
 			</div>
 			<canvas class="lane" bind:this={lane}></canvas>
-			<div class="lyrics">
+			<div class="lyrics" style={lyricPal ? `--ink:${lyricPal.ink}; --sung:${lyricPal.sung}; --ol:${lyricPal.ol}; --glow:${lyricPal.glow}` : undefined}>
 				{#if lyric.now}
 					{@const w = whoOf(lyric.now)}
 					{#if w != null}
-						<!-- Whose line it is (in parts). -->
-						<p class="part" class:mine={w == mySeat()} class:all={w == 'all'}>🎤 {w == 'all' ? 'Together' : w == mySeat() ? 'Your part' : seatName(w)}{singerOf(lyric.now) && w != 'all' ? ` · ${singerOf(lyric.now)}` : ''}</p>
+						<!-- Whose line it is (when the song's split into parts). -->
+						<p class="part" class:mine={w == mySeat()} class:all={w == 'all'}>{w == 'all' ? '🎤 Together' : w == mySeat() ? '🎤 Your turn' : `🎧 ${seatName(w)}'s turn`}{singerOf(lyric.now) && w != 'all' ? ` · ${singerOf(lyric.now)}` : ''}</p>
 					{/if}
 					{#key beatAt}
 						{#if lyric.now.timed}
@@ -1325,6 +1465,9 @@
 					{/if}
 					<button class="small ghost" onclick={() => (showChart = !showChart)}>{chart.notes.length ? 'Chart ✓' : 'Add a chart'}</button>
 				{/if}
+				{#if parts?.roles.length}
+					<button class="small ghost" aria-expanded={rolesOpen} onclick={() => (rolesOpen = !rolesOpen)} title="Who sings which part">🎭 Roles</button>
+				{/if}
 				<span class="grow"></span>
 				{#if !room || isHost}
 					{#if song.id && firstLineAt != null && songT + offset < firstLineAt - READY - 1}
@@ -1337,6 +1480,23 @@
 				<button class="small leave" onclick={leaveSong}>Leave</button>
 				</div>
 			</div>
+			{#if rolesOpen && parts?.roles.length}
+				<div class="roles" role="dialog" aria-label="Roles">
+					<div class="roles-head"><b>🎭 Who sings what</b><button class="small ghost" aria-label="Close the roles" onclick={() => (rolesOpen = false)}>✕</button></div>
+					{#each parts.roles as r (r.key)}
+						<label class="role">
+							<span>{r.label}</span>
+							<select value={r.who == 'all' ? -1 : r.who} onchange={(e) => setRole(r.key, Number((e.currentTarget as HTMLSelectElement).value))}>
+								{#each roomView?.players ?? [] as pl, i (i)}
+									{#if pl}<option value={i}>{i == mySeat() ? 'You' : pl.name}</option>{/if}
+								{/each}
+								<option value={-1}>Everyone</option>
+							</select>
+						</label>
+					{/each}
+					<p class="hint small">Shared: everyone in the room sees the same roles.</p>
+				</div>
+			{/if}
 			{#if lyricsNote || micErr || vstate == 'error'}
 				<p class="msg">{vstate == 'error' ? video?.error : micErr || lyricsNote}</p>
 			{/if}
@@ -2320,6 +2480,13 @@
 		backdrop-filter: blur(4px);
 	}
 	.lyrics {
+		/* The lyrics' colours (picked against the video, when it can be seen): the words, the sung
+		part, a faint outline (in case the pick is wrong), and the shadow. */
+		--ink: #ffffff;
+		--sung: #f472b6;
+		--ol: rgba(0, 0, 0, 0.55);
+		--glow: rgba(0, 0, 0, 0.85);
+		--outline: drop-shadow(1px 0 0 var(--ol)) drop-shadow(-1px 0 0 var(--ol)) drop-shadow(0 1px 0 var(--ol)) drop-shadow(0 -1px 0 var(--ol));
 		position: absolute;
 		left: 0;
 		right: 0;
@@ -2327,8 +2494,8 @@
 		text-align: center;
 		padding: 0 20px;
 		text-shadow:
-			0 2px 0 #000,
-			0 0 12px #000;
+			0 2px 0 var(--glow),
+			0 0 12px var(--glow);
 	}
 	.lyrics p {
 		margin: 6px 0;
@@ -2338,7 +2505,7 @@
 		/* (A drop shadow, not a text shadow: the wipe's text is see-through, and a text shadow would
 		show through it and turn the words black.) */
 		text-shadow: none;
-		filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.9)) drop-shadow(0 0 6px rgba(0, 0, 0, 0.8));
+		filter: var(--outline) drop-shadow(0 2px 0 var(--glow)) drop-shadow(0 0 6px var(--glow));
 	}
 	.now.soon {
 		opacity: 0.75;
@@ -2384,28 +2551,64 @@
 		background: linear-gradient(135deg, #22d3ee, #6366f1);
 		animation: pop-in 0.3s cubic-bezier(0.2, 1.8, 0.4, 1);
 	}
-	/* Parts: whose line it is. */
+	/* Parts: whose turn it is, just over the line, in the lyrics' own lettering. */
 	.part {
-		display: inline-block;
-		margin: 0 0 4px !important;
-		padding: 3px 12px;
-		border-radius: 999px;
-		font: 800 0.8rem system-ui, sans-serif;
-		background: rgba(56, 189, 248, 0.25);
-		border: 1px solid rgba(56, 189, 248, 0.7);
-		color: #bae6fd;
+		margin: 0 0 2px !important;
+		font: 900 clamp(1.05rem, 2.2vw, 1.75rem) / 1.2 system-ui, sans-serif;
+		color: var(--ink);
+		opacity: 0.8;
 		text-shadow: none;
+		filter: var(--outline) drop-shadow(0 2px 0 var(--glow)) drop-shadow(0 0 6px var(--glow));
 	}
 	.part.mine {
-		background: rgba(244, 114, 182, 0.3);
-		border-color: #f472b6;
-		color: #fce7f3;
-		box-shadow: 0 0 14px rgba(244, 114, 182, 0.5);
+		color: var(--sung);
+		opacity: 1;
+		animation: turn-pulse 1.2s ease-in-out infinite;
 	}
 	.part.all {
-		background: rgba(250, 204, 21, 0.25);
-		border-color: #facc15;
-		color: #fef9c3;
+		color: var(--sung);
+		opacity: 1;
+	}
+	@keyframes turn-pulse {
+		50% { transform: scale(1.06); }
+	}
+	.roles {
+		position: absolute;
+		right: 12px;
+		bottom: 70px;
+		z-index: 6;
+		width: min(320px, calc(100% - 24px));
+		padding: 12px 14px;
+		border-radius: 14px;
+		background: rgba(18, 10, 40, 0.94);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+		backdrop-filter: blur(6px);
+	}
+	.roles-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8px;
+	}
+	.role {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 5px 0;
+		font: 700 0.9rem system-ui, sans-serif;
+	}
+	.role select {
+		font: 600 0.85rem system-ui, sans-serif;
+		color: #fff;
+		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 8px;
+		padding: 4px 6px;
+	}
+	.role option {
+		background: #1e1240;
 	}
 	/* Your friend's line: dimmed (sing along quietly, or rest). */
 	.now.theirs {
@@ -2413,7 +2616,7 @@
 	}
 	.nextpart {
 		font-weight: 800;
-		color: #f9a8d4;
+		color: var(--sung);
 	}
 	.cast {
 		color: #f9a8d4 !important;
@@ -2421,14 +2624,14 @@
 	}
 	/* A line without word times: it lights up as a whole, and a bar runs to the next line. */
 	.now.whole {
-		color: #fff;
+		color: var(--ink);
 		transition:
 			color 0.3s,
 			text-shadow 0.3s;
 	}
 	.now.whole.on {
-		color: #f9a8d4;
-		filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.9)) drop-shadow(0 0 10px rgba(236, 72, 153, 0.7));
+		color: var(--sung);
+		filter: var(--outline) drop-shadow(0 2px 0 var(--glow)) drop-shadow(0 0 10px color-mix(in srgb, var(--sung) 70%, transparent));
 	}
 	.lineprog {
 		width: min(560px, 80%);
@@ -2447,7 +2650,7 @@
 	/* The karaoke wipe: each word fills with colour as it's sung. */
 	.w {
 		/* Sung: bright pink; still to sing: white. */
-		background: linear-gradient(90deg, #f472b6 calc(var(--k) * 100%), #ffffff calc(var(--k) * 100%));
+		background: linear-gradient(90deg, var(--sung) calc(var(--k) * 100%), var(--ink) calc(var(--k) * 100%));
 		-webkit-background-clip: text;
 		background-clip: text;
 		color: transparent;
@@ -2455,7 +2658,8 @@
 	}
 	.next {
 		font: 700 clamp(1rem, 2vw, 1.4rem) system-ui, sans-serif;
-		color: rgba(255, 255, 255, 0.7);
+		color: color-mix(in srgb, var(--ink) 75%, transparent);
+		filter: var(--outline);
 	}
 	.bar {
 		position: absolute;

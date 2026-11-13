@@ -6,7 +6,9 @@
 //    share, are sung together.
 //  - Otherwise, random parts: the song splits into sections (at pauses, and every few lines), dealt
 //    out evenly at random; lines that come back (the chorus) are sung together.
-// Both screens get the same split from the same lyrics and the host's random seed.
+// Both screens get the same split from the same lyrics and the host's random seed. The players can
+// then hand the roles (the singers, or "Part 1", "Part 2"…) to whoever they like: `assign`, shared
+// in the room, overrides the random deal.
 import type { Line } from './chart';
 
 /** Who sings a line: a player (their seat), or everyone. */
@@ -20,7 +22,11 @@ export interface Parts {
 	cast: string[][];
 	/** The lines with the singers' names taken off. */
 	lines: Line[];
+	/** The roles that can be handed out, and who has each (a seat, or 'all'). */
+	roles: { key: string; label: string; who: Who }[];
 }
+/** Who has each role, by its key (a seat, or -1: everyone). */
+export type Assign = Record<string, number>;
 
 /** A small seeded random number generator (mulberry32): the same seed, the same numbers. */
 export function seeded(seed: number) {
@@ -95,7 +101,7 @@ function readSingers(lines: Line[]): { labels: (string[] | 'all' | null)[]; line
  * Split a song's lines among `players` seats (0, 1, …). `seed`: the host's random seed for this
  * song, so both screens agree.
  */
-export function splitParts(lines: Line[], players: number, seed: number): Parts {
+export function splitParts(lines: Line[], players: number, seed: number, assign: Assign = {}): Parts {
 	const rnd = seeded(seed);
 	const n = Math.max(1, players);
 	const sung = readSingers(lines);
@@ -118,8 +124,10 @@ export function splitParts(lines: Line[], players: number, seed: number): Parts 
 		);
 		const seatOf = new Map<string, number>();
 		shuffled(names, rnd).forEach((k, i) => seatOf.set(k, seats[i % n]));
+		// The players' own choices.
+		for (const k of names) if (pick(assign['s:' + k], n) != null) seatOf.set(k, pick(assign['s:' + k], n)!);
 		const cast: string[][] = Array.from({ length: n }, () => []);
-		for (const [k, s] of seatOf) cast[s].push(display.get(k)!);
+		for (const [k, s] of seatOf) if (s >= 0) cast[s].push(display.get(k)!);
 		// Each line: its singer's player (carried on from the last name until the next).
 		let current: Who = 'all';
 		let currentName = '';
@@ -131,13 +139,14 @@ export function splitParts(lines: Line[], players: number, seed: number): Parts 
 				currentName = 'All';
 			} else if (lab) {
 				const s = new Set(lab.map((x) => seatOf.get(x.toLowerCase())).filter((x) => x != null));
-				current = s.size == 1 ? [...s][0]! : 'all';
+				current = s.size == 1 && [...s][0]! >= 0 ? [...s][0]! : 'all';
 				currentName = lab.map((x) => display.get(x.toLowerCase()) ?? x).join(' & ');
 			}
 			who.push(current);
 			singer.push(currentName);
 		});
-		return { who, singer, cast, lines: sung.lines };
+		const roles = names.map((k) => ({ key: 's:' + k, label: display.get(k)!, who: (seatOf.get(k)! < 0 ? 'all' : seatOf.get(k)!) as Who }));
+		return { who, singer, cast, lines: sung.lines, roles };
 	}
 
 	// Random parts. Lines that come back (the chorus): everyone.
@@ -161,9 +170,18 @@ export function splitParts(lines: Line[], players: number, seed: number): Parts 
 		sections.map((_, i) => i % n),
 		rnd
 	);
+	// "Part 1", "Part 2"…: dealt to the players in turn, unless they've picked otherwise.
+	const holder = Array.from({ length: n }, (_, k) => pick(assign['p:' + k], n) ?? k);
 	const who: Who[] = lines.map(() => 'all');
 	sections.forEach((sec, i) => {
-		for (const li of sec) who[li] = (seen.get(norm(lines[li].text)) ?? 0) >= 2 ? 'all' : deck[i];
+		const h = holder[deck[i]];
+		for (const li of sec) who[li] = (seen.get(norm(lines[li].text)) ?? 0) >= 2 || h < 0 ? 'all' : h;
 	});
-	return { who, singer: lines.map(() => ''), cast: Array.from({ length: n }, () => []), lines };
+	const roles = holder.map((h, k) => ({ key: 'p:' + k, label: `Part ${k + 1}`, who: (h < 0 ? 'all' : h) as Who }));
+	return { who, singer: lines.map(() => ''), cast: Array.from({ length: n }, () => []), lines, roles };
+}
+
+/** A player's choice for a role, if it's a real one: a seat, or -1 (everyone). */
+function pick(v: unknown, n: number): number | null {
+	return typeof v == 'number' && Number.isInteger(v) && v >= -1 && v < n ? v : null;
 }

@@ -88,6 +88,14 @@ export class Scorer {
 	) {
 		this.totalW = chart.notes.filter((n) => !n.free).reduce((s, n) => s + (n.end - n.start) * (n.golden ? 2 : 1), 0);
 	}
+	/** The lines (and notes) to score from now on, keeping the score so far (the parts were handed round). */
+	setChart(chart: Chart) {
+		this.chart = chart;
+		this.totalW = chart.notes.filter((n) => !n.free).reduce((s, n) => s + (n.end - n.start) * (n.golden ? 2 : 1), 0);
+		this.cur = null;
+		this.curHit = 0;
+		this.curDur = 0;
+	}
 	get hasNotes() {
 		return this.chart.notes.length > 0;
 	}
