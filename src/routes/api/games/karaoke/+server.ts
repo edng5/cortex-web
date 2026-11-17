@@ -4,8 +4,10 @@
 //   GET /api/games/karaoke?video=<id>                           → { video } its title and channel
 //   GET /api/games/karaoke?title=<video title>&channel=&seconds=&id= → { lyrics } (synced if found)
 //   GET /api/games/karaoke?track=&artist=&seconds=              → { lyrics } for a named song
+//   GET /api/games/karaoke?rtc=1                                → { ice } TURN servers for voice (signed in)
 // Rate-limited per visitor, since each lookup reaches out to another site.
 import { error, json } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import { findLyrics, searchYouTube, splitTitle, videoContext, videoInfo } from '$lib/server/karaoke';
 import { playlistIdFrom, playlistVideos } from '$lib/server/youtube';
 import { rateLimit } from '$lib/server/ratelimit';
@@ -18,6 +20,15 @@ export const GET: RequestHandler = async ({ url, locals, getClientAddress }) => 
 	if (!rateLimit(`karaoke:${who}`, 120, 10 * 60_000)) error(429, 'Too many lookups. Wait a few minutes.');
 	const p = url.searchParams;
 	const cache = { headers: { 'Cache-Control': 'private, max-age=600' } };
+
+	// Voice in rooms: the TURN server (if one's set up) that passes voices on when two browsers
+	// can't reach each other directly. Set KARAOKE_TURN_URLS (comma-separated turn:/turns: URLs),
+	// KARAOKE_TURN_USERNAME and KARAOKE_TURN_CREDENTIAL; without them, voices connect directly only.
+	if (p.has('rtc')) {
+		const urls = (env.KARAOKE_TURN_URLS ?? '').split(',').map((u) => u.trim()).filter((u) => /^turns?:/.test(u));
+		const ice = urls.length && locals.user ? [{ urls, username: env.KARAOKE_TURN_USERNAME ?? '', credential: env.KARAOKE_TURN_CREDENTIAL ?? '' }] : [];
+		return json({ ice }, { headers: { 'Cache-Control': 'private, no-store' } });
+	}
 
 	if (p.has('search')) {
 		const q = text(p.get('search'), 120);

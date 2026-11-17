@@ -6,7 +6,24 @@
 // The host offers, the joiner answers. Each side's microphone (with its echo) can be switched in
 // and out at any time without connecting again.
 
-const ICE: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+const STUN: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+/**
+ * The servers that help the two browsers find each other. STUN alone fails on strict networks
+ * (some mobile data, offices, campus Wi-Fi): then a TURN server passes the voices on, if the site
+ * has one configured (fetched once from the site; nothing about the call is stored there).
+ */
+let ICE: RTCIceServer[] = STUN;
+let iceLoaded: Promise<void> | null = null;
+export function loadIce(): Promise<void> {
+	iceLoaded ??= fetch('/api/games/karaoke?rtc=1')
+		.then((r) => (r.ok ? r.json() : null))
+		.then((j: { ice?: RTCIceServer[] } | null) => {
+			if (j?.ice?.length) ICE = [...STUN, ...j.ice];
+		})
+		.catch(() => {});
+	return iceLoaded;
+}
+export type LinkState = 'connecting' | 'connected' | 'failed' | 'closed';
 
 export class VoiceLink {
 	private pc: RTCPeerConnection;
@@ -20,11 +37,19 @@ export class VoiceLink {
 		/** Sends a message to the other player through the room. */
 		private signal: (m: Record<string, unknown>) => void,
 		/** The host (it makes the offer). */
-		private offerer: boolean
+		private offerer: boolean,
+		/** Told when the connection comes up, drops or fails. */
+		private onState: (s: LinkState) => void = () => {}
 	) {
 		this.audio.autoplay = true;
 		this.pc = new RTCPeerConnection({ iceServers: ICE });
 		this.pc.onicecandidate = (e) => e.candidate && this.signal({ k: 'rtc', ice: e.candidate.toJSON() });
+		this.pc.onconnectionstatechange = () => {
+			if (this.closed) return;
+			const c = this.pc.connectionState;
+			this.onState(c == 'connected' ? 'connected' : c == 'failed' ? 'failed' : c == 'closed' ? 'closed' : 'connecting');
+		};
+		this.onState('connecting');
 		this.pc.ontrack = (e) => {
 			this.audio.srcObject = e.streams[0] ?? new MediaStream([e.track]);
 			this.audio.muted = !this.hearing;
@@ -87,6 +112,7 @@ export class VoiceLink {
 		return this.pc.connectionState == 'connected';
 	}
 	close() {
+		if (!this.closed) this.onState('closed');
 		this.closed = true;
 		this.pc.close();
 		this.audio.srcObject = null;

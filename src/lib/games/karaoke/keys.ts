@@ -96,12 +96,16 @@ export class KeysScorer {
 	/** Where the song is (s), as of the last frame. */
 	t = 0;
 
-	constructor(chart: Chart) {
-		this.notes = keyNotes(chart);
+	/** `make`: where the notes come from (the four keys by default; dance mode brings its own steps). */
+	constructor(
+		chart: Chart,
+		private make: (c: Chart) => KeyNote[] = keyNotes
+	) {
+		this.notes = make(chart);
 	}
 	/** New lyrics or chart mid-song: new notes from here on (the score so far stays). */
 	setChart(chart: Chart) {
-		this.notes = keyNotes(chart).filter((n) => n.t > this.t + GOOD);
+		this.notes = this.make(chart).filter((n) => n.t > this.t + GOOD);
 	}
 	/** Every frame: notes that went by untapped are misses. */
 	push(t: number, _h?: Heard): Live {

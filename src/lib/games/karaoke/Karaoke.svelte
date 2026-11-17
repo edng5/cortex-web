@@ -19,7 +19,8 @@
 	import { Synth } from './synth';
 	import { splitParts, type Assign, type Parts, type Who } from './parts';
 	import { KeysScorer, LANE_COLORS, LANE_KEYS, LANE_LABELS, drawHighway } from './keys';
-	import { VoiceLink } from './voice';
+	import { VoiceLink, loadIce, type LinkState } from './voice';
+	import { ARROW_GLYPH, LANE_COLOR, LANE_DIRS, PANELS, bindingLabel, danceNotes, defaultPadMap, drawDanceway, gamepadHeld, laneForBinding, laneForKey, type DanceNote, type PadMap } from './dance';
 	import { SONGS, type Song } from './songs';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
@@ -48,8 +49,10 @@
 		volume: number;
 		/** In a room: split songs into parts for the singers (the host's setting). */
 		partsOn: boolean;
-		/** Singing, or playing the keys (the last one picked: it's offered first). */
-		role: 'sing' | 'keys';
+		/** Singing, playing the keys, or dancing (the last one picked: it's offered first). */
+		role: 'sing' | 'keys' | 'dance';
+		/** Dance mode: which key / pad button is which panel (learned in the pad setup). */
+		padMap?: PadMap;
 	}
 	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80, partsOn: true, role: 'sing' });
 	let save = $state<Save>(load());
@@ -318,7 +321,7 @@
 	let offset = $state(0);
 	let scorer: Scorer | KeysScorer | null = null;
 	// ── Your role: sing, or play the keys (chosen on the menu, under Up next) ──
-	type Role = 'sing' | 'keys';
+	type Role = 'sing' | 'keys' | 'dance';
 	let myRole = $state<Role>('sing');
 	/** Set for this song (the song waits until then). */
 	let rolePicked = $state(false);
@@ -346,13 +349,48 @@
 			mic.monitor = hearMe && r == 'sing';
 			mic.echo = echo / 100;
 			micErr = (await mic.start()) ?? '';
+			// (Already open from talking in the room: hearing yourself switches on now.)
+			mic.setMonitor(hearMe && r == 'sing');
 		} else mic.stop();
 		void voice?.send(voiceOn ? mic.sendTrack : null);
 		voice?.hear(voiceOn);
 	}
 	function micOff() {
+		// In a room with voice on, the microphone stays open after a song so you can keep talking.
+		if (room && voiceOn) {
+			mic.setMonitor(false);
+			void voice?.send(mic.sendTrack);
+			return;
+		}
 		mic.stop();
 		void voice?.send(null);
+	}
+	/** Off a song, in a room: the microphone open just for talking (when voice is on), or closed. */
+	async function talkMic() {
+		if (screen == 'sing' && rolePicked) return;
+		if (room && voiceOn) {
+			mic.monitor = false;
+			micErr = (await mic.start()) ?? '';
+			void voice?.send(mic.sendTrack);
+		} else {
+			mic.stop();
+			void voice?.send(null);
+		}
+		voice?.hear(voiceOn);
+	}
+	/** How the voice connection is doing (shown in the room). */
+	let voiceState = $state<LinkState | 'off'>('off');
+	let voiceRetries = 0;
+	function onLinkState(st: LinkState) {
+		voiceState = st;
+		if (st == 'connected') voiceRetries = 0;
+		// It dropped or never got through: the host tries again, a few times.
+		if (st == 'failed' && isHost && friendHere() && voiceRetries < 4) {
+			voiceRetries++;
+			setTimeout(() => {
+				if (room && isHost && friendHere()) startLink();
+			}, 1500 * voiceRetries);
+		}
 	}
 	function toggleHearMe() {
 		hearMe = !hearMe;
@@ -371,12 +409,12 @@
 		voiceOn = !voiceOn;
 		if (room) send({ k: 'voice', on: voiceOn });
 		if (screen == 'sing' && rolePicked) await micFor(myRole);
-		else voice?.hear(voiceOn);
+		else await talkMic();
 	}
 	/** The host connects the two browsers when both are in the room. */
 	function startLink() {
 		voice?.close();
-		voice = new VoiceLink((m) => send(m), true);
+		voice = new VoiceLink((m) => send(m), true, onLinkState);
 		voice.setVolume(voiceVol / 100);
 		voice.hear(voiceOn);
 		if (voiceOn && mic.on) void voice.send(mic.sendTrack);
@@ -386,6 +424,7 @@
 		voice?.close();
 		voice = null;
 		theirVoice = false;
+		voiceState = 'off';
 	}
 	/** The menu's choice: the role for the songs from now on. */
 	function setRolePref(r: Role) {
@@ -411,9 +450,56 @@
 	}
 	// The keys: the highway, the pads, the lanes lighting up when tapped.
 	let keyway = $state<HTMLCanvasElement>();
-	const keyFlash = [0, 0, 0, 0];
+	const keyFlash = Array(PANELS).fill(0);
 	let keyPops: { at: number; lane: number; text: string; color: string }[] = [];
-	let padDown = $state([false, false, false, false]);
+	let padDown = $state(Array(PANELS).fill(false) as boolean[]);
+	const padMap = (): PadMap => save.padMap ?? defaultPadMap();
+	/** The pad buttons on screen (for touch and mouse): the 3×3 pad, as lanes. */
+	const PAD_ORDER = ['ul', 'u', 'ur', 'l', 'c', 'r', 'dl', 'd', 'dr'].map((d) => LANE_DIRS.indexOf(d as (typeof LANE_DIRS)[number]));
+	// ── Dance pads that plug in as a gamepad: polled every frame ──
+	let gpHeld = new Set<string>();
+	function pollPad() {
+		const held = gamepadHeld();
+		for (const b of held) {
+			if (gpHeld.has(b)) continue;
+			if (padSetup != null) learn(b);
+			else if (myRole == 'dance' && screen == 'sing') {
+				const lane = laneForBinding(padMap(), b);
+				if (lane >= 0) {
+					padDown[lane] = true;
+					pressLane(lane);
+				}
+			}
+		}
+		for (const b of gpHeld) if (!held.has(b)) {
+			const lane = laneForBinding(padMap(), b);
+			if (lane >= 0) padDown[lane] = false;
+		}
+		gpHeld = held;
+	}
+	// ── The pad setup: step on each panel in turn, and that key / button is learned ──
+	let padSetup = $state<number | null>(null);
+	const SETUP_ORDER = PAD_ORDER;
+	function startPadSetup() {
+		padSetup = 0;
+	}
+	function learn(b: string) {
+		if (padSetup == null) return;
+		const lane = SETUP_ORDER[padSetup];
+		const map: PadMap = {};
+		const cur = padMap();
+		for (let i = 0; i < PANELS; i++) map[i] = (cur[i] ?? []).filter((x) => x != b);
+		map[lane] = [b, ...map[lane].filter((x) => !x.startsWith(b.slice(0, 2)) || x.startsWith('k:'))].slice(0, 3);
+		save.padMap = map;
+		persist();
+		keyFlash[lane] = performance.now();
+		padSetup = padSetup + 1 >= SETUP_ORDER.length ? null : padSetup + 1;
+	}
+	function resetPad() {
+		save.padMap = undefined;
+		persist();
+		padSetup = null;
+	}
 	function pressLane(lane: number) {
 		keyFlash[lane] = performance.now();
 		if (!(scorer instanceof KeysScorer) || paused || vstate != 'playing') return;
@@ -434,7 +520,8 @@
 		g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 		const now = performance.now();
 		keyPops = keyPops.filter((p) => now - p.at < 700);
-		drawHighway(g, w, h, scorer.notes, t, keyFlash, keyPops);
+		if (myRole == 'dance') drawDanceway(g, w, h, scorer.notes as DanceNote[], t, keyFlash, keyPops, padDown);
+		else drawHighway(g, w, h, scorer.notes, t, keyFlash, keyPops);
 	}
 	let live = $state<Live>({ score: 0, sofar: null, pitch: 0, timing: 0, note: null, hit: false, combo: 0 });
 	let heard = $state<Heard>({ hz: 0, midi: 0, level: 0, clarity: 0 });
@@ -444,7 +531,7 @@
 	let trail: { t: number; midi: number; hit: boolean }[] = [];
 	let theirTrail: { t: number; midi: number }[] = [];
 	type Mood = 'great' | 'ok' | 'bad';
-	let result = $state<{ score: number; bk: string; keys: boolean; best: boolean; song: Item; theirs?: number; lost?: boolean; scored?: boolean; skipped?: boolean; mood: Mood } | null>(null);
+	let result = $state<{ score: number; bk: string; keys: boolean; dance?: boolean; best: boolean; song: Item; theirs?: number; lost?: boolean; scored?: boolean; skipped?: boolean; mood: Mood } | null>(null);
 	// Confetti and tomatoes for the results (random, made once per result).
 	const confetti = Array.from({ length: 90 }, (_, i) => ({ x: Math.random() * 100, d: Math.random() * 1.2, t: 2.2 + Math.random() * 1.8, c: ['#f472b6', '#facc15', '#4ade80', '#38bdf8', '#a78bfa', '#fb923c', '#fff'][i % 7], r: Math.random() * 360, w: 6 + Math.random() * 6 }));
 	const tomatoes = Array.from({ length: 9 }, (_, i) => ({ from: i % 2 ? 110 : -10, x: 38 + Math.random() * 24, y: 34 + Math.random() * 32, d: 0.4 + i * 0.26, r: (Math.random() - 0.5) * 720 }));
@@ -671,7 +758,7 @@
 		const score = skipped ? (live.sofar ?? 0) : scorer.final();
 		const k = keyOf(song);
 		// (Bests on the keys are kept apart from singing ones.)
-		const bk = myRole == 'keys' ? `keys:${k}` : k;
+		const bk = myRole == 'sing' ? k : `${myRole}:${k}`;
 		const best = !skipped && save.scoring && (chart.lines.length > 0 || chart.notes.length > 0) && score > (save.best[bk] ?? 0);
 		if (best) save.best[bk] = score;
 		// Played: off the front of the queue.
@@ -685,7 +772,7 @@
 		const words = chart.lines.length > 0 || chart.notes.length > 0;
 		const scored = save.scoring && words;
 		const mood: Mood = !words ? 'great' : !save.scoring ? 'ok' : score >= 76 ? 'great' : score < 56 ? 'bad' : 'ok';
-		result = { score, bk, keys: myRole == 'keys', best: best && words, song, theirs: partner?.done ?? undefined, lost: lostCrowd, scored, skipped, mood };
+		result = { score, bk, keys: myRole != 'sing', dance: myRole == 'dance', best: best && words, song, theirs: partner?.done ?? undefined, lost: lostCrowd, scored, skipped, mood };
 		// The crowd's verdict: cheers and applause, polite applause, or boos (and tomatoes).
 		if (mood == 'great') {
 			gameAudio.play('karaoke', 'cheer');
@@ -733,7 +820,7 @@
 	}
 	function splitNow() {
 		const players = roomView?.players.filter(Boolean).length ?? 0;
-		if (!room || !partsOn || players < 2 || !baseLines.length || myRole == 'keys' || theirRole == 'keys') {
+		if (!room || !partsOn || players < 2 || !baseLines.length || myRole != 'sing' || theirRole != 'sing') {
 			parts = null;
 			return;
 		}
@@ -750,7 +837,7 @@
 		return { lines, notes };
 	}
 	function makeScorer() {
-		return myRole == 'keys' ? new KeysScorer(chart) : new Scorer(myChart(), TOLERANCE);
+		return myRole == 'keys' ? new KeysScorer(chart) : myRole == 'dance' ? new KeysScorer(chart, (c) => danceNotes(c, save.level)) : new Scorer(myChart(), TOLERANCE);
 	}
 	/** Hand a role to a player (a seat, or -1: everyone), for everyone in the room. (No key: just split again.) */
 	function setRole(key: string, seat: number, remote = false) {
@@ -929,6 +1016,7 @@
 	let lastLive = 0;
 	function frame(now: number) {
 		raf = requestAnimationFrame(frame);
+		if (padSetup != null || myRole == 'dance' || save.role == 'dance') pollPad();
 		if (screen != 'sing' || !scorer) return;
 		const t = clock() - offset;
 		songT = t;
@@ -956,7 +1044,7 @@
 			lastLive = now;
 			send({ k: 'live', h: Math.round(health), score: live.sofar ?? 0, t: Math.round(t * 100) / 100, m: heard.midi ? Math.round(heard.midi * 10) / 10 : 0 });
 		}
-		if (myRole == 'keys') drawKeys(t);
+		if (myRole != 'sing') drawKeys(t);
 		else draw(t);
 	}
 	// Pop-ups: a word when a note (or line) is sung well, and sparkles while you're on pitch.
@@ -1218,10 +1306,15 @@
 		if ('error' in r) return (roomErr = r.error);
 		openRoom(code);
 	}
-	function openRoom(code: string) {
+	async function openRoom(code: string) {
 		room = new Room(code, onRoom);
 		room.listen();
 		partner = null;
+		// Voice is on in rooms (it's what a room is for): the microphone opens to talk right away.
+		await loadIce();
+		voiceOn = true;
+		send({ k: 'voice', on: true });
+		await talkMic();
 	}
 	function leaveRoom() {
 		room?.leave();
@@ -1229,6 +1322,8 @@
 		roomView = null;
 		partner = null;
 		endLink();
+		voiceOn = false;
+		if (screen != 'sing') mic.stop();
 		if (screen == 'sing') leaveSong();
 		screen = 'menu';
 	}
@@ -1305,14 +1400,14 @@
 			note = `${theirName} lined the lyrics up (${offset > 0 ? '+' : ''}${offset.toFixed(1)}s)`;
 		} else if (k == 'role' && song && m.run == keyOf(song)) {
 			// The other player picked singing or the keys.
-			theirRole = m.role == 'keys' ? 'keys' : 'sing';
+			theirRole = m.role == 'keys' || m.role == 'dance' ? (m.role as Role) : 'sing';
 			splitNow();
 			scorer?.setChart(myChart());
 		} else if (k == 'rtc') {
 			// Connecting the voices: the host's offer starts the joiner's side.
 			if (!isHost && (m.sdp as { type?: string } | undefined)?.type == 'offer') {
 				voice?.close();
-				voice = new VoiceLink((x) => send(x), false);
+				voice = new VoiceLink((x) => send(x), false, onLinkState);
 				voice.setVolume(voiceVol / 100);
 				voice.hear(voiceOn);
 				if (voiceOn && mic.on) void voice.send(mic.sendTrack);
@@ -1376,6 +1471,13 @@
 	}
 
 	function onKey(e: KeyboardEvent) {
+		// Setting up a dance pad: the next key is the panel asked for.
+		if (padSetup != null) {
+			e.preventDefault();
+			if (e.code == 'Escape') padSetup = null;
+			else if (!e.repeat) learn(`k:${e.code}`);
+			return;
+		}
 		if (screen != 'sing' || (e.target as HTMLElement)?.tagName == 'INPUT') return;
 		// (Choosing songs: the song's keys are off; Escape goes back to it.)
 		if (songsOpen) {
@@ -1384,6 +1486,18 @@
 		}
 		// (Picking a role: the song hasn't started.)
 		if (!rolePicked) return;
+		// Dancing: the pad's panels (keys it sends, as learned in the setup).
+		if (myRole == 'dance') {
+			const lane = laneForKey(padMap(), e.code);
+			if (lane >= 0) {
+				e.preventDefault();
+				if (!e.repeat) {
+					padDown[lane] = true;
+					pressLane(lane);
+				}
+				return;
+			}
+		}
 		// The keys: D F J K are the lanes (before the other shortcuts: J is a lane here).
 		if (myRole == 'keys') {
 			const lane = LANE_KEYS.indexOf(e.code);
@@ -1430,7 +1544,7 @@
 		addEventListener('keyup', onKeyUp);
 	});
 	function onKeyUp(e: KeyboardEvent) {
-		const lane = LANE_KEYS.indexOf(e.code);
+		const lane = myRole == 'dance' ? laneForKey(padMap(), e.code) : LANE_KEYS.indexOf(e.code);
 		if (lane >= 0) padDown[lane] = false;
 	}
 	onDestroy(() => {
@@ -1563,9 +1677,33 @@
 						<span>You'll</span>
 						<button role="radio" aria-checked={save.role != 'keys'} class:on={save.role != 'keys'} onclick={() => setRolePref('sing')}>🎤 Sing</button>
 						<button role="radio" aria-checked={save.role == 'keys'} class:on={save.role == 'keys'} onclick={() => setRolePref('keys')}>🎹 Play the keys</button>
+						<button role="radio" aria-checked={save.role == 'dance'} class:on={save.role == 'dance'} onclick={() => setRolePref('dance')}>🕺 Dance</button>
 					</div>
-					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : 'Into your microphone, scored on pitch and timing.'}</p>
-					{#if save.role != 'keys'}
+					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : save.role == 'dance' ? 'Step on the arrows as they reach the top, on a 9-panel dance pad (or the number pad, or the pads on screen). The steps are choreographed from the song: its rhythm, its melody, and its chorus.' : 'Into your microphone, scored on pitch and timing.'}</p>
+					{#if save.role == 'dance'}
+						<div class="padsetup" data-esc-owner={padSetup != null ? '' : undefined}>
+							<div class="padmini" aria-hidden="true">
+								{#each PAD_ORDER as lane, i (i)}
+									<span class:asking={padSetup != null && SETUP_ORDER[padSetup] == lane} style="--c:{LANE_COLOR(lane)}">{ARROW_GLYPH[LANE_DIRS[lane]]}<small>{bindingLabel(padMap()[lane]?.[0] ?? '')}</small></span>
+								{/each}
+							</div>
+							<div class="padhelp">
+								{#if padSetup != null}
+									<b>Step on {ARROW_GLYPH[LANE_DIRS[SETUP_ORDER[padSetup]]]} ({padSetup + 1} of 9)</b>
+									<small>Press the panel (or the key / button you want for it). Esc to stop.</small>
+									<button class="ghost small" onclick={() => (padSetup = null)}>Done</button>
+								{:else}
+									<b>Your dance pad</b>
+									<small>Pads work as a keyboard or as a gamepad. Set yours up by stepping on each panel once; until then the number pad, arrow keys and Q W E / A S D / Z X C work.</small>
+									<div class="row">
+										<button class="small" onclick={startPadSetup}>Set up my pad</button>
+										{#if save.padMap}<button class="ghost small" onclick={resetPad}>Reset</button>{/if}
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
+					{#if save.role == 'sing'}
 						<label class="toggle">
 							<input type="checkbox" bind:checked={hearMe} />
 							<span>Hear yourself: your voice through your headphones, with some echo{hearMe ? ' (use headphones, or speakers will squeal)' : ''}</span>
@@ -1660,16 +1798,40 @@
 					</div>
 					{#if partner}
 						<div class="health them" class:danger={partner.h < 25}>
-							<span class="hlabel">{theirRole == 'keys' ? '🎹 ' : ''}{theirVoice && voiceOn ? '🗣️ ' : ''}{theirName.slice(0, 10)}</span>
+							<span class="hlabel">{theirRole == 'keys' ? '🎹 ' : theirRole == 'dance' ? '🕺 ' : ''}{theirVoice && voiceOn ? '🗣️ ' : ''}{theirName.slice(0, 10)}</span>
 							<span class="htrack"><i style="width:{partner.h}%"></i></span>
 						</div>
 					{/if}
 				{/if}
 				{#if myRole == 'sing'}<div class="you">{heard.midi ? noteName(heard.midi) : '—'}{#if live.note}<small> → {noteName(live.note.midi)}{pitchGap(heard.midi, live.note.midi) <= 0.5 && heard.midi ? ' ✓' : ''}</small>{/if}</div>{/if}
-				{#if save.scoring && live.combo >= 3}{#key live.combo}<div class="combo"><span>🔥</span> {myRole == 'keys' ? `${live.combo} in a row!` : `${live.combo}s on it!`}</div>{/key}{/if}
+				{#if save.scoring && live.combo >= 3}{#key live.combo}<div class="combo"><span>🔥</span> {myRole != 'sing' ? `${live.combo} in a row!` : `${live.combo}s on it!`}</div>{/key}{/if}
 			</div>
 			{#if myRole == 'sing'}
 				<canvas class="lane" bind:this={lane}></canvas>
+			{:else if rolePicked && myRole == 'dance'}
+				<!-- Dancing: arrows rise to the targets at the top; step on them (the pad, or the buttons here). -->
+				<div class="keyway dance">
+					<canvas bind:this={keyway} aria-label="The dance: nine panels"></canvas>
+					<div class="pads nine">
+						{#each PAD_ORDER as lane, i (i)}
+							<button
+								class="pad"
+								class:down={padDown[lane]}
+								style="--c:{LANE_COLOR(lane)}"
+								aria-label="Panel {ARROW_GLYPH[LANE_DIRS[lane]]}"
+								onpointerdown={(e) => {
+									e.preventDefault();
+									padDown[lane] = true;
+									pressLane(lane);
+								}}
+								onpointerup={() => (padDown[lane] = false)}
+								onpointerleave={() => (padDown[lane] = false)}
+								onpointercancel={() => (padDown[lane] = false)}
+								oncontextmenu={(e) => e.preventDefault()}>{ARROW_GLYPH[LANE_DIRS[lane]]}</button
+							>
+						{/each}
+					</div>
+				</div>
 			{:else if rolePicked}
 				<!-- The keys: notes fall to the line; tap their lane (D F J K, or the pads). -->
 				<div class="keyway">
@@ -1852,7 +2014,7 @@
 				{#if result.skipped}<p class="hint">Skipped: graded on the part you sang.</p>{/if}
 				<p class="rank">{[result.best ? 'New best!' : save.best[result.bk] ? `Best: ${gradeOf(save.best[result.bk])}` : '', result.lost ? 'you lost the crowd for a bit' : ''].filter(Boolean).join(' · ')}</p>
 			{:else}
-				<p class="rank">{result.keys ? 'Nice playing! 🎹' : 'Nice singing! 🎤'}</p>
+				<p class="rank">{result.dance ? 'Nice moves! 🕺' : result.keys ? 'Nice playing! 🎹' : 'Nice singing! 🎤'}</p>
 			{/if}
 			<p><button class="small ghost" onclick={() => result && toggleFav(result.song)}>{result && isFav(result.song) ? '★ In favourites' : '☆ Add to favourites'}</button></p>
 			{#if result.theirs != null}<p class="hint">{theirName}: {gradeOf(result.theirs)}</p>{:else if partner}<p class="hint">Waiting for {theirName}'s score…</p>{/if}
@@ -1893,13 +2055,22 @@
 					<p class="hint small">Parts are the host's choice.</p>
 				{/if}
 				{/if}
+				<div class="voicebox" class:live={voiceOn}>
+					<button class="small keep" class:lit={voiceOn} aria-pressed={voiceOn} onclick={toggleVoice}>{voiceOn ? '🗣️ Voice on' : '🔕 Voice off'}</button>
+					<div class="vstate">
+						<b>{!voiceOn ? 'Voice is off' : !friendHere() ? 'Waiting for a friend to talk to' : voiceState == 'connected' ? `Talking with ${theirName}${theirVoice ? '' : ` (their voice is off)`}` : voiceState == 'failed' ? "Couldn't connect the voices" : 'Connecting the voices…'}</b>
+						<small>{voiceState == 'failed' ? 'Your networks may block direct calls. Trying again…' : 'Live between your two browsers: you hear each other here and while singing. Nothing is recorded.'}</small>
+					</div>
+					<input type="range" min="0" max="100" step="1" value={voiceVol} disabled={!voiceOn} oninput={(e) => setVoiceVol(Number((e.currentTarget as HTMLInputElement).value))} aria-label="{theirName}'s voice volume" />
+				</div>
+				{#if micErr && voiceOn}<p class="err small">{micErr}</p>{/if}
 				<div class="row">
 					<button class="ghost" onclick={() => (screen = 'menu')}>Songs and queue</button>
 					<button class="leave" onclick={leaveRoom}>Leave the room</button>
 				</div>
 			{/if}
 			{#if roomErr}<p class="err">{roomErr}</p>{/if}
-			<p class="hint small">Hearing each other isn't on yet: voices over the internet arrive a fraction of a second late, which sounds off against music that's playing in time on each screen. Rooms for more than two are coming too.</p>
+			<p class="hint small">Headphones help: then the song from your speakers doesn't go into your microphone.</p>
 		</div>
 	{:else if screen == 'how'}
 		<div class="card wide how">
@@ -2598,6 +2769,33 @@
 		from { transform: rotate(-22deg); }
 		to { transform: rotate(22deg); }
 	}
+	.voicebox {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+		padding: 10px 12px;
+		margin: 10px 0;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.voicebox.live {
+		border-color: rgba(74, 222, 128, 0.35);
+	}
+	.voicebox .vstate {
+		flex: 1;
+		min-width: 180px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.voicebox .vstate small {
+		opacity: 0.7;
+	}
+	.voicebox input[type='range'] {
+		width: 120px;
+	}
 	/* The screen's edges glow with your voice (green when the crowd's with you, red when not). */
 	.edge {
 		position: absolute;
@@ -2825,6 +3023,74 @@
 		border: 1px solid rgba(255, 255, 255, 0.14);
 		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
 		backdrop-filter: blur(3px);
+	}
+	.keyway.dance {
+		width: min(640px, calc(100% - 24px));
+	}
+	.pads.nine {
+		grid-template-columns: repeat(3, 1fr);
+		width: min(300px, 100%);
+		margin: 0 auto;
+		background: transparent;
+	}
+	.pads.nine .pad {
+		height: 46px;
+		font-size: 1.4rem;
+	}
+	.padsetup {
+		display: flex;
+		gap: 14px;
+		align-items: center;
+		margin: 8px 0;
+		padding: 10px;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.padmini {
+		display: grid;
+		grid-template-columns: repeat(3, 44px);
+		gap: 4px;
+	}
+	.padmini span {
+		height: 44px;
+		border-radius: 8px;
+		border: 2px solid var(--c);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.1rem;
+		line-height: 1;
+		background: color-mix(in srgb, var(--c) 12%, transparent);
+	}
+	.padmini span small {
+		font-size: 0.55rem;
+		opacity: 0.75;
+		margin-top: 2px;
+		max-width: 40px;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.padmini span.asking {
+		background: var(--c);
+		color: #111;
+		animation: asking 0.7s ease-in-out infinite alternate;
+	}
+	@keyframes asking {
+		to {
+			transform: scale(1.08);
+			box-shadow: 0 0 16px var(--c);
+		}
+	}
+	.padhelp {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		flex: 1;
+	}
+	.padhelp small {
+		opacity: 0.75;
 	}
 	.keyway canvas {
 		flex: 1;

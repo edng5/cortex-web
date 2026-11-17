@@ -2,7 +2,8 @@
 // colour), made into an arcade game for E.Ngine Games. Two modes:
 //  - Seek & Find: "I spy with my little eye, something RED…" Click a matching thing in a busy scene
 //    before time runs out. Right finds add time and build a combo; wrong clicks cost time. Each
-//    level is busier, with smaller things, more lookalikes, and clues that add what kind of thing it is.
+//    level is busier, with smaller things, more lookalikes, and clues that add what kind of thing it is;
+//    there's more to find, the clock is tighter, and fewer things fit each clue (until only one does).
 //  - Stump the Computer (the original game, turned round): pick a thing in your head, say its
 //    colour, and the computer gets three guesses. Stump it to score.
 // Scenes are rooms and places with things where they belong, filled differently every game. Menus are clicked or tapped; H for a hint,
@@ -215,13 +216,32 @@ export class ISpy implements ArcadeGame {
 	private newLevel() {
 		const L = this.level;
 		this.scene = SCENES[(L - 1) % SCENES.length];
-		this.goal = Math.min(6, 3 + Math.floor((L - 1) / 2));
+		// More to find each level (3, 4, 5… up to 12).
+		this.goal = Math.min(12, 2 + L);
+		// The clock gets tighter: what's left carries over, but never more than this level allows.
+		this.time = Math.min(this.time, this.timeCap());
 		this.found = 0;
 		this.hints = 2;
 		this.hint = null;
 		this.things = this.populate(Math.min(90, 40 + L * 7), Math.max(28, 50 - L * 2.5));
 		this.nextClue();
 		this.screen = 'seek';
+	}
+	/** Difficulty by level. The most time you can have going into a level (45s at first, down to 20s). */
+	private timeCap() {
+		return Math.max(20, 48 - this.level * 3);
+	}
+	/** Seconds a right find adds (4, then less: 1 from level 7). */
+	private findBonus() {
+		return Math.max(1, 4 - Math.floor((this.level - 1) / 2));
+	}
+	/** Seconds a wrong click costs (3, then more). */
+	private wrongCost() {
+		return 3 + Math.floor((this.level - 1) / 3);
+	}
+	/** How many things in the scene may match a clue (lots at first; from level 4, only the one). */
+	private matchesAllowed() {
+		return Math.max(1, 5 - this.level);
 	}
 	/** A new clue, for something that's in the scene (and not found yet). */
 	private nextClue() {
@@ -239,6 +259,13 @@ export class ISpy implements ArcadeGame {
 				if (spare) spare.item = pick(lookFor(spare));
 			}
 		}
+		// Fewer things that fit the clue as the levels go on: the rest of that colour turn into
+		// something else that belongs in their spot (so you have to find the one, not any of many).
+		const extra = this.things.filter((t) => !t.found && t != target && this.matches(t)).sort(() => Math.random() - 0.5);
+		for (const t of extra.slice(Math.max(0, this.matchesAllowed() - 1))) {
+			const other = t.pool.filter((i) => i.colour != target.item.colour);
+			if (other.length) t.item = pick(other);
+		}
 	}
 	private matches(t: Placed) {
 		return !!this.clue && t.item.colour == this.clue.colour && (!this.clue.kind || t.item.kind == this.clue.kind);
@@ -254,7 +281,7 @@ export class ISpy implements ArcadeGame {
 			this.lastFind = this.now;
 			const pts = 100 * this.level * Math.min(5, this.combo);
 			this.score += pts;
-			this.time = Math.min(99, this.time + 4);
+			this.time = Math.min(99, this.time + this.findBonus());
 			this.found++;
 			this.flash = { text: `+${pts}${this.combo > 1 ? `  x${Math.min(5, this.combo)}` : ''}`, color: '#16a34a', at: this.now, x: hit.x, y: hit.y };
 			this.sfx(this.combo > 2 ? 'combo' : 'found');
@@ -267,15 +294,17 @@ export class ISpy implements ArcadeGame {
 				setTimeout(() => {
 					if (this.screen != 'levelUp') return;
 					this.level++;
-					this.time = Math.min(99, this.time + 10);
+					// A smaller breather between levels as you go (10s, then less).
+					this.time = Math.min(99, this.time + Math.max(3, 12 - this.level * 2));
 					this.newLevel();
 				}, 1800);
 			} else this.nextClue();
 		} else {
-			this.time = Math.max(0, this.time - 3);
+			const cost = this.wrongCost();
+			this.time = Math.max(0, this.time - cost);
 			this.combo = 0;
 			this.shake = 12;
-			this.flash = { text: `Not that one: it's a ${hit.item.name}! −3s`, color: '#dc2626', at: this.now, x: hit.x, y: hit.y };
+			this.flash = { text: `Not that one: it's a ${hit.item.name}! −${cost}s`, color: '#dc2626', at: this.now, x: hit.x, y: hit.y };
 			this.sfx('wrong');
 		}
 	}
@@ -500,7 +529,8 @@ export class ISpy implements ArcadeGame {
 				const lines = [
 					['Seek & Find', ''],
 					['I spy something of a colour (later: and what kind of thing).', 'Click any match in the scene.'],
-					['Right: +4 seconds, and quick finds build a combo (up to x5).', 'Wrong: −3 seconds. Clear the level for a time bonus.'],
+					['Right: more time (less each level); quick finds build a combo (x5).', 'Wrong: time lost (more each level). Each level: more to find,'],
+					['less time, and fewer things that fit the clue.', ''],
 					[`Stuck? Hint (H) circles the area: two per level, −50 points.`, ''],
 					['Stump the Computer', ''],
 					['Think of something in the scene and tell me its colour.', 'I get three guesses. Answer Yes or No. Stump me to win!']
