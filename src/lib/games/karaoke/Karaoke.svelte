@@ -1681,7 +1681,7 @@
 						<button role="radio" aria-checked={save.role == 'keys'} class:on={save.role == 'keys'} onclick={() => setRolePref('keys')}>🎹 Play the keys</button>
 						<button role="radio" aria-checked={save.role == 'dance'} class:on={save.role == 'dance'} onclick={() => setRolePref('dance')}>🕺 Dance</button>
 					</div>
-					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : save.role == 'dance' ? 'Step on the arrows as they reach the top: three streams (left foot, middle, right foot) of three. A 9-panel dance pad, the number pad, or tap the streams on a touch screen. The steps are choreographed from the song: its rhythm, its melody, and its chorus.' : 'Into your microphone, scored on pitch and timing.'}</p>
+					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : save.role == 'dance' ? 'Step on the arrows as they reach the top: three lanes, one for each column of the pad (left foot ↖ ← ↙, middle ↑ ● ↓, right foot ↗ → ↘). A 9-panel dance pad, the number pad, or tap the lanes on a touch screen (high, middle or low for the arrow). The steps are choreographed from the song: its rhythm, its melody, and its chorus.' : 'Into your microphone, scored on pitch and timing.'}</p>
 					{#if save.role == 'dance'}
 						<div class="myrole dlevel" role="radiogroup" aria-label="Dance difficulty">
 							<span>Level</span>
@@ -1824,7 +1824,8 @@
 						aria-label="The dance: three streams of three arrows"
 						onpointerdown={(e) => {
 							e.preventDefault();
-							const lane = laneAtX(e.offsetX, (e.currentTarget as HTMLCanvasElement).clientWidth);
+							const el = e.currentTarget as HTMLCanvasElement;
+							const lane = laneAtX(e.offsetX, el.clientWidth, e.offsetY, el.clientHeight);
 							padDown[lane] = true;
 							pressLane(lane);
 							setTimeout(() => (padDown[lane] = false), 120);

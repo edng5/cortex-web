@@ -320,84 +320,92 @@ function arrow(g: CanvasRenderingContext2D, x: number, y: number, r: number, d: 
 	g.restore();
 }
 /**
- * The dance highway: three streams (left foot, middle, right foot) of three arrows each, rising
- * from the bottom to the targets at the top. `flash`: when each lane was last stepped on;
- * `pops`: verdicts; `held`: lanes being stood on now.
+ * The dance highway: three lanes, one per foot's column of the pad. The left lane carries ↖ ← ↙,
+ * the middle ↑ ● ↓, the right ↗ → ↘: each step rises up its lane as its own arrow, to the target
+ * box at the top (which shows the lane's three arrows, lighting the one stepped on).
+ * `flash`: when each panel was last stepped on; `pops`: verdicts; `held`: panels stood on now.
  */
 export function drawDanceway(g: CanvasRenderingContext2D, w: number, h: number, notes: DanceNote[], t: number, flash: number[], pops: { at: number; lane: number; text: string; color: string }[], held: boolean[]) {
 	const now = performance.now();
 	const SPAN = 2.0;
-	const gap = Math.max(8, w * 0.03);
+	const gap = Math.max(10, w * 0.04);
 	const sw = (w - gap * (STREAMS - 1)) / STREAMS;
-	const lw = sw / 3;
-	const laneX = (lane: number) => Math.floor(lane / 3) * (sw + gap) + (lane % 3) * lw + lw / 2;
-	const r = Math.min(lw * 0.44, 30);
-	const hitY = r + 16;
+	const streamX = (s: number) => s * (sw + gap) + sw / 2;
+	const r = Math.min(sw * 0.3, 38);
+	const hitY = r + 20;
 	const yAt = (tt: number) => hitY + ((tt - t) / SPAN) * (h - hitY);
+	const lit = (lane: number) => Math.max(0, 1 - (now - flash[lane]) / 220, held[lane] ? 0.55 : 0);
 	g.clearRect(0, 0, w, h);
-	// The three streams: dark glass tracks, tinted with their colour.
 	for (let s = 0; s < STREAMS; s++) {
 		const x = s * (sw + gap);
 		const col = PANEL_COLORS[LANE_DIRS[s * 3]];
+		// The lane: dark glass, edged in its colour, glowing up when any of its arrows is stepped on.
 		const tr = g.createLinearGradient(0, 0, 0, h);
 		tr.addColorStop(0, 'rgba(12,10,32,0.9)');
 		tr.addColorStop(1, 'rgba(12,10,32,0.55)');
 		g.fillStyle = tr;
 		g.beginPath();
-		g.roundRect(x, 0, sw, h, 12);
+		g.roundRect(x, 0, sw, h, 14);
 		g.fill();
-		g.strokeStyle = col + '55';
+		g.strokeStyle = col + '66';
 		g.lineWidth = 2;
 		g.stroke();
-		// Lanes in it, and a glow up the lane being stepped on.
+		const on = Math.max(lit(s * 3), lit(s * 3 + 1), lit(s * 3 + 2));
+		if (on > 0) {
+			const glow = g.createLinearGradient(0, 0, 0, h);
+			glow.addColorStop(0, col + 'aa');
+			glow.addColorStop(1, col + '00');
+			g.globalAlpha = on;
+			g.fillStyle = glow;
+			g.beginPath();
+			g.roundRect(x + 3, 0, sw - 6, h, 12);
+			g.fill();
+			g.globalAlpha = 1;
+		}
+		// The beat: faint bars rising.
+		g.fillStyle = 'rgba(255,255,255,0.05)';
+		for (let b = Math.ceil(t * 2) / 2; b < t + SPAN; b += 0.5) g.fillRect(x + 6, yAt(b), sw - 12, b % 1 ? 1 : 2);
+		// The target: a box at the top with the lane's three arrows, the stepped-on one lit.
+		const cx = streamX(s);
+		g.fillStyle = 'rgba(255,255,255,0.05)';
+		g.strokeStyle = col;
+		g.lineWidth = 2.5;
+		g.shadowColor = col;
+		g.shadowBlur = 8 + on * 16;
+		g.beginPath();
+		g.roundRect(x + 6, hitY - r * 1.1, sw - 12, r * 2.2, 12);
+		g.fill();
+		g.stroke();
+		g.shadowBlur = 0;
+		const mini = Math.min(r * 0.5, (sw - 24) / 6.5);
 		for (let k = 0; k < 3; k++) {
 			const lane = s * 3 + k;
-			const lit = Math.max(0, 1 - (now - flash[lane]) / 220, held[lane] ? 0.55 : 0);
-			if (lit > 0) {
-				const glow = g.createLinearGradient(0, 0, 0, h);
-				glow.addColorStop(0, col + 'bb');
-				glow.addColorStop(1, col + '00');
-				g.globalAlpha = lit;
-				g.fillStyle = glow;
-				g.fillRect(x + k * lw + 2, 0, lw - 4, h);
-				g.globalAlpha = 1;
-			}
-			if (k) {
-				g.fillStyle = 'rgba(255,255,255,0.05)';
-				g.fillRect(x + k * lw, 0, 1, h);
-			}
+			arrow(g, cx + (k - 1) * mini * 2.3, hitY, mini, LANE_DIRS[lane], col, 'target', lit(lane));
 		}
-		// The beat: faint bars rising through the stream.
-		g.fillStyle = 'rgba(255,255,255,0.05)';
-		for (let b = Math.ceil(t * 2) / 2; b < t + SPAN; b += 0.5) g.fillRect(x + 4, yAt(b), sw - 8, b % 1 ? 1 : 2);
 	}
-	// The targets.
-	for (let lane = 0; lane < PANELS; lane++) {
-		const lit = Math.max(0, 1 - (now - flash[lane]) / 160, held[lane] ? 0.5 : 0);
-		arrow(g, laneX(lane), hitY, r * (1 + lit * 0.12), LANE_DIRS[lane], LANE_COLOR(lane), 'target', lit);
-	}
-	// The steps, rising: holds first (a bar trailing below), then the arrows.
+	// Holds: a bar trailing below the arrow, up its lane.
 	for (const n of notes) {
 		if (!n.len || n.t > t + SPAN || n.t + n.len < t - 0.2) continue;
-		const x = laneX(n.lane);
+		const x = streamX(Math.floor(n.lane / 3));
 		const top = Math.max(hitY, yAt(n.t));
 		const bot = yAt(n.t + n.len);
 		if (bot <= top) continue;
-		const col = LANE_COLOR(n.lane);
-		g.fillStyle = n.frac === 0 ? 'rgba(71,85,105,0.5)' : col + '99';
+		g.fillStyle = n.frac === 0 ? 'rgba(71,85,105,0.5)' : LANE_COLOR(n.lane) + '99';
 		g.beginPath();
-		g.roundRect(x - r * 0.32, top, r * 0.64, bot - top, r * 0.3);
+		g.roundRect(x - r * 0.3, top, r * 0.6, bot - top, r * 0.3);
 		g.fill();
 		g.strokeStyle = 'rgba(255,255,255,0.35)';
 		g.lineWidth = 1.5;
 		g.stroke();
 	}
+	// The steps, rising (two in the same lane at once, side by side).
 	for (let k = notes.length - 1; k >= 0; k--) {
 		const n = notes[k];
 		if (n.t > t + SPAN) continue;
 		if (n.t + (n.len ?? 0) < t - 0.4) continue;
-		const x = laneX(n.lane);
-		const d = LANE_DIRS[n.lane];
+		const s = Math.floor(n.lane / 3);
+		const twin = notes.find((o) => o != n && Math.floor(o.lane / 3) == s && Math.abs(o.t - n.t) < 0.02);
+		const x = streamX(s) + (twin ? (n.lane < twin.lane ? -0.55 : 0.55) * r : 0);
 		if (n.frac != null && n.frac > 0) {
 			// Hit: a burst of light on the target.
 			const kk = (now - (n.at ?? now)) / 300;
@@ -414,7 +422,7 @@ export function drawDanceway(g: CanvasRenderingContext2D, w: number, h: number, 
 		}
 		const y = yAt(n.t);
 		if (y < -r || y > h + r) continue;
-		arrow(g, x, y, r, d, LANE_COLOR(n.lane), n.frac === 0 ? 'missed' : n.golden ? 'gold' : 'note');
+		arrow(g, x, y, twin ? r * 0.75 : r, LANE_DIRS[n.lane], LANE_COLOR(n.lane), n.frac === 0 ? 'missed' : n.golden ? 'gold' : 'note');
 	}
 	// Verdicts, under the targets.
 	g.textAlign = 'center';
@@ -422,22 +430,25 @@ export function drawDanceway(g: CanvasRenderingContext2D, w: number, h: number, 
 		const k = (now - p.at) / 700;
 		if (k >= 1) continue;
 		g.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-		g.font = `900 ${Math.round(Math.min(18, sw * 0.13))}px system-ui, sans-serif`;
+		g.font = `900 ${Math.round(Math.min(20, sw * 0.14))}px system-ui, sans-serif`;
 		g.fillStyle = p.color;
 		g.strokeStyle = 'rgba(0,0,0,0.6)';
 		g.lineWidth = 3;
-		const x = Math.floor(p.lane / 3) * (sw + gap) + sw / 2;
-		g.strokeText(p.text, x, hitY + r + 24 + k * 22);
-		g.fillText(p.text, x, hitY + r + 24 + k * 22);
+		const x = streamX(Math.floor(p.lane / 3));
+		g.strokeText(p.text, x, hitY + r * 1.1 + 24 + k * 22);
+		g.fillText(p.text, x, hitY + r * 1.1 + 24 + k * 22);
 	}
 	g.globalAlpha = 1;
 	g.textAlign = 'left';
 }
-/** Which lane a point on the highway is (tapping it, on a touch screen). */
-export function laneAtX(x: number, w: number): number {
-	const gap = Math.max(8, w * 0.03);
+/**
+ * Which panel a tap on the highway is (touch screens): the lane by where across, and which of
+ * its three arrows by where up or down (top third: the upper arrow; middle: the side one; bottom: the lower).
+ */
+export function laneAtX(x: number, w: number, y = 0.5, h = 1): number {
+	const gap = Math.max(10, w * 0.04);
 	const sw = (w - gap * (STREAMS - 1)) / STREAMS;
 	const s = Math.min(STREAMS - 1, Math.max(0, Math.floor(x / (sw + gap))));
-	const k = Math.min(2, Math.max(0, Math.floor((x - s * (sw + gap)) / (sw / 3))));
+	const k = Math.min(2, Math.max(0, Math.floor((y / h) * 3)));
 	return s * 3 + k;
 }
