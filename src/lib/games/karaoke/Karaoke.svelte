@@ -20,7 +20,7 @@
 	import { splitParts, type Assign, type Parts, type Who } from './parts';
 	import { KeysScorer, LANE_COLORS, LANE_KEYS, LANE_LABELS, drawHighway } from './keys';
 	import { VoiceLink, loadIce, type LinkState } from './voice';
-	import { ARROW_GLYPH, LANE_COLOR, LANE_DIRS, PANELS, bindingLabel, danceNotes, defaultPadMap, drawDanceway, gamepadHeld, laneForBinding, laneForKey, type DanceNote, type PadMap } from './dance';
+	import { ARROW_GLYPH, LANE_COLOR, LANE_DIRS, PANELS, bindingLabel, danceNotes, defaultPadMap, drawDanceway, gamepadHeld, laneAtX, laneForBinding, laneForKey, type DanceNote, type PadMap } from './dance';
 	import { SONGS, type Song } from './songs';
 
 	let { active, onquit, loggedIn }: GameUiProps = $props();
@@ -53,6 +53,8 @@
 		role: 'sing' | 'keys' | 'dance';
 		/** Dance mode: which key / pad button is which panel (learned in the pad setup). */
 		padMap?: PadMap;
+		/** Dance mode's difficulty. */
+		danceLevel?: 'easy' | 'medium' | 'hard';
 	}
 	const fresh = (): Save => ({ best: {}, queue: [], offsets: {}, charts: {}, level: 'normal', favs: [], scoring: true, picks: {}, volume: 80, partsOn: true, role: 'sing' });
 	let save = $state<Save>(load());
@@ -758,7 +760,7 @@
 		const score = skipped ? (live.sofar ?? 0) : scorer.final();
 		const k = keyOf(song);
 		// (Bests on the keys are kept apart from singing ones.)
-		const bk = myRole == 'sing' ? k : `${myRole}:${k}`;
+		const bk = myRole == 'sing' ? k : myRole == 'dance' ? `dance-${save.danceLevel ?? 'medium'}:${k}` : `${myRole}:${k}`;
 		const best = !skipped && save.scoring && (chart.lines.length > 0 || chart.notes.length > 0) && score > (save.best[bk] ?? 0);
 		if (best) save.best[bk] = score;
 		// Played: off the front of the queue.
@@ -837,7 +839,7 @@
 		return { lines, notes };
 	}
 	function makeScorer() {
-		return myRole == 'keys' ? new KeysScorer(chart) : myRole == 'dance' ? new KeysScorer(chart, (c) => danceNotes(c, save.level)) : new Scorer(myChart(), TOLERANCE);
+		return myRole == 'keys' ? new KeysScorer(chart) : myRole == 'dance' ? new KeysScorer(chart, (c) => danceNotes(c, save.danceLevel ?? 'medium')) : new Scorer(myChart(), TOLERANCE);
 	}
 	/** Hand a role to a player (a seat, or -1: everyone), for everyone in the room. (No key: just split again.) */
 	function setRole(key: string, seat: number, remote = false) {
@@ -1675,12 +1677,18 @@
 					<h2>Up next {#if room}<small>· room {roomView?.code}</small>{/if}</h2>
 					<div class="myrole" role="radiogroup" aria-label="Your role">
 						<span>You'll</span>
-						<button role="radio" aria-checked={save.role != 'keys'} class:on={save.role != 'keys'} onclick={() => setRolePref('sing')}>🎤 Sing</button>
+						<button role="radio" aria-checked={(save.role ?? 'sing') == 'sing'} class:on={(save.role ?? 'sing') == 'sing'} onclick={() => setRolePref('sing')}>🎤 Sing</button>
 						<button role="radio" aria-checked={save.role == 'keys'} class:on={save.role == 'keys'} onclick={() => setRolePref('keys')}>🎹 Play the keys</button>
 						<button role="radio" aria-checked={save.role == 'dance'} class:on={save.role == 'dance'} onclick={() => setRolePref('dance')}>🕺 Dance</button>
 					</div>
-					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : save.role == 'dance' ? 'Step on the arrows as they reach the top, on a 9-panel dance pad (or the number pad, or the pads on screen). The steps are choreographed from the song: its rhythm, its melody, and its chorus.' : 'Into your microphone, scored on pitch and timing.'}</p>
+					<p class="hint small rolehint">{save.role == 'keys' ? 'Tap the four lanes in time with the song: D F J K, or the pads on a phone. No microphone needed.' : save.role == 'dance' ? 'Step on the arrows as they reach the top: three streams (left foot, middle, right foot) of three. A 9-panel dance pad, the number pad, or tap the streams on a touch screen. The steps are choreographed from the song: its rhythm, its melody, and its chorus.' : 'Into your microphone, scored on pitch and timing.'}</p>
 					{#if save.role == 'dance'}
+						<div class="myrole dlevel" role="radiogroup" aria-label="Dance difficulty">
+							<span>Level</span>
+							{#each [['easy', 'Easy', 'A step every other beat; just the four arrows and the middle'], ['medium', 'Medium', 'About one a beat; corners in the chorus, held steps'], ['hard', 'Hard', 'Every word; corners anywhere, jumps and holds']] as [lv, label, tip] (lv)}
+								<button role="radio" aria-checked={(save.danceLevel ?? 'medium') == lv} class:on={(save.danceLevel ?? 'medium') == lv} title={tip} onclick={() => ((save.danceLevel = lv as 'easy' | 'medium' | 'hard'), persist())}>{label}</button>
+							{/each}
+						</div>
 						<div class="padsetup" data-esc-owner={padSetup != null ? '' : undefined}>
 							<div class="padmini" aria-hidden="true">
 								{#each PAD_ORDER as lane, i (i)}
@@ -1811,26 +1819,18 @@
 			{:else if rolePicked && myRole == 'dance'}
 				<!-- Dancing: arrows rise to the targets at the top; step on them (the pad, or the buttons here). -->
 				<div class="keyway dance">
-					<canvas bind:this={keyway} aria-label="The dance: nine panels"></canvas>
-					<div class="pads nine">
-						{#each PAD_ORDER as lane, i (i)}
-							<button
-								class="pad"
-								class:down={padDown[lane]}
-								style="--c:{LANE_COLOR(lane)}"
-								aria-label="Panel {ARROW_GLYPH[LANE_DIRS[lane]]}"
-								onpointerdown={(e) => {
-									e.preventDefault();
-									padDown[lane] = true;
-									pressLane(lane);
-								}}
-								onpointerup={() => (padDown[lane] = false)}
-								onpointerleave={() => (padDown[lane] = false)}
-								onpointercancel={() => (padDown[lane] = false)}
-								oncontextmenu={(e) => e.preventDefault()}>{ARROW_GLYPH[LANE_DIRS[lane]]}</button
-							>
-						{/each}
-					</div>
+					<canvas
+						bind:this={keyway}
+						aria-label="The dance: three streams of three arrows"
+						onpointerdown={(e) => {
+							e.preventDefault();
+							const lane = laneAtX(e.offsetX, (e.currentTarget as HTMLCanvasElement).clientWidth);
+							padDown[lane] = true;
+							pressLane(lane);
+							setTimeout(() => (padDown[lane] = false), 120);
+						}}
+						oncontextmenu={(e) => e.preventDefault()}
+					></canvas>
 				</div>
 			{:else if rolePicked}
 				<!-- The keys: notes fall to the line; tap their lane (D F J K, or the pads). -->
@@ -3025,17 +3025,17 @@
 		backdrop-filter: blur(3px);
 	}
 	.keyway.dance {
-		width: min(640px, calc(100% - 24px));
-	}
-	.pads.nine {
-		grid-template-columns: repeat(3, 1fr);
-		width: min(300px, 100%);
-		margin: 0 auto;
+		width: min(560px, calc(100% - 24px));
 		background: transparent;
+		border: none;
+		box-shadow: none;
+		backdrop-filter: none;
 	}
-	.pads.nine .pad {
-		height: 46px;
-		font-size: 1.4rem;
+	.keyway.dance canvas {
+		touch-action: none;
+	}
+	.dlevel {
+		margin: 6px 0 2px;
 	}
 	.padsetup {
 		display: flex;
